@@ -11,7 +11,9 @@
     "typecheck": "tsc -p tsconfig.json",
     "format": "echo back: no formatter configured",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev"
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:push": "prisma db push",
+    "prisma:studio": "prisma studio"
   },
   "dependencies": {
     "@fastify/cors": "^11.1.0",
@@ -29,4 +31,3 @@
     "typescript": "^5.9.2"
   }
 }
-

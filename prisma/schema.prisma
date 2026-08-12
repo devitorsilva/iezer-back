@@ -5,6 +5,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 enum ModuleKey {
@@ -45,4 +46,3 @@ model AuditLog {
   description String?
   createdAt   DateTime  @default(now())
 }
-
