@@ -22,6 +22,38 @@ enum ModuleKey {
   CONTEUDO
 }
 
+enum CategoryType {
+  PAGAR
+  RECEBER
+  AMBOS
+}
+
+enum BankAccountType {
+  CONTA_CORRENTE
+  CONTA_POUPANCA
+  CAIXA
+  INVESTIMENTO
+  OUTRA
+}
+
+enum PayableStatus {
+  PAGO
+  PENDENTE
+  ATRASADO
+}
+
+enum ReceivableStatus {
+  RECEBIDO
+  PENDENTE
+  ATRASADO
+}
+
+enum RecurrenceFrequency {
+  QUINZENAL
+  MENSAL
+  ANUAL
+}
+
 model User {
   id           String   @id @default(cuid())
   name         String
@@ -45,4 +77,126 @@ model AuditLog {
   action      String
   description String?
   createdAt   DateTime  @default(now())
+}
+
+model Supplier {
+  id          String   @id @default(cuid())
+  name        String
+  legalName   String?
+  cnpj        String   @unique
+  email       String?
+  phone       String?
+  pixKey      String?
+  notes       String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  payables    Payable[]
+}
+
+model Category {
+  id          String       @id @default(cuid())
+  name        String
+  type        CategoryType @default(AMBOS)
+  description String?
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  payables    Payable[]
+  receivables Receivable[]
+
+  @@unique([name, type])
+}
+
+model BankAccount {
+  id            String          @id @default(cuid())
+  bankName      String
+  accountName   String
+  accountType   BankAccountType @default(CONTA_CORRENTE)
+  agency        String?
+  accountNumber String?
+  pixKey        String?
+  openingBalance Decimal        @default(0) @db.Decimal(14, 2)
+  notes         String?
+  isActive      Boolean         @default(true)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@unique([bankName, accountName])
+}
+
+model CostCenter {
+  id          String   @id @default(cuid())
+  name        String
+  code        String?  @unique
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([name])
+}
+
+model Member {
+  id          String       @id @default(cuid())
+  name        String
+  document    String?      @unique
+  email       String?
+  phone       String?
+  cellName    String?
+  birthDate   DateTime?
+  notes       String?
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  receivables Receivable[]
+
+  @@index([name])
+  @@index([isActive])
+}
+
+model Payable {
+  id          String        @id @default(cuid())
+  description String
+  supplierId  String?
+  supplier    Supplier?     @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  categoryId  String?
+  category    Category?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  dueDate     DateTime
+  amount      Decimal       @db.Decimal(14, 2)
+  status      PayableStatus @default(PENDENTE)
+  isRecurring Boolean       @default(false)
+  recurrenceFrequency RecurrenceFrequency?
+  recurrenceCount Int?
+  recurrenceGroupId String?
+  notes       String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([supplierId])
+  @@index([categoryId])
+  @@index([dueDate])
+  @@index([status])
+  @@index([recurrenceGroupId])
+}
+
+model Receivable {
+  id          String           @id @default(cuid())
+  description String
+  source      String
+  memberId    String?
+  member      Member?          @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  categoryId  String?
+  category    Category?        @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  dueDate     DateTime
+  amount      Decimal          @db.Decimal(14, 2)
+  status      ReceivableStatus @default(PENDENTE)
+  notes       String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([memberId])
+  @@index([categoryId])
+  @@index([dueDate])
+  @@index([status])
 }
