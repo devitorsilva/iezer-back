@@ -8,7 +8,7 @@ declare global {
 export const prisma =
   globalThis.__iezerPrisma__ ??
   new PrismaClient({
-    log: process.env.NODE_ENV === "development" ? ["query", "error", "warn"] : ["error"],
+    log: ["error", "warn"],
   });
 
 if (process.env.NODE_ENV !== "production") {
