@@ -1,10 +1,14 @@
 import { Prisma, type Receivable } from "@prisma/client";
 import { prisma } from "../../../lib/prisma.js";
-import type { ReceivablePayload, ReceivableQuery } from "./schemas.js";
+import type { ReceivablePayload, ReceivableQuery, ReceivableSettlementPayload } from "./schemas.js";
 
-const include = { category: true, member: true } satisfies Prisma.ReceivableInclude;
+const include = { category: true, member: true, settlementBankAccount: true } satisfies Prisma.ReceivableInclude;
 
-function mapPayload(payload: ReceivablePayload) {
+export type ReceivableCreatePayload = ReceivablePayload & {
+  recurrenceGroupId?: string;
+};
+
+function mapPayload(payload: ReceivableCreatePayload) {
   return {
     ...payload,
     amount: new Prisma.Decimal(payload.amount),
@@ -42,6 +46,7 @@ function buildWhere(query: ReceivableQuery): Prisma.ReceivableWhereInput {
 export type ReceivableWithCategory = Receivable & {
   category: { id: string; name: string } | null;
   member: { id: string; name: string } | null;
+  settlementBankAccount: { id: string; accountName: string; bankName: string } | null;
 };
 
 export class ReceivableRepository {
@@ -57,19 +62,39 @@ export class ReceivableRepository {
     return prisma.receivable.findUnique({ where: { id }, include });
   }
 
-  create(payload: ReceivablePayload): Promise<ReceivableWithCategory> {
+  create(payload: ReceivableCreatePayload): Promise<ReceivableWithCategory> {
     return prisma.receivable.create({ data: mapPayload(payload), include });
+  }
+
+  createMany(payloads: ReceivableCreatePayload[]): Promise<Prisma.BatchPayload> {
+    return prisma.receivable.createMany({
+      data: payloads.map(mapPayload),
+    });
   }
 
   update(id: string, payload: ReceivablePayload): Promise<ReceivableWithCategory> {
     return prisma.receivable.update({ where: { id }, data: mapPayload(payload), include });
   }
 
-  settle(id: string): Promise<ReceivableWithCategory> {
-    return prisma.receivable.update({ where: { id }, data: { status: "RECEBIDO" }, include });
+  settle(id: string, payload: ReceivableSettlementPayload): Promise<ReceivableWithCategory> {
+    return prisma.receivable.update({
+      where: { id },
+      data: {
+        status: "RECEBIDO",
+        settledAmount: new Prisma.Decimal(payload.settledAmount ?? 0),
+        settledAt: payload.settledAt,
+        settlementMethod: payload.settlementMethod,
+        settlementBankAccountId: payload.settlementBankAccountId,
+      },
+      include,
+    });
   }
 
   delete(id: string): Promise<Receivable> {
     return prisma.receivable.delete({ where: { id } });
+  }
+
+  deleteByRecurrenceGroupId(recurrenceGroupId: string): Promise<Prisma.BatchPayload> {
+    return prisma.receivable.deleteMany({ where: { recurrenceGroupId } });
   }
 }

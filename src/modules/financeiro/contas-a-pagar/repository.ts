@@ -1,8 +1,8 @@
 import { Prisma, type Payable } from "@prisma/client";
 import { prisma } from "../../../lib/prisma.js";
-import type { PayablePayload, PayableQuery } from "./schemas.js";
+import type { PayablePayload, PayableQuery, PayableSettlementPayload } from "./schemas.js";
 
-const include = { category: true, supplier: true } satisfies Prisma.PayableInclude;
+const include = { category: true, supplier: true, settlementBankAccount: true } satisfies Prisma.PayableInclude;
 
 export type PayableCreatePayload = PayablePayload & {
   recurrenceGroupId?: string;
@@ -45,6 +45,7 @@ function buildWhere(query: PayableQuery): Prisma.PayableWhereInput {
 export type PayableWithCategory = Payable & {
   category: { id: string; name: string } | null;
   supplier: { id: string; name: string } | null;
+  settlementBankAccount: { id: string; accountName: string; bankName: string } | null;
 };
 
 export class PayableRepository {
@@ -74,8 +75,18 @@ export class PayableRepository {
     return prisma.payable.update({ where: { id }, data: mapPayload(payload), include });
   }
 
-  settle(id: string): Promise<PayableWithCategory> {
-    return prisma.payable.update({ where: { id }, data: { status: "PAGO" }, include });
+  settle(id: string, payload: PayableSettlementPayload): Promise<PayableWithCategory> {
+    return prisma.payable.update({
+      where: { id },
+      data: {
+        status: "PAGO",
+        settledAmount: new Prisma.Decimal(payload.settledAmount ?? 0),
+        settledAt: payload.settledAt,
+        settlementMethod: payload.settlementMethod,
+        settlementBankAccountId: payload.settlementBankAccountId,
+      },
+      include,
+    });
   }
 
   delete(id: string): Promise<Payable> {

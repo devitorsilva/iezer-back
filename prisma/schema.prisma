@@ -121,6 +121,8 @@ model BankAccount {
   isActive      Boolean         @default(true)
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
+  settledPayables    Payable[]    @relation("PayableSettlementBankAccount")
+  settledReceivables Receivable[] @relation("ReceivableSettlementBankAccount")
 
   @@unique([bankName, accountName])
 }
@@ -165,6 +167,11 @@ model Payable {
   dueDate     DateTime
   amount      Decimal       @db.Decimal(14, 2)
   status      PayableStatus @default(PENDENTE)
+  settledAmount Decimal?    @db.Decimal(14, 2)
+  settledAt   DateTime?
+  settlementMethod String?
+  settlementBankAccountId String?
+  settlementBankAccount BankAccount? @relation("PayableSettlementBankAccount", fields: [settlementBankAccountId], references: [id], onDelete: SetNull)
   isRecurring Boolean       @default(false)
   recurrenceFrequency RecurrenceFrequency?
   recurrenceCount Int?
@@ -178,6 +185,7 @@ model Payable {
   @@index([dueDate])
   @@index([status])
   @@index([recurrenceGroupId])
+  @@index([settlementBankAccountId])
 }
 
 model Receivable {
@@ -191,6 +199,15 @@ model Receivable {
   dueDate     DateTime
   amount      Decimal          @db.Decimal(14, 2)
   status      ReceivableStatus @default(PENDENTE)
+  settledAmount Decimal?       @db.Decimal(14, 2)
+  settledAt   DateTime?
+  settlementMethod String?
+  settlementBankAccountId String?
+  settlementBankAccount BankAccount? @relation("ReceivableSettlementBankAccount", fields: [settlementBankAccountId], references: [id], onDelete: SetNull)
+  isRecurring Boolean          @default(false)
+  recurrenceFrequency RecurrenceFrequency?
+  recurrenceCount Int?
+  recurrenceGroupId String?
   notes       String?
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
@@ -199,4 +216,6 @@ model Receivable {
   @@index([categoryId])
   @@index([dueDate])
   @@index([status])
+  @@index([recurrenceGroupId])
+  @@index([settlementBankAccountId])
 }

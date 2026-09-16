@@ -5,6 +5,7 @@ import {
   payableParamsSchema,
   payablePayloadSchema,
   payableQuerySchema,
+  payableSettlementSchema,
 } from "./schemas.js";
 
 export class PayableController {
@@ -37,9 +38,10 @@ export class PayableController {
 
   settle = async (request: FastifyRequest, reply: FastifyReply) => {
     const { id } = payableParamsSchema.parse(request.params);
+    const payload = payableSettlementSchema.parse(request.body ?? {});
 
     try {
-      return await this.service.settle(id);
+      return await this.service.settle(id, payload);
     } catch (error) {
       if (error instanceof PayableNotFoundError) {
         return reply.notFound("Conta a pagar não encontrada.");

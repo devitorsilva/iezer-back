@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { PayableCreatePayload, PayableWithCategory, PayableRepository } from "./repository.js";
-import type { PayablePayload, PayableQuery } from "./schemas.js";
+import type { PayablePayload, PayableQuery, PayableSettlementPayload } from "./schemas.js";
 
 export class PayableNotFoundError extends Error {
   constructor() {
@@ -19,6 +19,13 @@ function mapPayable(payable: PayableWithCategory) {
     dueDate: payable.dueDate.toISOString(),
     amount: payable.amount.toNumber(),
     status: payable.status,
+    settledAmount: payable.settledAmount?.toNumber() ?? null,
+    settledAt: payable.settledAt?.toISOString() ?? null,
+    settlementMethod: payable.settlementMethod,
+    settlementBankAccountId: payable.settlementBankAccountId,
+    settlementBankAccountName: payable.settlementBankAccount
+      ? `${payable.settlementBankAccount.bankName} • ${payable.settlementBankAccount.accountName}`
+      : null,
     isRecurring: payable.isRecurring,
     recurrenceFrequency: payable.recurrenceFrequency,
     recurrenceCount: payable.recurrenceCount,
@@ -101,9 +108,16 @@ export class PayableService {
     return mapPayable(await this.repository.update(id, payload));
   }
 
-  async settle(id: string) {
-    await this.assertExists(id);
-    return mapPayable(await this.repository.settle(id));
+  async settle(id: string, payload: PayableSettlementPayload = {}) {
+    const payable = await this.assertExists(id);
+    return mapPayable(
+      await this.repository.settle(id, {
+        settledAmount: payload.settledAmount ?? payable.amount.toNumber(),
+        settledAt: payload.settledAt ?? new Date(),
+        settlementMethod: payload.settlementMethod,
+        settlementBankAccountId: payload.settlementBankAccountId,
+      }),
+    );
   }
 
   async remove(id: string, scope: "single" | "series" = "single") {

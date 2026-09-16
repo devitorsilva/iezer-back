@@ -46,6 +46,15 @@ export const payableDeleteQuerySchema = z.object({
   scope: z.enum(["single", "series"]).default("single"),
 });
 
+export const payableSettlementSchema = z
+  .object({
+    settledAmount: z.coerce.number().positive("Valor da baixa deve ser maior que zero.").optional(),
+    settledAt: z.coerce.date().optional(),
+    settlementMethod: optionalTrimmedString,
+    settlementBankAccountId: optionalTrimmedString,
+  })
+  .default({});
+
 export const payableQuerySchema = z.object({
   q: optionalTrimmedString,
   status: z.enum(["PAGO", "PENDENTE", "ATRASADO"]).optional(),
@@ -56,4 +65,5 @@ export const payableQuerySchema = z.object({
 });
 
 export type PayablePayload = z.infer<typeof payablePayloadSchema>;
+export type PayableSettlementPayload = z.infer<typeof payableSettlementSchema>;
 export type PayableQuery = z.infer<typeof payableQuerySchema>;
