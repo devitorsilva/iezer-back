@@ -83,6 +83,10 @@ export function buildApp() {
   });
 
   app.register(healthRoutes, { prefix: "/health" });
+  app.get("/healthz", async () => ({
+    status: "ok",
+    service: "iezer-back",
+  }));
   app.register(registerModuleRoutes, { prefix: "/api" });
 
   return app;
