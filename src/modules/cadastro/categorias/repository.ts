@@ -1,10 +1,12 @@
 import type { Category } from "@prisma/client";
+import { DEFAULT_ORGANIZATION_ID } from "../../../lib/organization.js";
 import { prisma } from "../../../lib/prisma.js";
 import type { CategoryPayload } from "./schemas.js";
 
 export class CategoryRepository {
   findAll(): Promise<Category[]> {
     return prisma.category.findMany({
+      where: { organizationId: DEFAULT_ORGANIZATION_ID },
       orderBy: [{ isActive: "desc" }, { name: "asc" }],
     });
   }
@@ -17,7 +19,7 @@ export class CategoryRepository {
 
   create(payload: CategoryPayload): Promise<Category> {
     return prisma.category.create({
-      data: payload,
+      data: { ...payload, organizationId: DEFAULT_ORGANIZATION_ID },
     });
   }
 

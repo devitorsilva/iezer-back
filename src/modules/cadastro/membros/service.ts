@@ -1,4 +1,4 @@
-import { Prisma, type Member } from "@prisma/client";
+import { Prisma, type Person } from "@prisma/client";
 import type { MemberRepository } from "./repository.js";
 import type { MemberPayload } from "./schemas.js";
 
@@ -14,7 +14,7 @@ export class MemberDocumentConflictError extends Error {
   }
 }
 
-function mapMember(member: Member) {
+function mapMember(member: Person) {
   return {
     ...member,
     birthDate: member.birthDate?.toISOString() ?? null,

@@ -1,16 +1,19 @@
 import { Prisma, type Receivable } from "@prisma/client";
+import { DEFAULT_ORGANIZATION_ID } from "../../../lib/organization.js";
 import { prisma } from "../../../lib/prisma.js";
 import type { ReceivablePayload, ReceivableQuery, ReceivableSettlementPayload } from "./schemas.js";
 
-const include = { category: true, member: true, settlementBankAccount: true } satisfies Prisma.ReceivableInclude;
+const include = { category: true, person: true, settlementBankAccount: true } satisfies Prisma.ReceivableInclude;
 
 export type ReceivableCreatePayload = ReceivablePayload & {
   recurrenceGroupId?: string;
 };
 
-function mapPayload(payload: ReceivableCreatePayload) {
+// A API mantém `memberId` até o PersonPicker (Sprint 5); no banco a coluna é `personId`.
+function mapPayload({ memberId, ...payload }: ReceivableCreatePayload) {
   return {
     ...payload,
+    personId: memberId,
     amount: new Prisma.Decimal(payload.amount),
   };
 }
@@ -20,6 +23,7 @@ function buildWhere(query: ReceivableQuery): Prisma.ReceivableWhereInput {
   today.setHours(0, 0, 0, 0);
 
   return {
+    organizationId: DEFAULT_ORGANIZATION_ID,
     ...(query.overdue ? { status: { not: "RECEBIDO" }, dueDate: { lt: today } } : {}),
     ...(!query.overdue && query.status ? { status: query.status } : {}),
     ...(query.categoryId ? { categoryId: query.categoryId } : {}),
@@ -28,7 +32,7 @@ function buildWhere(query: ReceivableQuery): Prisma.ReceivableWhereInput {
           OR: [
             { description: { contains: query.q, mode: "insensitive" } },
             { source: { contains: query.q, mode: "insensitive" } },
-            { member: { name: { contains: query.q, mode: "insensitive" } } },
+            { person: { name: { contains: query.q, mode: "insensitive" } } },
           ],
         }
       : {}),
@@ -45,7 +49,7 @@ function buildWhere(query: ReceivableQuery): Prisma.ReceivableWhereInput {
 
 export type ReceivableWithCategory = Receivable & {
   category: { id: string; name: string } | null;
-  member: { id: string; name: string } | null;
+  person: { id: string; name: string } | null;
   settlementBankAccount: { id: string; accountName: string; bankName: string } | null;
 };
 
@@ -63,12 +67,12 @@ export class ReceivableRepository {
   }
 
   create(payload: ReceivableCreatePayload): Promise<ReceivableWithCategory> {
-    return prisma.receivable.create({ data: mapPayload(payload), include });
+    return prisma.receivable.create({ data: { ...mapPayload(payload), organizationId: DEFAULT_ORGANIZATION_ID }, include });
   }
 
   createMany(payloads: ReceivableCreatePayload[]): Promise<Prisma.BatchPayload> {
     return prisma.receivable.createMany({
-      data: payloads.map(mapPayload),
+      data: payloads.map((payload) => ({ ...mapPayload(payload), organizationId: DEFAULT_ORGANIZATION_ID })),
     });
   }
 

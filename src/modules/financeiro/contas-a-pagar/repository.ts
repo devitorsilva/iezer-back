@@ -1,4 +1,5 @@
 import { Prisma, type Payable } from "@prisma/client";
+import { DEFAULT_ORGANIZATION_ID } from "../../../lib/organization.js";
 import { prisma } from "../../../lib/prisma.js";
 import type { PayablePayload, PayableQuery, PayableSettlementPayload } from "./schemas.js";
 
@@ -20,6 +21,7 @@ function buildWhere(query: PayableQuery): Prisma.PayableWhereInput {
   today.setHours(0, 0, 0, 0);
 
   return {
+    organizationId: DEFAULT_ORGANIZATION_ID,
     ...(query.overdue ? { status: { not: "PAGO" }, dueDate: { lt: today } } : {}),
     ...(!query.overdue && query.status ? { status: query.status } : {}),
     ...(query.categoryId ? { categoryId: query.categoryId } : {}),
@@ -62,12 +64,12 @@ export class PayableRepository {
   }
 
   create(payload: PayableCreatePayload): Promise<PayableWithCategory> {
-    return prisma.payable.create({ data: mapPayload(payload), include });
+    return prisma.payable.create({ data: { ...mapPayload(payload), organizationId: DEFAULT_ORGANIZATION_ID }, include });
   }
 
   createMany(payloads: PayableCreatePayload[]): Promise<Prisma.BatchPayload> {
     return prisma.payable.createMany({
-      data: payloads.map(mapPayload),
+      data: payloads.map((payload) => ({ ...mapPayload(payload), organizationId: DEFAULT_ORGANIZATION_ID })),
     });
   }
 

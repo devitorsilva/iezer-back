@@ -1,4 +1,5 @@
 import { Prisma, type BankAccount } from "@prisma/client";
+import { DEFAULT_ORGANIZATION_ID } from "../../../lib/organization.js";
 import { prisma } from "../../../lib/prisma.js";
 import type { BankAccountPayload } from "./schemas.js";
 
@@ -12,6 +13,7 @@ function mapPayload(payload: BankAccountPayload) {
 export class BankAccountRepository {
   findAll(): Promise<BankAccount[]> {
     return prisma.bankAccount.findMany({
+      where: { organizationId: DEFAULT_ORGANIZATION_ID },
       orderBy: [{ isActive: "desc" }, { bankName: "asc" }, { accountName: "asc" }],
     });
   }
@@ -24,7 +26,7 @@ export class BankAccountRepository {
 
   create(payload: BankAccountPayload): Promise<BankAccount> {
     return prisma.bankAccount.create({
-      data: mapPayload(payload),
+      data: { ...mapPayload(payload), organizationId: DEFAULT_ORGANIZATION_ID },
     });
   }
 

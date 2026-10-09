@@ -3,8 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
 
@@ -20,6 +20,30 @@ enum ModuleKey {
   CONFIGURACOES
   PORTAL_TRANSPARENCIA
   CONTEUDO
+  ACESSO
+  PESSOAS
+}
+
+enum OrganizationType {
+  SEDE
+  CONGREGACAO
+}
+
+enum OrganizationContactRole {
+  RESPONSAVEL_CONTA
+  ENCARREGADO_LGPD
+}
+
+enum UserStatus {
+  ATIVO
+  DESATIVADO
+  SUSPENSO
+}
+
+enum AuditActorType {
+  USUARIO
+  SUPORTE
+  SISTEMA
 }
 
 enum CategoryType {
@@ -54,132 +78,265 @@ enum RecurrenceFrequency {
   ANUAL
 }
 
+// User, Session, Account, Verification e TwoFactor seguem o schema do Better Auth
+// (core + plugin twoFactor). A senha fica em Account.password (providerId "credential").
 model User {
-  id           String   @id @default(cuid())
-  name         String
-  email        String   @unique
-  passwordHash String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id               String      @id @default(cuid())
+  name             String
+  email            String      @unique
+  emailVerified    Boolean     @default(false)
+  image            String?
+  twoFactorEnabled Boolean     @default(false)
+  status           UserStatus  @default(ATIVO)
+  lastLoginAt      DateTime?
+  personId         String?     @unique
+  person           Person?     @relation(fields: [personId], references: [id], onDelete: Restrict)
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  sessions         Session[]
+  accounts         Account[]
+  twoFactors       TwoFactor[]
+  auditLogs        AuditLog[]
 }
 
-model Organization {
+model Session {
   id        String   @id @default(cuid())
-  name      String
-  slug      String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId             String
+  providerId            String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+}
+
+model TwoFactor {
+  id          String @id @default(cuid())
+  userId      String
+  user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  secret      String
+  backupCodes String
+
+  @@index([userId])
+}
+
+// Sede (parentId nulo) ou congregação (parentId aponta para a sede). Dois níveis só.
+model Organization {
+  id           String                @id @default(cuid())
+  name         String
+  slug         String                @unique
+  type         OrganizationType      @default(SEDE)
+  parentId     String?
+  parent       Organization?         @relation("OrganizationHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children     Organization[]        @relation("OrganizationHierarchy")
+  cnpj         String?
+  isActive     Boolean               @default(true)
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+  contacts     OrganizationContact[]
+  auditLogs    AuditLog[]
+  suppliers    Supplier[]
+  categories   Category[]
+  bankAccounts BankAccount[]
+  costCenters  CostCenter[]
+  people       Person[]
+  payables     Payable[]
+  receivables  Receivable[]
+
+  @@index([parentId])
+}
+
+// Contatos da conta: não precisam ser usuários (PRD Acesso, A11).
+model OrganizationContact {
+  id             String                  @id @default(cuid())
+  organizationId String
+  organization   Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  role           OrganizationContactRole
+  name           String
+  jobTitle       String?
+  email          String
+  phone          String?
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+
+  @@unique([organizationId, role])
 }
 
 model AuditLog {
-  id          String    @id @default(cuid())
-  module      ModuleKey
-  action      String
-  description String?
-  createdAt   DateTime  @default(now())
+  id             String         @id @default(cuid())
+  createdAt      DateTime       @default(now())
+  actorType      AuditActorType
+  actorUserId    String?
+  actorUser      User?          @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+  organizationId String?
+  organization   Organization?  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  module         ModuleKey
+  action         String
+  description    String?
+  targetType     String?
+  targetId       String?
+  before         Json?
+  after          Json?
+  ip             String?
+  userAgent      String?
+
+  @@index([organizationId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([targetType, targetId])
 }
 
 model Supplier {
-  id          String   @id @default(cuid())
-  name        String
-  legalName   String?
-  cnpj        String   @unique
-  email       String?
-  phone       String?
-  pixKey      String?
-  notes       String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  payables    Payable[]
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  name           String
+  legalName      String?
+  cnpj           String
+  email          String?
+  phone          String?
+  pixKey         String?
+  notes          String?
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  payables       Payable[]
+
+  @@unique([organizationId, cnpj])
 }
 
 model Category {
-  id          String       @id @default(cuid())
-  name        String
-  type        CategoryType @default(AMBOS)
-  description String?
-  isActive    Boolean      @default(true)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  payables    Payable[]
-  receivables Receivable[]
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  name           String
+  type           CategoryType @default(AMBOS)
+  description    String?
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  payables       Payable[]
+  receivables    Receivable[]
 
-  @@unique([name, type])
+  @@unique([organizationId, name, type])
 }
 
 model BankAccount {
-  id            String          @id @default(cuid())
-  bankName      String
-  accountName   String
-  accountType   BankAccountType @default(CONTA_CORRENTE)
-  agency        String?
-  accountNumber String?
-  pixKey        String?
-  openingBalance Decimal        @default(0) @db.Decimal(14, 2)
-  notes         String?
-  isActive      Boolean         @default(true)
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-  settledPayables    Payable[]    @relation("PayableSettlementBankAccount")
-  settledReceivables Receivable[] @relation("ReceivableSettlementBankAccount")
+  id                 String          @id @default(cuid())
+  organizationId     String
+  organization       Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  bankName           String
+  accountName        String
+  accountType        BankAccountType @default(CONTA_CORRENTE)
+  agency             String?
+  accountNumber      String?
+  pixKey             String?
+  openingBalance     Decimal         @default(0) @db.Decimal(14, 2)
+  notes              String?
+  isActive           Boolean         @default(true)
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  settledPayables    Payable[]       @relation("PayableSettlementBankAccount")
+  settledReceivables Receivable[]    @relation("ReceivableSettlementBankAccount")
 
-  @@unique([bankName, accountName])
+  @@unique([organizationId, bankName, accountName])
 }
 
 model CostCenter {
-  id          String   @id @default(cuid())
-  name        String
-  code        String?  @unique
-  description String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  name           String
+  code           String?
+  description    String?
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
-  @@unique([name])
+  @@unique([organizationId, name])
+  @@unique([organizationId, code])
 }
 
-model Member {
-  id          String       @id @default(cuid())
-  name        String
-  document    String?      @unique
-  email       String?
-  phone       String?
-  cellName    String?
-  birthDate   DateTime?
-  notes       String?
-  isActive    Boolean      @default(true)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  receivables Receivable[]
+model Person {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  name           String
+  document       String?
+  email          String?
+  phone          String?
+  cellName       String?
+  birthDate      DateTime?
+  notes          String?
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  receivables    Receivable[]
+  user           User?
 
+  @@unique([organizationId, document])
   @@index([name])
   @@index([isActive])
 }
 
 model Payable {
-  id          String        @id @default(cuid())
-  description String
-  supplierId  String?
-  supplier    Supplier?     @relation(fields: [supplierId], references: [id], onDelete: SetNull)
-  categoryId  String?
-  category    Category?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  dueDate     DateTime
-  amount      Decimal       @db.Decimal(14, 2)
-  status      PayableStatus @default(PENDENTE)
-  settledAmount Decimal?    @db.Decimal(14, 2)
-  settledAt   DateTime?
-  settlementMethod String?
+  id                      String               @id @default(cuid())
+  organizationId          String
+  organization            Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  description             String
+  supplierId              String?
+  supplier                Supplier?            @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  categoryId              String?
+  category                Category?            @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  dueDate                 DateTime
+  amount                  Decimal              @db.Decimal(14, 2)
+  status                  PayableStatus        @default(PENDENTE)
+  settledAmount           Decimal?             @db.Decimal(14, 2)
+  settledAt               DateTime?
+  settlementMethod        String?
   settlementBankAccountId String?
-  settlementBankAccount BankAccount? @relation("PayableSettlementBankAccount", fields: [settlementBankAccountId], references: [id], onDelete: SetNull)
-  isRecurring Boolean       @default(false)
-  recurrenceFrequency RecurrenceFrequency?
-  recurrenceCount Int?
-  recurrenceGroupId String?
-  notes       String?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  settlementBankAccount   BankAccount?         @relation("PayableSettlementBankAccount", fields: [settlementBankAccountId], references: [id], onDelete: SetNull)
+  isRecurring             Boolean              @default(false)
+  recurrenceFrequency     RecurrenceFrequency?
+  recurrenceCount         Int?
+  recurrenceGroupId       String?
+  notes                   String?
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
 
+  @@index([organizationId])
   @@index([supplierId])
   @@index([categoryId])
   @@index([dueDate])
@@ -189,30 +346,33 @@ model Payable {
 }
 
 model Receivable {
-  id          String           @id @default(cuid())
-  description String
-  source      String
-  memberId    String?
-  member      Member?          @relation(fields: [memberId], references: [id], onDelete: SetNull)
-  categoryId  String?
-  category    Category?        @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  dueDate     DateTime
-  amount      Decimal          @db.Decimal(14, 2)
-  status      ReceivableStatus @default(PENDENTE)
-  settledAmount Decimal?       @db.Decimal(14, 2)
-  settledAt   DateTime?
-  settlementMethod String?
+  id                      String               @id @default(cuid())
+  organizationId          String
+  organization            Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  description             String
+  source                  String
+  personId                String?
+  person                  Person?              @relation(fields: [personId], references: [id], onDelete: SetNull)
+  categoryId              String?
+  category                Category?            @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  dueDate                 DateTime
+  amount                  Decimal              @db.Decimal(14, 2)
+  status                  ReceivableStatus     @default(PENDENTE)
+  settledAmount           Decimal?             @db.Decimal(14, 2)
+  settledAt               DateTime?
+  settlementMethod        String?
   settlementBankAccountId String?
-  settlementBankAccount BankAccount? @relation("ReceivableSettlementBankAccount", fields: [settlementBankAccountId], references: [id], onDelete: SetNull)
-  isRecurring Boolean          @default(false)
-  recurrenceFrequency RecurrenceFrequency?
-  recurrenceCount Int?
-  recurrenceGroupId String?
-  notes       String?
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
+  settlementBankAccount   BankAccount?         @relation("ReceivableSettlementBankAccount", fields: [settlementBankAccountId], references: [id], onDelete: SetNull)
+  isRecurring             Boolean              @default(false)
+  recurrenceFrequency     RecurrenceFrequency?
+  recurrenceCount         Int?
+  recurrenceGroupId       String?
+  notes                   String?
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
 
-  @@index([memberId])
+  @@index([organizationId])
+  @@index([personId])
   @@index([categoryId])
   @@index([dueDate])
   @@index([status])
