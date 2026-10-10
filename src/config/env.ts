@@ -32,6 +32,11 @@ const envSchema = z.object({
   // URL pública da API vista pelo navegador. Em produção é o domínio do front,
   // que repassa /api/* para o Render (cookie de sessão fica first-party).
   BETTER_AUTH_URL: z.url().default("http://localhost:3333"),
+  // E-mail transacional (RT-AB12) pelo Resend. Sem chave, o e-mail vai para o log (dev).
+  RESEND_API_KEY: optionalNonEmptyString,
+  // Endereço do remetente; o nome exibido é "Nome da Igreja via iEzer".
+  // onboarding@resend.dev só entrega para o e-mail da conta do Resend (sem domínio próprio).
+  EMAIL_FROM: z.string().default("onboarding@resend.dev"),
 });
 
 export const env = envSchema.parse(process.env);

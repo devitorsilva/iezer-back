@@ -46,6 +46,12 @@ enum AccessProfileFactoryKey {
   SECRETARIO
 }
 
+enum InviteStatus {
+  PENDENTE
+  ACEITO
+  CANCELADO
+}
+
 enum AuditActorType {
   USUARIO
   SUPORTE
@@ -167,6 +173,9 @@ model User {
   twoFactorEnabled Boolean          @default(false)
   status           UserStatus       @default(ATIVO)
   lastLoginAt      DateTime?
+  // Versão dos termos de uso e de confidencialidade aceita (RF-CV06, RF-LP07).
+  termsVersion     String?
+  termsAcceptedAt  DateTime?
   personId         String?          @unique
   person           Person?          @relation(fields: [personId], references: [id], onDelete: Restrict)
   createdAt        DateTime         @default(now())
@@ -178,6 +187,8 @@ model User {
   assignments      UserAssignment[]
   followUps        FollowUp[]
   consentsRecorded PersonConsent[]
+  invitesSent      Invite[]         @relation("InviteInvitedBy")
+  invitesAccepted  Invite[]         @relation("InviteAcceptedUser")
 }
 
 model Session {
@@ -236,32 +247,36 @@ model TwoFactor {
 
 // Sede (parentId nulo) ou congregação (parentId aponta para a sede). Dois níveis só.
 model Organization {
-  id             String                @id @default(cuid())
-  name           String
-  slug           String                @unique
-  type           OrganizationType      @default(SEDE)
-  parentId       String?
-  parent         Organization?         @relation("OrganizationHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
-  children       Organization[]        @relation("OrganizationHierarchy")
-  cnpj           String?
-  isActive       Boolean               @default(true)
-  createdAt      DateTime              @default(now())
-  updatedAt      DateTime              @updatedAt
-  contacts       OrganizationContact[]
-  auditLogs      AuditLog[]
-  accessProfiles AccessProfile[]
-  assignments    UserAssignment[]
-  suppliers      Supplier[]
-  categories     Category[]
-  bankAccounts   BankAccount[]
-  costCenters    CostCenter[]
-  people         Person[]
-  families       Family[]
-  followUps      FollowUp[]
-  consents       PersonConsent[]
-  churchLists    ChurchListItem[]
-  payables       Payable[]
-  receivables    Receivable[]
+  id                      String                @id @default(cuid())
+  name                    String
+  slug                    String                @unique
+  type                    OrganizationType      @default(SEDE)
+  parentId                String?
+  parent                  Organization?         @relation("OrganizationHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children                Organization[]        @relation("OrganizationHierarchy")
+  cnpj                    String?
+  isActive                Boolean               @default(true)
+  // Checklist de primeiro acesso (RF-OB03): admin conferiu as congregações. Só na sede.
+  congregationsReviewedAt DateTime?
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
+  contacts                OrganizationContact[]
+  invites                 Invite[]
+  inviteAssignments       InviteAssignment[]
+  auditLogs               AuditLog[]
+  accessProfiles          AccessProfile[]
+  assignments             UserAssignment[]
+  suppliers               Supplier[]
+  categories              Category[]
+  bankAccounts            BankAccount[]
+  costCenters             CostCenter[]
+  people                  Person[]
+  families                Family[]
+  followUps               FollowUp[]
+  consents                PersonConsent[]
+  churchLists             ChurchListItem[]
+  payables                Payable[]
+  receivables             Receivable[]
 
   @@index([parentId])
 }
@@ -285,16 +300,17 @@ model OrganizationContact {
 // Perfil de acesso da igreja-cliente (organizationId = sede), usável em qualquer
 // organização dela. factoryKey marca os perfis de fábrica, que podem ser restaurados.
 model AccessProfile {
-  id             String                    @id @default(cuid())
-  organizationId String
-  organization   Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  name           String
-  description    String?
-  factoryKey     AccessProfileFactoryKey?
-  createdAt      DateTime                  @default(now())
-  updatedAt      DateTime                  @updatedAt
-  permissions    AccessProfilePermission[]
-  assignments    UserAssignment[]
+  id                String                    @id @default(cuid())
+  organizationId    String
+  organization      Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  name              String
+  description       String?
+  factoryKey        AccessProfileFactoryKey?
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+  permissions       AccessProfilePermission[]
+  assignments       UserAssignment[]
+  inviteAssignments InviteAssignment[]
 
   @@unique([organizationId, name])
   @@unique([organizationId, factoryKey])
@@ -323,6 +339,48 @@ model UserAssignment {
   @@unique([userId, profileId, organizationId])
   @@index([organizationId])
   @@index([profileId])
+}
+
+// Convite de acesso (RF-CV01 a RF-CV05, RT-AB08). Token só como hash; reenviar troca o hash.
+// "Expirado" é PENDENTE com expiresAt no passado.
+model Invite {
+  id              String             @id @default(cuid())
+  // Sede da igreja-cliente que convidou.
+  churchId        String
+  church          Organization       @relation(fields: [churchId], references: [id], onDelete: Restrict)
+  personId        String
+  person          Person             @relation(fields: [personId], references: [id], onDelete: Restrict)
+  email           String
+  tokenHash       String             @unique
+  status          InviteStatus       @default(PENDENTE)
+  expiresAt       DateTime
+  invitedByUserId String?
+  invitedBy       User?              @relation("InviteInvitedBy", fields: [invitedByUserId], references: [id], onDelete: SetNull)
+  acceptedUserId  String?
+  acceptedUser    User?              @relation("InviteAcceptedUser", fields: [acceptedUserId], references: [id], onDelete: SetNull)
+  acceptedAt      DateTime?
+  canceledAt      DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  assignments     InviteAssignment[]
+
+  @@index([churchId, status])
+  @@index([email, status])
+  @@index([personId])
+}
+
+model InviteAssignment {
+  id             String        @id @default(cuid())
+  inviteId       String
+  invite         Invite        @relation(fields: [inviteId], references: [id], onDelete: Cascade)
+  profileId      String
+  profile        AccessProfile @relation(fields: [profileId], references: [id], onDelete: Restrict)
+  organizationId String
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@unique([inviteId, profileId, organizationId])
+  @@index([profileId])
+  @@index([organizationId])
 }
 
 model AuditLog {
@@ -472,6 +530,7 @@ model Person {
   followUps             FollowUp[]
   consents              PersonConsent[]    @relation("ConsentSubject")
   consentsGiven         PersonConsent[]    @relation("ConsentGiver")
+  invites               Invite[]
 
   @@unique([organizationId, cpf])
   @@index([organizationId, name])

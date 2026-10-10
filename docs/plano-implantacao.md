@@ -102,7 +102,7 @@ Depois do MVP: itens F2 dos dois PRDs, priorizados com a igreja piloto.
 - **IDs:** RF-L01 a RF-L07, RF-C01 a RF-C04, D8, RT-F01, RT-F02, RT-F03, RT-F06, RT-F07, RT-F08, RT-F09.
 - **Pronto quando:** cadastrar, buscar e filtrar funcionam no desktop e no celular, e Contas a Receber lança com o PersonPicker.
 
-## Sprint 6 — Convite, recuperação e onboarding `[ ]`
+## Sprint 6 — Convite, recuperação e onboarding `[x]`
 
 **Objetivo:** a equipe da piloto entra com contas próprias, convidada pelo pastor.
 
@@ -220,3 +220,9 @@ Entradas curtas (até 8 linhas), mais recente por último.
   `PersonPicker` (Popover + `cmdk`, busca no servidor) em Contas a Receber e no responsável. `ui/command.tsx` e `ui/checkbox.tsx` escritos à mão (sem CLI). Perfil `/app/pessoas/:id` provisório (cabeçalho + campos faltando) até a Sprint 7.
   Decisões: em "todas" dá para cadastrar pessoa escolhendo a congregação (o back aceita `organizationId`); filtro de congregação só aparece em "todas"; consentimento só é pedido para menor.
   Pendências: testado só por typecheck/build e leitura no banco (sem usuário de teste após o incidente); ordenar aniversariantes em memória não escala para bases muito grandes; no Render, nada novo além do deploy.
+- 10/10/2026 · Sprint 6 · Migração `20261010_convites` (aditiva): `Invite`/`InviteAssignment` (token só como SHA-256, 72h, um pendente por e-mail via índice parcial), `User.termsVersion/termsAcceptedAt`, `Organization.congregationsReviewedAt`. Back: `/convites/:token` público (ver e aceitar; o aceite cria usuário, senha e atribuições numa transação e já faz o login), `/acesso/convites`, `/acesso/usuarios` (lista e troca de e-mail), `/acesso/onboarding`, `/organizacao`, `POST /me/termos`; script `igreja:criar`.
+  Better Auth: redefinição com token em hash, 1h, encerra sessões e manda e-mail de confirmação; hook `user.create.before` exige convite válido (trava para o Google na Sprint 12); regras de senha do iEzer (e-mail e nome da igreja) no aceite e na redefinição. Rotas de dados dão 403 `TERMS_REQUIRED` sem o aceite dos termos. E-mail pelo Resend (`src/lib/mailer.ts`); **sem domínio ainda**: sem `RESEND_API_KEY`, o e-mail vai para o log (com o link só em dev) e a tela mostra "Copiar link".
+  Front: `/convite/:token`, `/esqueci-senha`, `/redefinir-senha/:token` (`AuthCardLayout`), aceite dos termos no `ProtectedLayout`, Configurações › Organização e › Usuários (Dar acesso com PersonPicker e cadastro rápido, linhas organização × perfis e resumo; reenviar, copiar link, trocar e-mail, cancelar), checklist e aviso de admin único no Painel e em Usuários. Sai a seção placeholder "Acesso".
+  Decisões: "Copiar link" gera token novo (o banco não guarda o token); quem convida precisa de "Gerenciar usuários" na organização e das protegidas do perfil; `/acesso/perfis` liberado também para `acesso.usuarios.gerenciar`; Organização exige a permissão na sede; congregação só é desativada; texto dos termos provisório (`TERMS_VERSION = 2026-10-10`).
+  Testado por HTTP: convite → aceite → `/me` → `/pessoas`, link antigo e reuso dão 404, Tesoureiro barrado, senhas curta/com e-mail/vazada/com nome da igreja recusadas, redefinição com sessões encerradas. Usuário criado: `teste.secretaria@iezer.local` (Secretário). Os usuários de teste antigos vão aceitar os termos no próximo login.
+  Pendências: domínio + Resend (SPF/DKIM, RT-AB12); em produção sem chave, "Esqueci a senha" não entrega; limites em memória (uma instância); telas de Organização e Usuários testadas só por typecheck/build; no Render: `prisma migrate deploy` e, quando os dados reais chegarem, `igreja:criar` com `"sedeId": "csedepiloto00000000000000"` no JSON; RF-CV07 (2FA obrigatório) fica para a Sprint 12.

@@ -35,7 +35,7 @@ Erros do login (`{ code, message }` em inglês; o front traduz):
 | 403 | `USER_INACTIVE` | mensagem do back (RF-LG06) |
 | 429 | — | "Muitas tentativas seguidas..." (5 por minuto por IP; só em produção) |
 
-Cadastro público desligado (`disableSignUp`) até a Sprint 6 (convite). Usuários de teste: `npm run user:create -- <email> <nome> <senha> [ATIVO|DESATIVADO|SUSPENSO]`.
+Cadastro público desligado (`disableSignUp`): conta nova só pelo aceite do convite (Sprint 6). Usuários de teste: `npm run user:create -- <email> <nome> <senha> [ATIVO|DESATIVADO|SUSPENSO]`.
 
 ### `GET /api/me`
 
@@ -214,3 +214,149 @@ Script: `npm run pessoas:seed` (listas de fábrica nas sedes sem elas; idempoten
 ## Sprint 5 — Contas a Receber com pessoa
 
 `/financeiro/contas-a-receber` troca `memberId`/`memberName` por `personId`/`personName` (corpo e resposta) e passa a devolver `organizationId` (o `PersonPicker` busca na organização do lançamento quando a tela está em "todas"). No corpo, `personId: null` ou `""` desvincula a pessoa (antes não havia como desvincular na edição). Pessoa de outra organização continua dando 400 `INVALID_REFERENCE`.
+
+## Sprint 6 — Convite, recuperação de senha e Organização
+
+### Termos (RF-CV06, RF-LP07)
+
+- `GET /me` ganha `terms: { version, accepted }`. Sem o aceite da versão atual (`TERMS_VERSION` em `src/lib/terms.ts`), o front mostra o aceite antes do app.
+- `POST /me/termos` → `{ version, accepted: true }`. Fica no log como `aceitar_termos`, junto com a versão.
+- Todas as rotas de dados (escopo `resolveOrganization`) respondem 403 `TERMS_REQUIRED` enquanto não houver aceite. `/me` e `/acesso/permissoes` continuam respondendo.
+
+### Recuperação de senha (Better Auth, RF-RS01 a RF-RS03)
+
+| Método | Rota | Corpo | Resposta |
+| --- | --- | --- | --- |
+| POST | `/api/auth/request-password-reset` | `{ email }` | 200 `{ status: true }`, a mesma resposta exista ou não o e-mail |
+| POST | `/api/auth/reset-password` | `{ token, newPassword }` | 200 `{ status: true }` |
+
+- O e-mail leva ao link `${WEB_ORIGIN}/redefinir-senha/:token`, válido por 1h e de uso único. O token é guardado como hash (`verification.storeIdentifier: "hashed"`).
+- Redefinir encerra **todas** as sessões e envia um e-mail de confirmação. Fica no log como `redefinir_senha`.
+- Quem não tem senha (só Google) ganha a conta credential pelo mesmo fluxo.
+- Erros (`{ code, message }`):
+  - `WEAK_PASSWORD`: mensagem em português, recusa o e-mail ou o nome da igreja.
+  - `PASSWORD_COMPROMISED`, `PASSWORD_TOO_SHORT`, `INVALID_TOKEN`: o front traduz.
+  - 429: limite de 5 pedidos a cada 15 min por IP (em produção) e 3 e-mails por hora por endereço. Nesse caso o e-mail não sai, mas a resposta continua igual.
+
+### Convite — rotas públicas (RF-CV05, RF-CV06)
+
+**`GET /api/convites/:token`** (30 por minuto por IP):
+
+```json
+{
+  "churchName": "string",
+  "inviterName": "string|null",
+  "personName": "string",
+  "email": "string",
+  "expiresAt": "ISO",
+  "organizations": [{ "organizationName": "Sede", "profiles": ["Secretário"] }],
+  "permissions": [{ "module": "pessoas", "moduleName": "Pessoas", "permissions": ["Ver pessoas", "..."] }],
+  "termsVersion": "2026-10-10"
+}
+```
+
+Erros:
+- 404 `INVITE_INVALID`: link inexistente, já usado, cancelado ou substituído por um reenvio.
+- 410 `INVITE_EXPIRED`.
+
+**`POST /api/convites/:token/aceitar`** `{ password, acceptTerms: true }` (10 a cada 15 min por IP):
+- Numa transação: cria o User (ATIVO, `emailVerified`, `personId`) e a senha, cria as atribuições do convite, marca o convite como aceito (uso único) e registra os termos.
+- Depois faz o login e devolve o cookie: 200 `{ signedIn: true }`. Se o login falhar, devolve `signedIn: false` e o front manda para o login.
+- Senha: 12 a 128 caracteres, não aparece em vazamentos (HIBP), não contém o e-mail nem o nome da igreja.
+- Erros, todos 400 com `field: "password"` quando são da senha:
+  - `WEAK_PASSWORD`, `PASSWORD_COMPROMISED`.
+  - `VALIDATION_ERROR` (termos não aceitos).
+  - 404 `INVITE_INVALID`, 410 `INVITE_EXPIRED`.
+  - 409 `EMAIL_IN_USE`, 409 `PERSON_HAS_USER`.
+- Log: `aceitar_convite` e `aceitar_termos`. O autor é o próprio usuário novo.
+
+### `/acesso/convites` (RF-CV01 a RF-CV04, RF-RS04)
+
+O convite expira em 72h. Só um convite pendente por e-mail no iEzer inteiro (índice parcial). Convites pendentes já expirados do mesmo e-mail ou pessoa são cancelados quando sai um convite novo.
+
+| Método | Rota | Permissão | Corpo | Resposta |
+| --- | --- | --- | --- | --- |
+| GET | `/acesso/convites` | `acesso.usuarios.ver` ou `.gerenciar` | — | `{ items: Invite[] }`, pendentes e expirados com perfil nas organizações em que o usuário tem a permissão |
+| POST | `/acesso/convites` | `acesso.usuarios.gerenciar` | `{ personId, assignments: [{ organizationId, profileIds[] }] }` | 201 `InviteResult` |
+| POST | `/acesso/convites/:id/reenviar` | idem | `{ sendEmail?: boolean }` (padrão `true`) | `InviteResult`. Gera token novo e renova as 72h; o link anterior deixa de valer. `sendEmail: false` = "Copiar link" |
+| POST | `/acesso/convites/:id/cancelar` | idem | — | `Invite` (`CANCELADO`) |
+| PATCH | `/acesso/convites/:id/email` | idem | `{ email }` | `InviteResult`. Troca o e-mail do convite e da Pessoa e reenvia |
+
+- `Invite`: `{ id, personId, personName, email, status: "PENDENTE"|"EXPIRADO"|"ACEITO"|"CANCELADO", expiresAt, createdAt, invitedByName, assignments: [{ organizationId, organizationName, profileId, profileName }] }`.
+- `InviteResult`: `{ invite, link, emailSent }`. O link só aparece nessas respostas, porque o banco guarda apenas o hash do token.
+
+Erros:
+- 400 `INVALID_PERSON`.
+- 400 `PERSON_EMAIL_REQUIRED`: o convite usa o e-mail da Pessoa.
+- 409 `PERSON_HAS_USER`.
+- 409 `USER_EXISTS`: o e-mail já é de um usuário desta igreja.
+- 409 `EMAIL_IN_OTHER_CHURCH` (RF-CV08).
+- 409 `INVITE_PENDING`.
+- 400 `INVALID_PROFILE`, 400 `INVALID_ORGANIZATION` (organização desativada ou de outra igreja).
+- 403 `PERMISSION_DENIED`: sem "Gerenciar usuários" naquela organização.
+- 403 `PROTECTED_PERMISSION`: o perfil tem uma permissão protegida que quem convida não tem.
+- 409 `INVITE_NOT_PENDING`.
+- 404 quando o convite não existe.
+
+Log: `criar_convite`, `reenviar_convite`, `gerar_link_convite`, `cancelar_convite`, `trocar_email_convite` (e `editar_pessoa` quando o e-mail da Pessoa muda).
+
+### `/acesso/usuarios` (lista básica; o resto fica na Sprint 8)
+
+- `GET /acesso/usuarios` (`acesso.usuarios.ver` ou `.gerenciar`) → `{ items: [{ id, name, email, status, twoFactorEnabled, lastLoginAt, personId, personName, assignments[] }] }`. Só usuários e atribuições das organizações em que quem consulta tem a permissão.
+- `PATCH /acesso/usuarios/:id/email` (`acesso.usuarios.gerenciar`) `{ email }` (RF-RS04):
+  - Troca o e-mail do User e da Pessoa e encerra as sessões.
+  - Avisa o e-mail antigo e manda ao novo um link de definir senha (redefinição de 1h).
+  - Erros: 400 `OWN_ACCESS` (o próprio usuário), 400 `SAME_EMAIL`, mais os mesmos conflitos de e-mail do convite.
+  - Log: `trocar_email_usuario`.
+
+### `GET /acesso/onboarding` (`acesso.usuarios.ver` ou `.gerenciar`; RF-OB03, RF-OB04)
+
+```json
+{
+  "checklist": {
+    "congregationsReviewed": false,
+    "secondAdminInvited": false,
+    "secretaryInvited": false,
+    "treasurerInvited": false,
+    "peopleImported": false
+  },
+  "singleAdmin": true
+}
+```
+
+- `secondAdminInvited`: dois ou mais admins somando usuários ativos e convites válidos com `acesso.perfis.gerenciar`.
+- `secretaryInvited` e `treasurerInvited`: alguém (usuário ativo ou convite válido) com o perfil de fábrica correspondente.
+- `singleAdmin`: só um usuário **ativo** com `acesso.perfis.gerenciar`.
+- `peopleImported` fica `false` até a Sprint 11.
+
+### `GET /acesso/perfis` (alterado)
+
+Passa a aceitar `acesso.perfis.gerenciar` **ou** `acesso.usuarios.gerenciar`, porque o diálogo "Dar acesso" escolhe entre os perfis.
+
+### `/organizacao` (RF-OR01, RF-OR03)
+
+Todas as rotas exigem `organizacoes.gerenciar` **na sede** (`requireChurchPermission`): 403 `PERMISSION_DENIED`. Log no módulo `CONFIGURACOES`.
+
+| Método | Rota | Corpo | Resposta |
+| --- | --- | --- | --- |
+| GET | `/organizacao` | — | `{ id, name, cnpj, congregationsReviewedAt, congregations: [{ id, name, isActive, createdAt }], accountOwner, lgpdOfficer }` (contato: `{ name, jobTitle, email, phone }` ou `null`) |
+| PATCH | `/organizacao` | `{ name?, cnpj? }`. CNPJ com DV; `""` ou `null` limpa | igual ao GET |
+| POST | `/organizacao/congregacoes` | `{ name }` | 201 congregação |
+| PATCH | `/organizacao/congregacoes/:id` | `{ name?, isActive? }` | congregação. Sem DELETE: desativar tira do seletor e mantém os dados |
+| POST | `/organizacao/congregacoes-conferidas` | — | `{ congregationsReviewedAt }` |
+| PUT | `/organizacao/encarregado-lgpd` | `{ name, jobTitle?, email, phone? }` | contato |
+| DELETE | `/organizacao/encarregado-lgpd` | — | 204 |
+
+- O responsável pela conta é só leitura (muda pelo script e pelo iEzer).
+- Erros: 409 `ORGANIZATION_NAME_TAKEN` (`field: "name"`, nome repetido na igreja), 404 para congregação inexistente.
+
+### Script de onboarding (RF-OB01, RF-OB02)
+
+`npm run igreja:criar -- <arquivo.json>`: o formato está no cabeçalho de `scripts/create-church.ts`.
+- Cria a sede, ou completa uma existente com `sedeId`, além de congregações, contatos, perfis de fábrica, listas da igreja e a Pessoa do primeiro admin.
+- Convida o primeiro admin como Pastor na sede e imprime o link.
+- É idempotente.
+
+### E-mail
+
+`src/lib/mailer.ts` envia pelo Resend (`RESEND_API_KEY`, `EMAIL_FROM`) com remetente "Nome da Igreja via iEzer". Sem chave, o e-mail vai para o log: em dev com o link, em produção só destinatário e assunto.

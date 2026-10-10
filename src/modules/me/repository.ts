@@ -10,6 +10,7 @@ export class MeRepository {
         email: true,
         image: true,
         status: true,
+        termsVersion: true,
         person: { select: { id: true, name: true } },
       },
     });

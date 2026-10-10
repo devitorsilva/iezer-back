@@ -8,6 +8,7 @@ import {
 import type { AuditActor } from "./audit.js";
 import { AppError } from "./errors.js";
 import { prisma } from "./prisma.js";
+import { TERMS_VERSION } from "./terms.js";
 
 export interface AccessibleOrganization {
   id: string;
@@ -90,6 +91,15 @@ function headerValue(request: FastifyRequest, name: string) {
 // Hook das rotas de dados: resolve a organização ativa contra o que o usuário alcança,
 // nunca contra o que o front diz (RT-AB04).
 export async function resolveOrganization(request: FastifyRequest, reply: FastifyReply) {
+  // Termos aceitos antes de qualquer dado (RF-CV06); o aceite é POST /me/termos.
+  if (request.user.termsVersion !== TERMS_VERSION) {
+    return reply.code(403).send({
+      statusCode: 403,
+      code: "TERMS_REQUIRED",
+      message: "Aceite os termos de uso e de confidencialidade para continuar.",
+    });
+  }
+
   const organizations = await loadAccessibleOrganizations(request.user.id);
 
   if (organizations.length === 0) {
@@ -151,6 +161,25 @@ export function requirePermission(...keys: [PermissionKey, ...PermissionKey[]]) 
   };
 }
 
+// preHandler para ações da igreja inteira (ex.: Configurações › Organização): a permissão
+// precisa estar na sede, não basta tê-la numa congregação.
+export function requireChurchPermission(key: PermissionKey) {
+  return async (request: FastifyRequest, reply: FastifyReply) => {
+    const church = request.access.organizations.find((org) => org.id === getChurchId(request));
+    if (church?.permissions.has(key)) return;
+
+    const permission = getPermission(key);
+
+    return reply.code(403).send({
+      statusCode: 403,
+      code: "PERMISSION_DENIED",
+      message: `Você não tem a permissão "${permission.name}" na sede.`,
+      permission: permission.key,
+      permissionName: permission.name,
+    });
+  };
+}
+
 export interface RequestContext {
   // Sede da organização ativa: dona dos perfis e das listas da igreja.
   churchId: string;
@@ -186,4 +215,12 @@ export function requireWriteOrganization(context: RequestContext) {
   }
 
   return context.writeOrganizationId;
+}
+
+// Organizações alcançadas onde o usuário tem uma das permissões (telas que cruzam organizações,
+// como Usuários e convites).
+export function organizationIdsWith(request: FastifyRequest, ...keys: [PermissionKey, ...PermissionKey[]]) {
+  return request.access.organizations
+    .filter((org) => keys.some((key) => org.permissions.has(key)))
+    .map((org) => org.id);
 }

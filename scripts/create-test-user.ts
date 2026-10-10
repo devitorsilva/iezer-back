@@ -1,6 +1,7 @@
 // Cria (ou atualiza) um usuário de teste com login por e-mail e senha.
 // Uso: npm run user:create -- <email> <nome> <senha> [ATIVO|DESATIVADO|SUSPENSO]
-// Até a Sprint 6 (convites) é o único jeito de criar conta: o cadastro público está desligado.
+// Só para testes: contas reais entram por convite (Sprint 6). O usuário criado aqui aceita os termos
+// no primeiro acesso.
 import { UserStatus } from "@prisma/client";
 import { hashPassword } from "better-auth/crypto";
 import { isPasswordCompromised } from "better-auth/plugins";

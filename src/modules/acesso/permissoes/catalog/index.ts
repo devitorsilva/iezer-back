@@ -4,7 +4,9 @@ import { financeiroPermissions } from "./financeiro.js";
 import { pessoasPermissions } from "./pessoas.js";
 import type { PermissionDefinition } from "./types.js";
 
-export { PERMISSION_MODULE_NAMES } from "./types.js";
+import { PERMISSION_MODULE_NAMES } from "./types.js";
+
+export { PERMISSION_MODULE_NAMES };
 export type { PermissionDefinition, PermissionModule } from "./types.js";
 
 // Catálogo fixo em código, um arquivo por módulo (RT-AB05).
@@ -41,4 +43,23 @@ export function factoryPermissionKeys(factoryKey: AccessProfileFactoryKey): Perm
   return permissionCatalog
     .filter((permission) => (permission.factory as readonly AccessProfileFactoryKey[]).includes(factoryKey))
     .map((permission) => permission.key);
+}
+
+// Resumo das permissões somadas, por módulo e na ordem do catálogo (RF-CV02, RF-CV05).
+export function summarizePermissions(keys: Iterable<string>) {
+  const selected = new Set(keys);
+  const modules = new Map<PermissionDefinition["module"], string[]>();
+
+  for (const permission of permissionCatalog) {
+    if (!selected.has(permission.key)) continue;
+    const names = modules.get(permission.module) ?? [];
+    names.push(permission.name);
+    modules.set(permission.module, names);
+  }
+
+  return [...modules].map(([module, permissions]) => ({
+    module,
+    moduleName: PERMISSION_MODULE_NAMES[module],
+    permissions,
+  }));
 }

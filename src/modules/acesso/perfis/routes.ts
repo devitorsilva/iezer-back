@@ -11,7 +11,9 @@ const controller = new AccessProfileController(service);
 // Criar, editar, duplicar e excluir perfis ficam na Sprint 8.
 export const accessProfileRoutes: FastifyPluginAsync = async (app) => {
   const gerenciar = { preHandler: requirePermission("acesso.perfis.gerenciar") };
+  // Quem dá acesso (convite) escolhe entre os perfis da igreja.
+  const listar = { preHandler: requirePermission("acesso.perfis.gerenciar", "acesso.usuarios.gerenciar") };
 
-  app.get("/perfis", gerenciar, controller.list);
+  app.get("/perfis", listar, controller.list);
   app.post("/perfis/:id/restaurar", gerenciar, controller.restore);
 };
