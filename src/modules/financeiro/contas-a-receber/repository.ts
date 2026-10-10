@@ -8,11 +8,10 @@ export type ReceivableCreatePayload = ReceivablePayload & {
   recurrenceGroupId?: string;
 };
 
-// A API mantém `memberId` até o PersonPicker (Sprint 5); no banco a coluna é `personId`.
-function mapPayload({ memberId, ...payload }: ReceivableCreatePayload) {
+function mapPayload(payload: ReceivableCreatePayload) {
   return {
     ...payload,
-    personId: memberId,
+    personId: payload.personId ?? null,
     amount: new Prisma.Decimal(payload.amount),
   };
 }

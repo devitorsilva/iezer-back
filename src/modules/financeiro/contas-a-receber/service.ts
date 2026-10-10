@@ -18,8 +18,9 @@ function mapReceivable(receivable: ReceivableWithCategory, showPerson = true) {
     id: receivable.id,
     description: receivable.description,
     source: receivable.source,
-    memberId: receivable.personId,
-    memberName: showPerson ? (receivable.person?.name ?? null) : null,
+    organizationId: receivable.organizationId,
+    personId: receivable.personId,
+    personName: showPerson ? (receivable.person?.name ?? null) : null,
     categoryId: receivable.categoryId,
     categoryName: receivable.category?.name ?? null,
     dueDate: receivable.dueDate.toISOString(),
@@ -122,7 +123,7 @@ export class ReceivableService {
 
     return runAudited(context.actor, async (tx, audit) => {
       await assertReferencesInOrganization(tx, organizationId, {
-        personId: payload.memberId,
+        personId: payload.personId,
         categoryId: payload.categoryId,
       });
 
@@ -142,7 +143,7 @@ export class ReceivableService {
     return runAudited(context.actor, async (tx, audit) => {
       const existing = await this.assertExists(context, id, tx);
       await assertReferencesInOrganization(tx, existing.organizationId, {
-        personId: payload.memberId,
+        personId: payload.personId,
         categoryId: payload.categoryId,
       });
 

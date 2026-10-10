@@ -163,7 +163,9 @@ export const personListQuerySchema = z.object({
   familia: optionalBoolean,
   sexo: z.preprocess(blankToNull, z.enum(SEXES, "Sexo inválido.").nullable().optional()),
   semContato: optionalBoolean,
-  sort: z.enum(["nome", "-nome", "cadastro", "-cadastro", "nascimento", "-nascimento"]).default("nome"),
+  sort: z
+    .enum(["nome", "-nome", "cadastro", "-cadastro", "nascimento", "-nascimento", "aniversario"])
+    .default("nome"),
 });
 
 // RF-C02: checagem durante a digitação. `ignorar` = a própria pessoa, ao editar.

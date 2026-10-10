@@ -67,7 +67,7 @@ Permissões efetivas numa organização = perfis atribuídos ali + perfis na sed
 | 403 | `ORGANIZATION_FORBIDDEN` | Header aponta para organização fora do alcance (ou `todas` sem ser sede) |
 | 403 | `PERMISSION_DENIED` | Falta a permissão da rota. Corpo traz `permission` e `permissionName`; `message` = `Você não tem a permissão "<nome>".` |
 | 400 | `ORGANIZATION_REQUIRED` | Criar em "Todas as congregações" |
-| 400 | `INVALID_REFERENCE` | Lançamento aponta para categoria, fornecedor, membro ou conta de outra organização |
+| 400 | `INVALID_REFERENCE` | Lançamento aponta para categoria, fornecedor, pessoa ou conta de outra organização |
 
 Registro de outra organização (fora do escopo de leitura) responde 404, como inexistente.
 
@@ -78,10 +78,9 @@ Registro de outra organização (fora do escopo de leitura) responde 404, como i
 | `/financeiro/contas-a-pagar` | `financeiro.pagar.ver` | `financeiro.pagar.editar` (inclui `/baixar`) | `financeiro.excluir` |
 | `/financeiro/contas-a-receber` | `financeiro.receber.ver` | `financeiro.receber.editar` (inclui `/baixar`) | `financeiro.excluir` |
 | `/cadastro/{centro-de-custo,bancos-contas,categorias,fornecedores}` | qualquer de `financeiro.pagar.ver`, `financeiro.receber.ver`, `financeiro.cadastros.editar` | `financeiro.cadastros.editar` | `financeiro.cadastros.editar` |
-| `/cadastro/membros` | `pessoas.ver` | POST `pessoas.criar`; PUT `pessoas.editar` | `pessoas.apagar_registro` |
 | `/acesso/perfis*` | `acesso.perfis.gerenciar` | `acesso.perfis.gerenciar` | — |
 
-`/me`, `/acesso/permissoes`, `/modulos` e os `/overview` pedem só sessão. Em contas a receber, `memberName` volta `null` para quem não tem `pessoas.ver`.
+`/me`, `/acesso/permissoes`, `/modulos` e os `/overview` pedem só sessão. Em contas a receber, `personName` volta `null` para quem não tem `pessoas.ver`.
 
 ### `GET /api/me` (alterado)
 
@@ -163,7 +162,7 @@ Situação (`status`): `ATIVO`, `INATIVO`, `TRANSFERIDO`, `DESLIGADO`, `FALECIDO
 | PATCH | `/pessoas/:id` | `pessoas.editar` | `Person` |
 | DELETE | `/pessoas/:id` | `pessoas.apagar_registro` | 204 |
 
-**`GET /pessoas`** (RT-B01) — query: `page` (1), `pageSize` (20, máx. 100), `q` (nome e "como prefere ser chamado" sem acento, todas as palavras; email; CPF a partir de 3 dígitos; telefone a partir de 4), `vinculo` e `situacao` (lista separada por vírgula; **sem `situacao` vem só `ATIVO`**, `situacao=todas` traz tudo), `organizacao` (id dentro do escopo), `idadeMin`, `idadeMax`, `aniversarioMes` (1–12), `batizado`, `familia` (`true` = tem família), `sexo` (`MASCULINO`|`FEMININO`), `semContato=true`, `sort` (`nome`, `-nome`, `cadastro`, `-cadastro`, `nascimento`, `-nascimento`; padrão `nome`).
+**`GET /pessoas`** (RT-B01) — query: `page` (1), `pageSize` (20, máx. 100), `q` (nome e "como prefere ser chamado" sem acento, todas as palavras; email; CPF a partir de 3 dígitos; telefone a partir de 4), `vinculo` e `situacao` (lista separada por vírgula; **sem `situacao` vem só `ATIVO`**, `situacao=todas` traz tudo), `organizacao` (id dentro do escopo), `idadeMin`, `idadeMax`, `aniversarioMes` (1–12), `batizado`, `familia` (`true` = tem família), `sexo` (`MASCULINO`|`FEMININO`), `semContato=true`, `sort` (`nome`, `-nome`, `cadastro`, `-cadastro`, `nascimento`, `-nascimento`, `aniversario` — mês e dia de nascimento, sem data por último; padrão `nome`).
 
 `PersonListItem`: `{ id, name, preferredName, sex, birthDate, age, bond, status, organizationId, organizationName, mobilePhone, mobileIsWhatsapp, email, familyId, createdAt }`.
 
@@ -204,10 +203,14 @@ Situação (`status`): `ATIVO`, `INATIVO`, `TRANSFERIDO`, `DESLIGADO`, `FALECIDO
 
 Auditoria (módulo `PESSOAS`): `criar`, `editar`, `apagar_registro` (`Person`); `criar`, `adicionar_membro` (`Family`); `registrar_consentimento` (`PersonConsent`).
 
-### `/cadastro/membros` (compatibilidade até a Sprint 5)
+### `/cadastro/membros` (removida na Sprint 5)
 
-Mesmo formato e permissões de antes, agora sobre `Person`: `document` = CPF (se válido) ou "outro documento"; `phone` = celular normalizado (volta só dígitos); `birthDate` volta `"AAAA-MM-DD"`; `isActive` alterna `ATIVO`/`INATIVO`. Cadastro novo entra como `MEMBRO`; menor de 18 dá 400 `GUARDIAN_REQUIRED` (usar `/pessoas`). DELETE segue as regras de "Apagar registro" (409 `PERSON_HAS_LINKS`). Sai quando o front trocar para `/pessoas` e o `PersonPicker`.
+A camada de compatibilidade saiu: o front usa `/pessoas` e o `PersonPicker`. A rota responde 404.
 
 Recebíveis: `Receivable.personId` agora é `Restrict` (pessoa com lançamento não é apagada).
 
 Script: `npm run pessoas:seed` (listas de fábrica nas sedes sem elas; idempotente).
+
+## Sprint 5 — Contas a Receber com pessoa
+
+`/financeiro/contas-a-receber` troca `memberId`/`memberName` por `personId`/`personName` (corpo e resposta) e passa a devolver `organizationId` (o `PersonPicker` busca na organização do lançamento quando a tela está em "todas"). No corpo, `personId: null` ou `""` desvincula a pessoa (antes não havia como desvincular na edição). Pessoa de outra organização continua dando 400 `INVALID_REFERENCE`.

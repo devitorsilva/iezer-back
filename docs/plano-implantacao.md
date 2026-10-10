@@ -91,7 +91,7 @@ Depois do MVP: itens F2 dos dois PRDs, priorizados com a igreja piloto.
 - **IDs:** Pessoas › Decisões D1 a D15, Conceitos do domínio, Campos por seção (fase MVP), RF-C01, RF-C02, RF-C04, RF-L01 a RF-L04, RT-B01, RT-B03, RT-B05 a RT-B07, RT-B11, RT-B12, RF-S01, RF-S02.
 - **Pronto quando:** as rotas respondem conforme o contrato e o typecheck passa.
 
-## Sprint 5 — Pessoas: listagem, cadastro rápido e PersonPicker `[ ]`
+## Sprint 5 — Pessoas: listagem, cadastro rápido e PersonPicker `[x]`
 
 **Objetivo:** a secretaria encontra e cadastra pessoas; Contas a Receber usa o seletor novo.
 
@@ -213,3 +213,10 @@ Entradas curtas (até 8 linhas), mais recente por último.
   `/cadastro/membros` virou camada de compatibilidade sobre `Person` (formato antigo) até a Sprint 5. `AppError` com `details`; `ZodError` agora dá 400 `VALIDATION_ERROR` em todas as rotas (antes 500). `RequestContext.churchId`.
   Decisões: listas por igreja (sede); duplicados só nas organizações que o usuário lê; consentimento obrigatório só para menor; sem `situacao`, a lista traz só Ativo; responsável = Responsável/Cônjuge maior de idade na família.
   Pendências: front (Sprint 5) troca para `/pessoas` + PersonPicker e remove a compatibilidade; registrar a exceção do telefone no `CLAUDE.md` do front; ordenar aniversariantes por dia; filho de pais separados (duas famílias); trocar papel na família e "aplicar a toda a família" (Sprint 7); testado só pelo service e por `inject` sem sessão (sem usuário no banco).
+- 10/10/2026 · Sprint 5 · Back: `/cadastro/membros` removida; contas a receber com `personId`/`personName` + `organizationId` (`personId: null` desvincula, antes não dava); `GET /pessoas?sort=aniversario` (mês/dia, ordenado em memória). Sem migração. Sprint 4 commitada antes, na `sprint-04-pessoas`.
+  Front (`sprint-05-pessoas`): seção Pessoas ativa em `/app/pessoas` (item igual ao caminho da seção vira index em `buildSectionRoutes`), Membros sai de Cadastro e `/app/cadastro/membros` redireciona (D8); item Pessoas real na barra mobile. `features/members` removido.
+  Listagem: busca com debounce, atalhos de visão, filtros num Sheet (de baixo no mobile) com rascunho e "Aplicar", ordenação, paginação, filtros na URL, tabela/cards/skeleton, estado vazio com "Importar planilha" desabilitado, menu ⋯ (abrir, WhatsApp, ligar, apagar registro com 409 traduzido).
+  Cadastro rápido: campos do vínculo, checkbox "É WhatsApp", CPF (`cpfOnly`), duplicados com debounce (CPF bloqueia), responsável (PersonPicker ≥18 ou cadastrar agora) e consentimento para menor/Membro em formação, erros do back nos campos, "Salvar e completar perfil".
+  `PersonPicker` (Popover + `cmdk`, busca no servidor) em Contas a Receber e no responsável. `ui/command.tsx` e `ui/checkbox.tsx` escritos à mão (sem CLI). Perfil `/app/pessoas/:id` provisório (cabeçalho + campos faltando) até a Sprint 7.
+  Decisões: em "todas" dá para cadastrar pessoa escolhendo a congregação (o back aceita `organizationId`); filtro de congregação só aparece em "todas"; consentimento só é pedido para menor.
+  Pendências: testado só por typecheck/build e leitura no banco (sem usuário de teste após o incidente); ordenar aniversariantes em memória não escala para bases muito grandes; no Render, nada novo além do deploy.

@@ -53,7 +53,7 @@ const duplicateSelect = {
 
 export type DuplicateCandidate = Prisma.PersonGetPayload<{ select: typeof duplicateSelect }>;
 
-const SORTS: Record<PersonListQuery["sort"], Prisma.PersonOrderByWithRelationInput[]> = {
+const SORTS: Record<Exclude<PersonListQuery["sort"], "aniversario">, Prisma.PersonOrderByWithRelationInput[]> = {
   nome: [{ name: "asc" }],
   "-nome": [{ name: "desc" }],
   cadastro: [{ createdAt: "asc" }],
@@ -65,6 +65,8 @@ const SORTS: Record<PersonListQuery["sort"], Prisma.PersonOrderByWithRelationInp
 export class PersonRepository {
   async list(organizationIds: string[], query: PersonListQuery) {
     const where = await this.buildWhere(organizationIds, query);
+    if (query.sort === "aniversario") return this.listByBirthday(where, query);
+
     const [items, total] = await Promise.all([
       prisma.person.findMany({
         where,
@@ -76,6 +78,19 @@ export class PersonRepository {
       prisma.person.count({ where }),
     ]);
     return { items, total };
+  }
+
+  // Aniversariantes: por mês e dia de nascimento (sem data por último), depois nome. Ordena em memória:
+  // a lista filtrada de uma igreja cabe nela, e o Prisma não ordena por parte da data.
+  private async listByBirthday(where: Prisma.PersonWhereInput, query: PersonListQuery) {
+    const rows = await prisma.person.findMany({ where, select: { id: true, name: true, birthDate: true } });
+    const key = (date: Date | null) => (date ? date.getUTCMonth() * 100 + date.getUTCDate() : Number.MAX_SAFE_INTEGER);
+    rows.sort((a, b) => key(a.birthDate) - key(b.birthDate) || a.name.localeCompare(b.name, "pt-BR"));
+
+    const pageIds = rows.slice((query.page - 1) * query.pageSize, query.page * query.pageSize).map((row) => row.id);
+    const items = await prisma.person.findMany({ where: { id: { in: pageIds } }, include: listInclude });
+    const byId = new Map(items.map((item) => [item.id, item]));
+    return { items: pageIds.flatMap((id) => byId.get(id) ?? []), total: rows.length };
   }
 
   findById(id: string, organizationIds: string[], db: Db = prisma): Promise<PersonDetail | null> {

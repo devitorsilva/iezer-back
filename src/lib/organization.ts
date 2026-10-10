@@ -22,7 +22,7 @@ export async function assertReferencesInOrganization(
   const checks: Array<[string | null | undefined, () => Promise<number>, string]> = [
     [references.categoryId, () => db.category.count({ where: { id: references.categoryId!, organizationId } }), "Categoria"],
     [references.supplierId, () => db.supplier.count({ where: { id: references.supplierId!, organizationId } }), "Fornecedor"],
-    [references.personId, () => db.person.count({ where: { id: references.personId!, organizationId } }), "Membro"],
+    [references.personId, () => db.person.count({ where: { id: references.personId!, organizationId } }), "Pessoa"],
     [
       references.bankAccountId,
       () => db.bankAccount.count({ where: { id: references.bankAccountId!, organizationId } }),

@@ -9,7 +9,8 @@ export const receivablePayloadSchema = z
   .object({
     description: z.string().trim().min(2, "Descricao e obrigatoria."),
     source: z.string().trim().min(2, "Origem e obrigatoria."),
-    memberId: optionalTrimmedString,
+    // null ou "" desvincula a pessoa; ausente também (o formulário manda sempre o estado atual).
+    personId: z.preprocess((value) => (value === "" ? null : value), z.string().cuid().nullable().optional()),
     categoryId: optionalTrimmedString,
     dueDate: z.coerce.date(),
     amount: z.coerce.number().positive("Valor deve ser maior que zero."),
