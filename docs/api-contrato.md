@@ -121,3 +121,93 @@ Volta as permissões de um perfil de fábrica ao padrão (nome mantido). Respond
 Toda criação, edição, baixa e exclusão nas rotas acima grava `AuditLog` na mesma transação: autor, organização do registro, módulo (`FINANCEIRO`, `CADASTRO`, `PESSOAS`, `ACESSO`), ação (`criar`, `editar`, `baixar`, `excluir`, `restaurar_perfil`), alvo (`Payable`, `Receivable`, `Category`, `Supplier`, `CostCenter`, `BankAccount`, `Person`, `AccessProfile`), `before`/`after` (DTO da API), IP e user agent. Séries recorrentes: um registro por parcela.
 
 Scripts: `npm run acesso:seed` (perfis de fábrica nas sedes sem eles) e `npm run user:assign -- <email> <PASTOR|TESOUREIRO|SECRETARIO> [slug]` (sede piloto por padrão).
+
+## Pessoas (Sprint 4)
+
+Em `/api/pessoas`, com organização ativa (headers da Sprint 3). Datas civis sempre `"AAAA-MM-DD"`; telefones gravados só com dígitos e DDI (`5511987654321`) — o front mascara na exibição e pode mandar mascarado; CPF só com dígitos. Em qualquer campo opcional, `""` ou `null` limpa; ausente não mexe.
+
+### Erros novos
+
+| Status | `code` | Corpo extra | Quando |
+| --- | --- | --- | --- |
+| 400 | `VALIDATION_ERROR` | `issues: [{ path, message }]` | Corpo ou query inválidos (vale para **todas** as rotas; antes respondia 500). `message` = primeira mensagem |
+| 400 | `BOND_REQUIREMENTS` | `missingFields`, `target?: "guardian"` | Falta o mínimo do vínculo (ver tabela) |
+| 400 | `GUARDIAN_REQUIRED` | `missingFields` (`guardian`, `consent`) | Menor de 18 anos (ou Membro em formação) sem responsável ou sem consentimento |
+| 400 | `INVALID_GUARDIAN` | — | Responsável menor de idade, ou com papel Filho/Outro na família dele |
+| 400 | `INVALID_REFERENCE` | — | Forma de admissão fora das listas da igreja, responsável ou congregação fora do alcance |
+| 409 | `CPF_CONFLICT` | `personId` | CPF já cadastrado nas organizações que o usuário lê |
+| 409 | `PERSON_HAS_LINKS` | `links: ("receivables"\|"family"\|"user"\|"followUps"\|"consentsGiven")[]` | Apagar pessoa com vínculos |
+
+### Mínimo por vínculo (`missingFields`)
+
+| Vínculo (`bond`) | Exige |
+| --- | --- |
+| `VISITANTE` | `contact` (celular, telefone ou email; dispensado para menor) |
+| `NOVO_CONVERTIDO` | `fullName` (2+ palavras), `conversionDate` |
+| `CONGREGADO` | `fullName` |
+| `MEMBRO` | `fullName`, `admissionMethodId`, `admissionDate` |
+| `MEMBRO_EM_FORMACAO` | `fullName`, `birthDate`, `guardian` |
+| Menor de 18 (qualquer) | `guardian` (Responsável ou Cônjuge maior de idade na família) e `consent` |
+
+Situação (`status`): `ATIVO`, `INATIVO`, `TRANSFERIDO`, `DESLIGADO`, `FALECIDO` — muda só por ações (Sprint 9).
+
+### Rotas
+
+| Método | Rota | Permissão | Resposta |
+| --- | --- | --- | --- |
+| GET | `/pessoas` | `pessoas.ver` | `{ items: PersonListItem[], total, page, pageSize }` |
+| GET | `/pessoas/duplicados` | `pessoas.ver` | `{ items: Duplicate[] }` |
+| GET | `/pessoas/listas` | `pessoas.ver` | `{ items: [{ id, type, name, sortOrder }] }` |
+| GET | `/pessoas/:id` | `pessoas.ver` | `Person` |
+| POST | `/pessoas` | `pessoas.criar` | 201 `Person` |
+| PATCH | `/pessoas/:id` | `pessoas.editar` | `Person` |
+| DELETE | `/pessoas/:id` | `pessoas.apagar_registro` | 204 |
+
+**`GET /pessoas`** (RT-B01) — query: `page` (1), `pageSize` (20, máx. 100), `q` (nome e "como prefere ser chamado" sem acento, todas as palavras; email; CPF a partir de 3 dígitos; telefone a partir de 4), `vinculo` e `situacao` (lista separada por vírgula; **sem `situacao` vem só `ATIVO`**, `situacao=todas` traz tudo), `organizacao` (id dentro do escopo), `idadeMin`, `idadeMax`, `aniversarioMes` (1–12), `batizado`, `familia` (`true` = tem família), `sexo` (`MASCULINO`|`FEMININO`), `semContato=true`, `sort` (`nome`, `-nome`, `cadastro`, `-cadastro`, `nascimento`, `-nascimento`; padrão `nome`).
+
+`PersonListItem`: `{ id, name, preferredName, sex, birthDate, age, bond, status, organizationId, organizationName, mobilePhone, mobileIsWhatsapp, email, familyId, createdAt }`.
+
+**`GET /pessoas/duplicados`** (RF-C02) — query: `cpf`, `email`, `celular`, `nome` + `nascimento`, `ignorar` (id da própria pessoa, ao editar). Busca só nas organizações que o usuário lê. `Duplicate`: `{ id, name, preferredName, bond, status, birthDate, organizationId, organizationName, reasons: ("CPF"|"EMAIL"|"CELULAR"|"NOME_NASCIMENTO")[], blocking }` — `blocking` quando o CPF bate (o front oferece abrir o perfil).
+
+**`GET /pessoas/listas`** — listas da igreja (gravadas na sede, valem nas congregações), ativas, por `type`: `FORMA_ADMISSAO`, `MOTIVO_INATIVACAO`, `MOTIVO_DESLIGAMENTO`, `CARGO_ECLESIASTICO`, `COMO_CONHECEU`.
+
+**`Person`** (detalhe; contribuições ficam fora, RT-B04):
+
+```json
+{
+  "id": "cuid", "organizationId": "cuid", "organizationName": "Sede",
+  "name": "Maria Souza", "preferredName": "Mari", "sex": "FEMININO", "birthDate": "1985-03-15", "age": 41,
+  "maritalStatus": "CASADO", "cpf": "52998224725", "otherDocumentType": "RG", "otherDocumentNumber": "12.345",
+  "mobilePhone": "5511987654321", "mobileIsWhatsapp": true, "secondaryPhone": null, "email": "maria@exemplo.com",
+  "postalCode": "01001000", "street": "...", "number": "...", "complement": null, "district": "...", "city": "...", "state": "SP",
+  "bond": "MEMBRO", "status": "ATIVO",
+  "firstVisitDate": null, "conversionDate": null, "presentationDate": null,
+  "isBaptized": true, "baptismDate": "2000-01-09", "baptismChurch": null, "infantBaptism": false, "professionOfFaithDate": null,
+  "admissionMethodId": "cuid", "admissionMethodName": "Transferência por carta", "admissionDate": "2020-05-10", "originChurch": null,
+  "cellName": null, "notes": null,
+  "family": { "id": "cuid", "name": "Família Souza", "role": "RESPONSAVEL", "members": [{ "personId": "cuid", "name": "...", "preferredName": null, "role": "FILHO", "age": 8 }] },
+  "consent": { "id": "cuid", "method": "PAPEL", "textVersion": "cadastro-2026-10", "givenAt": "ISO", "givenByPersonId": "cuid", "givenByName": "..." },
+  "missingFields": [], "incomplete": false,
+  "createdAt": "ISO", "updatedAt": "ISO"
+}
+```
+
+`cellName` é legado, somente leitura. `incomplete`/`missingFields` sinalizam "cadastro incompleto" (pessoas migradas entram como Membro sem forma/data de admissão).
+
+**`POST /pessoas`** (cadastro rápido, RF-C01/RF-C04) — corpo: `name`, `bond` (obrigatórios), `organizationId` (opcional; sede ou congregação no escopo; sem ele, a organização ativa — em "todas" sem ele dá 400 `ORGANIZATION_REQUIRED`), qualquer campo cadastral do `Person` (exceto `status`, `cellName`), mais:
+- `guardian`: `{ personId }` ou `{ name, bond?: "VISITANTE", mobilePhone?, mobileIsWhatsapp?, email? }` (cadastrado na hora; também cumpre o mínimo do vínculo). A criança entra como Filho na família do responsável (criada como "Família <sobrenome>" se ele não tiver) e herda o endereço dele se vier sem endereço.
+- `consent`: `{ method: "PAPEL"|"PLANILHA"|"DIGITAL", givenAt?: "AAAA-MM-DD" }` (padrão hoje). Obrigatório para menor (dado pelo responsável); opcional para adulto (dado pelo titular).
+
+**`PATCH /pessoas/:id`** — campos cadastrais parciais (`name` e os mesmos do POST, sem `bond`, `organizationId`, `guardian`, `consent`). Não deixa tirar um dado exigido pelo vínculo nem tornar menor quem não tem responsável (400 com só os campos que a edição faria faltar); cadastro já incompleto continua editável.
+
+**`DELETE /pessoas/:id`** — "Apagar registro" (RF-V05): só sem vínculos; o consentimento da própria pessoa sai junto.
+
+Auditoria (módulo `PESSOAS`): `criar`, `editar`, `apagar_registro` (`Person`); `criar`, `adicionar_membro` (`Family`); `registrar_consentimento` (`PersonConsent`).
+
+### `/cadastro/membros` (compatibilidade até a Sprint 5)
+
+Mesmo formato e permissões de antes, agora sobre `Person`: `document` = CPF (se válido) ou "outro documento"; `phone` = celular normalizado (volta só dígitos); `birthDate` volta `"AAAA-MM-DD"`; `isActive` alterna `ATIVO`/`INATIVO`. Cadastro novo entra como `MEMBRO`; menor de 18 dá 400 `GUARDIAN_REQUIRED` (usar `/pessoas`). DELETE segue as regras de "Apagar registro" (409 `PERSON_HAS_LINKS`). Sai quando o front trocar para `/pessoas` e o `PersonPicker`.
+
+Recebíveis: `Receivable.personId` agora é `Restrict` (pessoa com lançamento não é apagada).
+
+Script: `npm run pessoas:seed` (listas de fábrica nas sedes sem elas; idempotente).

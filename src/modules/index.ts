@@ -6,6 +6,7 @@ import { authRoutes } from "./auth/routes.js";
 import { cadastroRoutes } from "./cadastro/routes.js";
 import { financeiroRoutes } from "./financeiro/routes.js";
 import { meRoutes } from "./me/routes.js";
+import { pessoasRoutes } from "./pessoas/routes.js";
 import { relatoriosRoutes } from "./relatorios/routes.js";
 import { placeholdersRoutes } from "./placeholders/routes.js";
 
@@ -29,6 +30,7 @@ export const registerModuleRoutes: FastifyPluginAsync = async (app) => {
       organizationApp.addHook("onRequest", resolveOrganization);
 
       await organizationApp.register(acessoRoutes, { prefix: "/acesso" });
+      await organizationApp.register(pessoasRoutes, { prefix: "/pessoas" });
       await organizationApp.register(cadastroRoutes, { prefix: "/cadastro" });
       await organizationApp.register(financeiroRoutes, { prefix: "/financeiro" });
       await organizationApp.register(relatoriosRoutes, { prefix: "/relatorios" });

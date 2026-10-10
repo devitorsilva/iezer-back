@@ -1,9 +1,10 @@
-// Erro de negócio com status e código: o Fastify responde { statusCode, code, error, message }.
+// Erro de negócio com status e código: responde { statusCode, code, message, ...details }.
 export class AppError extends Error {
   constructor(
     readonly statusCode: number,
     readonly code: string,
     message: string,
+    readonly details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = "AppError";

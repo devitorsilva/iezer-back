@@ -1,6 +1,5 @@
-import type { Prisma, Person } from "@prisma/client";
+import type { Person, Prisma } from "@prisma/client";
 import { prisma } from "../../../lib/prisma.js";
-import type { MemberPayload } from "./schemas.js";
 
 type Db = Prisma.TransactionClient;
 
@@ -8,7 +7,7 @@ export class MemberRepository {
   findAll(organizationIds: string[]): Promise<Person[]> {
     return prisma.person.findMany({
       where: { organizationId: { in: organizationIds } },
-      orderBy: [{ isActive: "desc" }, { name: "asc" }],
+      orderBy: [{ status: "asc" }, { name: "asc" }],
     });
   }
 
@@ -18,22 +17,18 @@ export class MemberRepository {
     });
   }
 
-  create(payload: MemberPayload, organizationId: string, db: Db = prisma): Promise<Person> {
-    return db.person.create({
-      data: { ...payload, organizationId },
+  findByCpf(cpf: string, organizationIds: string[], excludeId: string | null, db: Db) {
+    return db.person.findFirst({
+      where: { cpf, organizationId: { in: organizationIds }, ...(excludeId ? { id: { not: excludeId } } : {}) },
+      select: { id: true },
     });
   }
 
-  update(id: string, payload: MemberPayload, db: Db = prisma): Promise<Person> {
-    return db.person.update({
-      where: { id },
-      data: payload,
-    });
+  create(data: Prisma.PersonUncheckedCreateInput, db: Db): Promise<Person> {
+    return db.person.create({ data });
   }
 
-  delete(id: string, db: Db = prisma): Promise<Person> {
-    return db.person.delete({
-      where: { id },
-    });
+  update(id: string, data: Prisma.PersonUncheckedUpdateInput, db: Db): Promise<Person> {
+    return db.person.update({ where: { id }, data });
   }
 }

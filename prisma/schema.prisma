@@ -84,6 +84,78 @@ enum RecurrenceFrequency {
   ANUAL
 }
 
+// Pessoas (PRD Pessoas › Conceitos do domínio). Vínculo e situação são independentes (D2).
+enum PersonBond {
+  VISITANTE
+  NOVO_CONVERTIDO
+  CONGREGADO
+  MEMBRO
+  MEMBRO_EM_FORMACAO
+}
+
+enum PersonStatus {
+  ATIVO
+  INATIVO
+  TRANSFERIDO
+  DESLIGADO
+  FALECIDO
+}
+
+enum Sex {
+  MASCULINO
+  FEMININO
+}
+
+enum MaritalStatus {
+  SOLTEIRO
+  CASADO
+  UNIAO_ESTAVEL
+  SEPARADO
+  DIVORCIADO
+  VIUVO
+}
+
+enum OtherDocumentType {
+  RG
+  PASSAPORTE
+  CERTIDAO_NASCIMENTO
+  OUTRO
+}
+
+enum FamilyRole {
+  RESPONSAVEL
+  CONJUGE
+  FILHO
+  OUTRO
+}
+
+enum FollowUpType {
+  LIGACAO
+  VISITA
+  MENSAGEM
+  CONVERSA
+}
+
+enum ChurchListType {
+  FORMA_ADMISSAO
+  MOTIVO_INATIVACAO
+  MOTIVO_DESLIGAMENTO
+  CARGO_ECLESIASTICO
+  COMO_CONHECEU
+}
+
+enum ConsentPurpose {
+  CADASTRO
+  MENSAGERIA
+  IMAGEM
+}
+
+enum ConsentMethod {
+  PAPEL
+  PLANILHA
+  DIGITAL
+}
+
 // User, Session, Account, Verification e TwoFactor seguem o schema do Better Auth
 // (core + plugin twoFactor). A senha fica em Account.password (providerId "credential").
 model User {
@@ -104,6 +176,8 @@ model User {
   twoFactors       TwoFactor[]
   auditLogs        AuditLog[]
   assignments      UserAssignment[]
+  followUps        FollowUp[]
+  consentsRecorded PersonConsent[]
 }
 
 model Session {
@@ -182,6 +256,10 @@ model Organization {
   bankAccounts   BankAccount[]
   costCenters    CostCenter[]
   people         Person[]
+  families       Family[]
+  followUps      FollowUp[]
+  consents       PersonConsent[]
+  churchLists    ChurchListItem[]
   payables       Payable[]
   receivables    Receivable[]
 
@@ -341,26 +419,146 @@ model CostCenter {
   @@unique([organizationId, code])
 }
 
+// Pessoa (D1): o cadastro único de gente da igreja. Datas civis em @db.Date (RT-B05);
+// telefones só com dígitos e DDI (RT-B06); CPF só com dígitos, único por organização (RT-B07).
 model Person {
+  id                    String             @id @default(cuid())
+  organizationId        String
+  organization          Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  // Nome completo civil; visitante pode ter só o primeiro nome.
+  name                  String
+  preferredName         String?
+  // name + preferredName em minúsculas e sem acento, para a busca.
+  searchName            String
+  sex                   Sex?
+  birthDate             DateTime?          @db.Date
+  maritalStatus         MaritalStatus?
+  cpf                   String?
+  otherDocumentType     OtherDocumentType?
+  otherDocumentNumber   String?
+  mobilePhone           String?
+  mobileIsWhatsapp      Boolean            @default(false)
+  secondaryPhone        String?
+  email                 String?
+  postalCode            String?
+  street                String?
+  number                String?
+  complement            String?
+  district              String?
+  city                  String?
+  state                 String?
+  bond                  PersonBond         @default(VISITANTE)
+  status                PersonStatus       @default(ATIVO)
+  firstVisitDate        DateTime?          @db.Date
+  conversionDate        DateTime?          @db.Date
+  presentationDate      DateTime?          @db.Date
+  isBaptized            Boolean            @default(false)
+  baptismDate           DateTime?          @db.Date
+  baptismChurch         String?
+  infantBaptism         Boolean            @default(false)
+  professionOfFaithDate DateTime?          @db.Date
+  admissionMethodId     String?
+  admissionMethod       ChurchListItem?    @relation(fields: [admissionMethodId], references: [id], onDelete: Restrict)
+  admissionDate         DateTime?          @db.Date
+  originChurch          String?
+  // Legado do cadastro de membros: só leitura até existir a entidade Célula.
+  cellName              String?
+  notes                 String?
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+  receivables           Receivable[]
+  user                  User?
+  familyMember          FamilyMember?
+  followUps             FollowUp[]
+  consents              PersonConsent[]    @relation("ConsentSubject")
+  consentsGiven         PersonConsent[]    @relation("ConsentGiver")
+
+  @@unique([organizationId, cpf])
+  @@index([organizationId, name])
+  @@index([organizationId, status])
+  @@index([birthDate])
+}
+
+// Família = domicílio (RF-F01). Uma família por pessoa (FamilyMember.personId único).
+model Family {
+  id             String         @id @default(cuid())
+  organizationId String
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  name           String
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  members        FamilyMember[]
+
+  @@index([organizationId])
+}
+
+model FamilyMember {
+  id        String     @id @default(cuid())
+  familyId  String
+  family    Family     @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  personId  String     @unique
+  person    Person     @relation(fields: [personId], references: [id], onDelete: Restrict)
+  role      FamilyRole
+  createdAt DateTime   @default(now())
+
+  @@index([familyId])
+}
+
+// Acompanhamento (D15, RT-B12): contato de cuidado, não confidencial.
+model FollowUp {
   id             String       @id @default(cuid())
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  name           String
-  document       String?
-  email          String?
-  phone          String?
-  cellName       String?
-  birthDate      DateTime?
-  notes          String?
-  isActive       Boolean      @default(true)
+  personId       String
+  person         Person       @relation(fields: [personId], references: [id], onDelete: Restrict)
+  date           DateTime     @db.Date
+  type           FollowUpType
+  authorUserId   String
+  author         User         @relation(fields: [authorUserId], references: [id], onDelete: Restrict)
+  note           String?
   createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  receivables    Receivable[]
-  user           User?
 
-  @@unique([organizationId, document])
-  @@index([name])
-  @@index([isActive])
+  @@index([personId, date])
+  @@index([organizationId, date])
+}
+
+// Consentimento por finalidade (RF-P02, RF-P09). givenByPersonId = responsável que
+// consentiu pelo menor; nulo quando foi o próprio titular.
+model PersonConsent {
+  id               String         @id @default(cuid())
+  organizationId   String
+  organization     Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  personId         String
+  person           Person         @relation("ConsentSubject", fields: [personId], references: [id], onDelete: Cascade)
+  purpose          ConsentPurpose
+  givenByPersonId  String?
+  givenBy          Person?        @relation("ConsentGiver", fields: [givenByPersonId], references: [id], onDelete: Restrict)
+  method           ConsentMethod
+  textVersion      String
+  givenAt          DateTime
+  revokedAt        DateTime?
+  recordedByUserId String?
+  recordedBy       User?          @relation(fields: [recordedByUserId], references: [id], onDelete: Restrict)
+  createdAt        DateTime       @default(now())
+
+  @@index([personId, purpose])
+  @@index([givenByPersonId])
+}
+
+// Listas da igreja (RF-S01): ficam na sede e valem para as congregações.
+model ChurchListItem {
+  id             String         @id @default(cuid())
+  organizationId String
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  type           ChurchListType
+  name           String
+  sortOrder      Int            @default(0)
+  isActive       Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  admittedPeople Person[]
+
+  @@unique([organizationId, type, name])
 }
 
 model Payable {
@@ -404,7 +602,7 @@ model Receivable {
   description             String
   source                  String
   personId                String?
-  person                  Person?              @relation(fields: [personId], references: [id], onDelete: SetNull)
+  person                  Person?              @relation(fields: [personId], references: [id], onDelete: Restrict)
   categoryId              String?
   category                Category?            @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   dueDate                 DateTime

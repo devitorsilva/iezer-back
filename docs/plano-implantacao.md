@@ -81,7 +81,7 @@ Depois do MVP: itens F2 dos dois PRDs, priorizados com a igreja piloto.
 - **IDs:** Acesso › Permissões e Conceitos do domínio; RT-AB04 a RT-AB07, RT-AB10, RT-AF02, RT-AF03; Pessoas › Permissões (catálogo e padrão de fábrica); RF-OR02, RF-OR04, RF-OR05.
 - **Pronto quando:** um usuário de teste com o perfil Tesoureiro não alcança nada além do permitido, e as alterações aparecem no `AuditLog` com autor.
 
-## Sprint 4 — Pessoas: modelo e API `[ ]`
+## Sprint 4 — Pessoas: modelo e API `[x]`
 
 **Objetivo:** a API de Pessoas pronta para as telas.
 
@@ -207,3 +207,9 @@ Entradas curtas (até 8 linhas), mais recente por último.
   Dev: perfis de fábrica criados na sede; `teste@iezer.local` = Pastor; `teste.tesoureiro@iezer.local` = Tesoureiro. Testado por API: Tesoureiro barrado em membros (criar) e perfis, auditoria com autor/IP.
   Decisões: cadastros financeiros por organização (sem herança da sede); "todas" só lê/edita/exclui; restaurar mantém o nome; perfil é da igreja e admin de congregação também restaura.
   Pendências: "ninguém altera o próprio acesso" e e-mails de concessão (Sprint 8); 2FA para protegidas (12); `POST /restaurar` não testado por HTTP; em "todas", lookups trazem cadastros de todas as organizações (editar com categoria de outra dá 400); no Render, rodar `prisma migrate deploy`, `acesso:seed` e `user:assign`.
+- 10/10/2026 · Sprint 4 · **Incidente:** `prisma migrate diff` com o banco como shadow DB resetou o único banco (dev = Render, plano free sem backup): dados perdidos; `_prisma_migrations` refeita com `migrate resolve`, perfis com `acesso:seed`. Usuários de teste precisam ser recriados (`user:create` + `user:assign`). Regra nova no `CLAUDE.md`: comando que possa resetar o banco só com confirmação.
+  Migração `20261010_pessoas`: `Person` com campos MVP, `bond`/`status`, CPF (DV) único por organização, telefones com DDI, datas `@db.Date` (conversão pelo dia mais próximo em UTC), `searchName` sem acento; saem `document`/`phone`/`isActive` (backfill: Membro, Ativo/Inativo, CPF ou outro documento). `Family`/`FamilyMember` (uma família por pessoa), `FollowUp` (só entidade; rotas na Sprint 9), `PersonConsent`, `ChurchListItem` na sede + `npm run pessoas:seed`. `Receivable.personId` → `Restrict`.
+  Módulo `src/modules/pessoas/`: `GET /pessoas` (RT-B01), `/duplicados`, `/listas`, `/:id`, `POST` (cadastro rápido com responsável e consentimento), `PATCH` (dados cadastrais), `DELETE` (só sem vínculos). Regras de vínculo/menor em `rules.ts`; `missingFields`/`incomplete` no detalhe.
+  `/cadastro/membros` virou camada de compatibilidade sobre `Person` (formato antigo) até a Sprint 5. `AppError` com `details`; `ZodError` agora dá 400 `VALIDATION_ERROR` em todas as rotas (antes 500). `RequestContext.churchId`.
+  Decisões: listas por igreja (sede); duplicados só nas organizações que o usuário lê; consentimento obrigatório só para menor; sem `situacao`, a lista traz só Ativo; responsável = Responsável/Cônjuge maior de idade na família.
+  Pendências: front (Sprint 5) troca para `/pessoas` + PersonPicker e remove a compatibilidade; registrar a exceção do telefone no `CLAUDE.md` do front; ordenar aniversariantes por dia; filho de pais separados (duas famílias); trocar papel na família e "aplicar a toda a família" (Sprint 7); testado só pelo service e por `inject` sem sessão (sem usuário no banco).

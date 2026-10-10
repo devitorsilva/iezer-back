@@ -20,7 +20,8 @@
     "prisma:studio": "prisma studio",
     "user:create": "tsx scripts/create-test-user.ts",
     "acesso:seed": "tsx scripts/seed-access.ts",
-    "user:assign": "tsx scripts/assign-profile.ts"
+    "user:assign": "tsx scripts/assign-profile.ts",
+    "pessoas:seed": "tsx scripts/seed-pessoas.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.1.0",

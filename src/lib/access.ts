@@ -152,6 +152,8 @@ export function requirePermission(...keys: [PermissionKey, ...PermissionKey[]]) 
 }
 
 export interface RequestContext {
+  // Sede da organização ativa: dona dos perfis e das listas da igreja.
+  churchId: string;
   readOrganizationIds: string[];
   writeOrganizationId: string | null;
   permissions: ReadonlySet<PermissionKey>;
@@ -160,6 +162,7 @@ export interface RequestContext {
 
 export function getRequestContext(request: FastifyRequest): RequestContext {
   return {
+    churchId: getChurchId(request),
     readOrganizationIds: request.access.readOrganizationIds,
     writeOrganizationId: request.access.writeOrganizationId,
     permissions: request.access.permissions,
