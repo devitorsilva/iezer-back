@@ -57,7 +57,7 @@ Depois do MVP: itens F2 dos dois PRDs, priorizados com a igreja piloto.
 - **IDs:** RT-AB02, RT-AB03, RT-AB10; Acesso › Migração; Pessoas › Migração do modelo atual.
 - **Pronto quando:** a migração roda num banco de desenvolvimento e o financeiro continua funcionando.
 
-## Sprint 2 — Login real `[ ]`
+## Sprint 2 — Login real `[x]`
 
 **Objetivo:** ninguém usa o app sem conta.
 
@@ -195,3 +195,8 @@ Entradas curtas (até 8 linhas), mais recente por último.
   `User` no formato Better Auth (`emailVerified`, `image`, `twoFactorEnabled`, `status` ATIVO/DESATIVADO/SUSPENSO, `lastLoginAt`, `personId String? @unique`) + `Session`, `Account`, `Verification`, `TwoFactor`. `passwordHash` removido: senha vai em `Account.password` (providerId "credential"). Conferir colunas com `@better-auth/cli generate` na Sprint 2/12.
   `AuditLog`: `actorType`, `actorUserId`, `organizationId`, `module` (+ACESSO, PESSOAS), `action`, `targetType/Id`, `before/after` JSONB, `ip`, `userAgent`. REVOKE UPDATE/DELETE fica para a Sprint 10.
   Pendências: `birthDate` → `@db.Date` e `Restrict` em `Receivable.personId` na Sprint 4; profundidade de 2 níveis validada na aplicação (CHECK só cobre sede sem pai). `.env` local está com CRLF.
+- 09/10/2026 · Sprint 2 · Better Auth 1.7.7 em `src/lib/auth.ts` (senha 12–128, HIBP, sessão 7d/updateAge 1d, sem cookie cache, `disableSignUp` até a Sprint 6, IDs cuid pelo Prisma, `status/personId/lastLoginAt` como additionalFields). Handler em `src/modules/auth/routes.ts` (placeholder removido). Schema conferido com `@better-auth/cli generate`: sem migração.
+  Status: hook `session.create.before` recusa não-ATIVO no login (403 `USER_INACTIVE`, RF-LG06); `requireSession` (`src/lib/require-session.ts`) protege tudo em `/api` exceto `/api/auth/*` e repete a checagem a cada requisição. `GET /me` sem organizações (Sprint 3). Script `npm run user:create`.
+  Produção de teste: front em `iezer.vercel.app` e back no Render são sites diferentes → `vercel.json` repassa `/api/*` ao Render (cookie first-party); no Render, `BETTER_AUTH_URL` e `WEB_ORIGIN` = `https://iezer.vercel.app`, mais `BETTER_AUTH_SECRET`. Front usa `/api` relativo no build.
+  Front: `useMe` (React Query) é a sessão; 401/403 zeram o `me` e o login volta à tela de origem; flag do `localStorage`, `mock-usuario.ts` e itens "Em breve" do menu da conta removidos; "Cadastre-se" removido; "Esqueceu a senha?" e Google inativos.
+  Pendências: confirmar URL do Render no `vercel.json`; limite por IP em memória (uma instância) e atrás de dois proxies (Vercel + Render) — conferir IP gravado em `Session.ipAddress` no deploy; preview deployments da Vercel ficam fora do `trustedOrigins`; regras de senha (e-mail, nome da igreja) e bloqueio por e-mail nas Sprints 6 e 12; falha de banco em `getSession` vira 500, não 503.

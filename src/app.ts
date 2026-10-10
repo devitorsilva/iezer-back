@@ -39,6 +39,8 @@ export function buildApp() {
   app.register(cors, {
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
+    // Cookie de sessão do Better Auth.
+    credentials: true,
     origin: (origin, callback) => {
       if (isAllowedOrigin(origin)) {
         callback(null, true);

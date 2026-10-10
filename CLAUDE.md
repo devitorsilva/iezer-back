@@ -27,12 +27,13 @@ Healthchecks: `GET /health` and `GET /healthz` (the latter used by Render).
 
 ## Environment
 
-`src/config/env.ts` validates `process.env` with Zod at import time — the app crashes on startup if `DATABASE_URL`, `DIRECT_URL` or `SUPABASE_URL` are missing. See `.env.example`. `DATABASE_URL` is the Supabase pooler (pgbouncer); `DIRECT_URL` is used by Prisma for migrations. `WEB_ORIGIN` is the allowed CORS origin; `localhost`/`127.0.0.1` on ports 5170–5179 are always allowed (`src/app.ts`).
+`src/config/env.ts` validates `process.env` with Zod at import time — the app crashes on startup if `DATABASE_URL`, `DIRECT_URL`, `SUPABASE_URL` or `BETTER_AUTH_SECRET` (32+ chars) are missing. `BETTER_AUTH_URL` is the API origin as the browser sees it (in production, the front's domain, which proxies `/api/*` to Render). See `.env.example`. `DATABASE_URL` is the Supabase pooler (pgbouncer); `DIRECT_URL` is used by Prisma for migrations. `WEB_ORIGIN` is the allowed CORS origin; `localhost`/`127.0.0.1` on ports 5170–5179 are always allowed (`src/app.ts`).
 
 ## Architecture
 
 - `src/server.ts` → `buildApp()` in `src/app.ts` (CORS, `@fastify/sensible`, global error handler that maps Supabase/Prisma connection failures to 503 with Portuguese messages).
-- All business routes are mounted under `/api` via `src/modules/index.ts`, which registers module plugins with prefixes: `/auth`, `/cadastro`, `/financeiro`, `/relatorios`, `/modulos` (placeholders for planned modules). Each module's `routes.ts` exposes a `GET /overview` and registers its sub-sections.
+- All business routes are mounted under `/api` via `src/modules/index.ts`. `/auth/*` is the Better Auth handler (public, config in `src/lib/auth.ts`); everything else is registered inside a scope with the `requireSession` hook (`src/lib/require-session.ts`: 401 without session, 403 `USER_INACTIVE` for non-ATIVO users, sets `request.user`/`request.session`): `/me`, `/cadastro`, `/financeiro`, `/relatorios`, `/modulos` (placeholders for planned modules). Each business module's `routes.ts` exposes a `GET /overview` and registers its sub-sections.
+- API contract (routes added since Sprint 2): `docs/api-contrato.md`. Test users: `npm run user:create -- <email> <nome> <senha> [status]` (public sign-up is disabled).
 - `src/lib/prisma.ts` exports a singleton `PrismaClient` (cached on `globalThis` outside production).
 
 ### Feature slice pattern
@@ -53,7 +54,7 @@ Schema in `prisma/schema.prisma`; migrations in `prisma/migrations/` are hand-na
 
 - `Organization` is two-level (sede → congregações via `parentId`); `OrganizationContact` holds the account owner and LGPD officer. Every business table has a required `organizationId`; until Sprint 3 repositories use `DEFAULT_ORGANIZATION_ID` (`src/lib/organization.ts`).
 - `Person` (formerly `Member`) is the people table; the API still exposes it as `/cadastro/membros` and receivables as `memberId`/`memberName`.
-- `User`, `Session`, `Account`, `Verification`, `TwoFactor` follow the Better Auth schema (Better Auth not installed yet); `User.personId` is optional and unique. `AuditLog` has author, org, target, before/after, IP and user agent but nothing writes to it yet.
+- `User`, `Session`, `Account`, `Verification`, `TwoFactor` follow the Better Auth schema (email/password login since Sprint 2; the Supabase pooler doesn't support interactive `$transaction`); `User.personId` is optional and unique. `AuditLog` has author, org, target, before/after, IP and user agent but nothing writes to it yet.
 
 ## Planning docs
 
