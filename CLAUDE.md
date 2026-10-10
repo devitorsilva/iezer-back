@@ -34,6 +34,7 @@ Healthchecks: `GET /health` and `GET /healthz` (the latter used by Render).
 - `src/server.ts` → `buildApp()` in `src/app.ts` (CORS, `@fastify/sensible`, global error handler that maps Supabase/Prisma connection failures to 503 with Portuguese messages).
 - All business routes are mounted under `/api` via `src/modules/index.ts`. `/auth/*` is the Better Auth handler (public, config in `src/lib/auth.ts`); everything else is registered inside a scope with the `requireSession` hook (`src/lib/require-session.ts`: 401 without session, 403 `USER_INACTIVE` for non-ATIVO users, sets `request.user`/`request.session`): `/me`, `/cadastro`, `/financeiro`, `/relatorios`, `/modulos` (placeholders for planned modules). Each business module's `routes.ts` exposes a `GET /overview` and registers its sub-sections.
 - API contract (routes added since Sprint 2): `docs/api-contrato.md`. Test users: `npm run user:create -- <email> <nome> <senha> [status]` (public sign-up is disabled).
+- Data routes (`/cadastro`, `/financeiro`, `/relatorios`, `/acesso/perfis`) sit in a nested scope with `resolveOrganization` (`src/lib/access.ts`): active org from `X-Organization-Id` (+ `X-Organization-Scope: todas` from the sede), checked against the user's assignments; sets `request.access`. Each route declares `{ preHandler: requirePermission("key", ...) }` (any-of). Controllers pass `getRequestContext(request)` (read/write org ids, permissions, audit actor) to services. Permission catalog: `src/modules/acesso/permissoes/catalog/` (one file per module). Test access: `npm run acesso:seed`, `npm run user:assign -- <email> <PASTOR|TESOUREIRO|SECRETARIO> [slug]`.
 - `src/lib/prisma.ts` exports a singleton `PrismaClient` (cached on `globalThis` outside production).
 
 ### Feature slice pattern
@@ -41,8 +42,8 @@ Healthchecks: `GET /health` and `GET /healthz` (the latter used by Render).
 Every CRUD section (e.g. `src/modules/financeiro/contas-a-receber/`, `src/modules/cadastro/fornecedores/`) has the same five files — copy an existing one when adding a section:
 
 - `schemas.ts` — Zod schemas for body/params/query plus inferred types. Messages in Portuguese. IDs validated as `cuid()`. Empty strings preprocessed to `undefined`.
-- `repository.ts` — the only layer that touches `prisma`; builds `where` filters, `include`s relations, converts amounts to `Prisma.Decimal`.
-- `service.ts` — business logic and DTO mapping (`Decimal` → number, `Date` → ISO string, flattened relation names like `categoryName`). Throws a custom `XxxNotFoundError`.
+- `repository.ts` — the only layer that touches `prisma`; builds `where` filters (always `organizationId: { in: organizationIds }`), `include`s relations, converts amounts to `Prisma.Decimal`; write methods take an optional `db` (transaction client).
+- `service.ts` — business logic and DTO mapping (`Decimal` → number, `Date` → ISO string, flattened relation names like `categoryName`). Receives `RequestContext`; writes run inside `runAudited` and log before/after DTOs; creates use `requireWriteOrganization`. Throws a custom `XxxNotFoundError`.
 - `controller.ts` — class with arrow-function handlers; parses input with the schemas, catches the not-found error and returns `reply.notFound(...)`.
 - `routes.ts` — instantiates repository → service → controller at module load and wires the endpoints; registered in the parent module's `routes.ts`.
 
@@ -52,9 +53,10 @@ List endpoints return `{ items }`. Payables/receivables support recurrence (crea
 
 Schema in `prisma/schema.prisma`; migrations in `prisma/migrations/` are hand-named by date (`YYYYMMDD_description`), starting from `20260801_baseline`. Write data-preserving SQL by hand (renames, backfills) instead of trusting `migrate diff` blindly. Enum values are Portuguese (`PENDENTE`, `PAGO`, `RECEBIDO`, `MENSAL`...).
 
-- `Organization` is two-level (sede → congregações via `parentId`); `OrganizationContact` holds the account owner and LGPD officer. Every business table has a required `organizationId`; until Sprint 3 repositories use `DEFAULT_ORGANIZATION_ID` (`src/lib/organization.ts`).
+- `Organization` is two-level (sede → congregações via `parentId`); `OrganizationContact` holds the account owner and LGPD officer. Every business table has a required `organizationId`; repositories take the request's organization ids (`DEFAULT_ORGANIZATION_ID` in `src/lib/organization.ts` is only a script default).
 - `Person` (formerly `Member`) is the people table; the API still exposes it as `/cadastro/membros` and receivables as `memberId`/`memberName`.
-- `User`, `Session`, `Account`, `Verification`, `TwoFactor` follow the Better Auth schema (email/password login since Sprint 2; the Supabase pooler doesn't support interactive `$transaction`); `User.personId` is optional and unique. `AuditLog` has author, org, target, before/after, IP and user agent but nothing writes to it yet.
+- `User`, `Session`, `Account`, `Verification`, `TwoFactor` follow the Better Auth schema (email/password login since Sprint 2); `User.personId` is optional and unique. `AuditLog` has author, org, target, before/after, IP and user agent; every write goes through `runAudited` (`src/lib/audit.ts`). Interactive `$transaction` works on the pooler.
+- `AccessProfile` (owned by the sede, `factoryKey` for factory profiles) + `AccessProfilePermission` (catalog keys) + `UserAssignment` (user × profile × organization).
 
 ## Planning docs
 

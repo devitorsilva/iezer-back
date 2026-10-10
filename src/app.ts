@@ -34,11 +34,14 @@ function isAllowedOrigin(origin: string | undefined) {
 export function buildApp() {
   const app = Fastify({
     logger: true,
+    // Atrás da Vercel e do Render: request.ip (gravado no AuditLog) vem do X-Forwarded-For.
+    trustProxy: true,
   });
 
   app.register(cors, {
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    // X-Organization-*: organização ativa do seletor (src/lib/access.ts).
+    allowedHeaders: ["Content-Type", "Authorization", "X-Organization-Id", "X-Organization-Scope"],
     // Cookie de sessão do Better Auth.
     credentials: true,
     origin: (origin, callback) => {

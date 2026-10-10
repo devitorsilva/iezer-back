@@ -1,4 +1,5 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
+import { getRequestContext } from "../../../lib/access.js";
 import {
   CostCenterConflictError,
   CostCenterNotFoundError,
@@ -9,8 +10,8 @@ import { costCenterParamsSchema, costCenterPayloadSchema } from "./schemas.js";
 export class CostCenterController {
   constructor(private readonly service: CostCenterService) {}
 
-  list = async () => {
-    const items = await this.service.list();
+  list = async (request: FastifyRequest) => {
+    const items = await this.service.list(getRequestContext(request));
     return { items };
   };
 
@@ -18,7 +19,7 @@ export class CostCenterController {
     const { id } = costCenterParamsSchema.parse(request.params);
 
     try {
-      return await this.service.getById(id);
+      return await this.service.getById(getRequestContext(request), id);
     } catch (error) {
       if (error instanceof CostCenterNotFoundError) {
         return reply.notFound("Centro de custo não encontrado.");
@@ -32,7 +33,7 @@ export class CostCenterController {
     const payload = costCenterPayloadSchema.parse(request.body);
 
     try {
-      const costCenter = await this.service.create(payload);
+      const costCenter = await this.service.create(getRequestContext(request), payload);
       return reply.code(201).send(costCenter);
     } catch (error) {
       if (error instanceof CostCenterConflictError) {
@@ -48,7 +49,7 @@ export class CostCenterController {
     const payload = costCenterPayloadSchema.parse(request.body);
 
     try {
-      return await this.service.update(id, payload);
+      return await this.service.update(getRequestContext(request), id, payload);
     } catch (error) {
       if (error instanceof CostCenterNotFoundError) {
         return reply.notFound("Centro de custo não encontrado.");
@@ -66,7 +67,7 @@ export class CostCenterController {
     const { id } = costCenterParamsSchema.parse(request.params);
 
     try {
-      await this.service.remove(id);
+      await this.service.remove(getRequestContext(request), id);
       return reply.code(204).send();
     } catch (error) {
       if (error instanceof CostCenterNotFoundError) {

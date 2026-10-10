@@ -69,7 +69,7 @@ Depois do MVP: itens F2 dos dois PRDs, priorizados com a igreja piloto.
 - **IDs:** RF-LG01, RF-LG03, RF-LG05, RF-LG06, RT-AB01, RT-AB04, RT-AF01, RT-AF04, RT-AF05, RT-AF07; Segurança e sessão (linhas Senha, Sessão, Tentativas).
 - **Pronto quando:** entrar e sair funciona e nenhuma rota de dados responde sem login.
 
-## Sprint 3 — Permissões, organização ativa e auditoria `[ ]`
+## Sprint 3 — Permissões, organização ativa e auditoria `[x]`
 
 **Objetivo:** cada usuário vê só o que o perfil permite, na organização certa, e toda alteração fica registrada.
 
@@ -200,3 +200,10 @@ Entradas curtas (até 8 linhas), mais recente por último.
   Produção de teste: front em `iezer.vercel.app` e back no Render são sites diferentes → `vercel.json` repassa `/api/*` ao Render (cookie first-party); no Render, `BETTER_AUTH_URL` e `WEB_ORIGIN` = `https://iezer.vercel.app`, mais `BETTER_AUTH_SECRET`. Front usa `/api` relativo no build.
   Front: `useMe` (React Query) é a sessão; 401/403 zeram o `me` e o login volta à tela de origem; flag do `localStorage`, `mock-usuario.ts` e itens "Em breve" do menu da conta removidos; "Cadastre-se" removido; "Esqueceu a senha?" e Google inativos.
   Pendências: confirmar URL do Render no `vercel.json`; limite por IP em memória (uma instância) e atrás de dois proxies (Vercel + Render) — conferir IP gravado em `Session.ipAddress` no deploy; preview deployments da Vercel ficam fora do `trustedOrigins`; regras de senha (e-mail, nome da igreja) e bloqueio por e-mail nas Sprints 6 e 12; falha de banco em `getSession` vira 500, não 503.
+- 10/10/2026 · Sprint 3 · Migração `20261010_permissoes`: `AccessProfile` (da sede, `factoryKey`), `AccessProfilePermission`, `UserAssignment`. Catálogo em `src/modules/acesso/permissoes/catalog/` (27 chaves, dependências, protegidas, padrão de fábrica); `npm run acesso:seed` e `npm run user:assign`.
+  `resolveOrganization` (`src/lib/access.ts`): `X-Organization-Id` + `X-Organization-Scope: todas`; permissões = organização + sede; `requirePermission` por rota em cadastro e financeiro; registros fora do escopo dão 404; criar em "todas" dá 400; referências cruzadas entre organizações dão 400. `GET /me` com `organizations`; `GET /acesso/permissoes`, `GET /acesso/perfis`, `POST /acesso/perfis/:id/restaurar` (travas de protegida e último admin).
+  `runAudited` (`src/lib/audit.ts`) em toda escrita, `$transaction` interativa (funciona no pooler; a nota antiga estava errada). `trustProxy` ligado para o IP do log.
+  Front: `ActiveOrganizationProvider` (escolha em `localStorage` por usuário, headers no `apiRequest`), `queryKeys.x(org)`, `usePermission`/`<Can>`, menu e rotas filtrados (`PermissionGate` com nome amigável do catálogo), seletor real, botões de ação somem sem permissão.
+  Dev: perfis de fábrica criados na sede; `teste@iezer.local` = Pastor; `teste.tesoureiro@iezer.local` = Tesoureiro. Testado por API: Tesoureiro barrado em membros (criar) e perfis, auditoria com autor/IP.
+  Decisões: cadastros financeiros por organização (sem herança da sede); "todas" só lê/edita/exclui; restaurar mantém o nome; perfil é da igreja e admin de congregação também restaura.
+  Pendências: "ninguém altera o próprio acesso" e e-mails de concessão (Sprint 8); 2FA para protegidas (12); `POST /restaurar` não testado por HTTP; em "todas", lookups trazem cadastros de todas as organizações (editar com categoria de outra dá 400); no Render, rodar `prisma migrate deploy`, `acesso:seed` e `user:assign`.

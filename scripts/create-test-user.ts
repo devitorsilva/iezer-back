@@ -29,7 +29,6 @@ async function main() {
   const status = statusArg as UserStatus;
   const passwordHash = await hashPassword(password);
 
-  // Sem $transaction interativa: o pooler do Supabase (pgbouncer) não a suporta.
   const user = await prisma.user.upsert({
     where: { email: normalizedEmail },
     create: { email: normalizedEmail, name, status, emailVerified: true },

@@ -1,4 +1,5 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
+import { getRequestContext } from "../../../lib/access.js";
 import {
   MemberDocumentConflictError,
   MemberNotFoundError,
@@ -9,8 +10,8 @@ import { memberParamsSchema, memberPayloadSchema } from "./schemas.js";
 export class MemberController {
   constructor(private readonly service: MemberService) {}
 
-  list = async () => {
-    const items = await this.service.list();
+  list = async (request: FastifyRequest) => {
+    const items = await this.service.list(getRequestContext(request));
     return { items };
   };
 
@@ -18,7 +19,7 @@ export class MemberController {
     const { id } = memberParamsSchema.parse(request.params);
 
     try {
-      return await this.service.getById(id);
+      return await this.service.getById(getRequestContext(request), id);
     } catch (error) {
       if (error instanceof MemberNotFoundError) {
         return reply.notFound("Membro não encontrado.");
@@ -31,7 +32,7 @@ export class MemberController {
     const payload = memberPayloadSchema.parse(request.body);
 
     try {
-      return reply.code(201).send(await this.service.create(payload));
+      return reply.code(201).send(await this.service.create(getRequestContext(request), payload));
     } catch (error) {
       if (error instanceof MemberDocumentConflictError) {
         return reply.conflict("Já existe membro com este documento.");
@@ -45,7 +46,7 @@ export class MemberController {
     const payload = memberPayloadSchema.parse(request.body);
 
     try {
-      return await this.service.update(id, payload);
+      return await this.service.update(getRequestContext(request), id, payload);
     } catch (error) {
       if (error instanceof MemberNotFoundError) {
         return reply.notFound("Membro não encontrado.");
@@ -63,7 +64,7 @@ export class MemberController {
     const { id } = memberParamsSchema.parse(request.params);
 
     try {
-      await this.service.remove(id);
+      await this.service.remove(getRequestContext(request), id);
       return reply.code(204).send();
     } catch (error) {
       if (error instanceof MemberNotFoundError) {

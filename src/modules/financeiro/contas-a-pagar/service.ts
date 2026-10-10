@@ -1,4 +1,8 @@
+import type { Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
+import { requireWriteOrganization, type RequestContext } from "../../../lib/access.js";
+import { runAudited, type AuditEntry } from "../../../lib/audit.js";
+import { assertReferencesInOrganization } from "../../../lib/organization.js";
 import type { PayableCreatePayload, PayableWithCategory, PayableRepository } from "./repository.js";
 import type { PayablePayload, PayableQuery, PayableSettlementPayload } from "./schemas.js";
 
@@ -85,54 +89,111 @@ function buildRecurringPayloads(payload: PayablePayload): PayableCreatePayload[]
   }));
 }
 
+type PayableDto = ReturnType<typeof mapPayable>;
+
+function auditEntry(
+  action: string,
+  organizationId: string,
+  targetId: string,
+  data: { before?: PayableDto; after?: PayableDto },
+): AuditEntry {
+  return { organizationId, module: "FINANCEIRO", action, targetType: "Payable", targetId, ...data };
+}
+
 export class PayableService {
   constructor(private readonly repository: PayableRepository) {}
 
-  async list(query: PayableQuery) {
-    const items = await this.repository.findAll(query);
+  async list(context: RequestContext, query: PayableQuery) {
+    const items = await this.repository.findAll(context.readOrganizationIds, query);
     return items.map(mapPayable);
   }
 
-  async create(payload: PayablePayload) {
+  async create(context: RequestContext, payload: PayablePayload) {
+    const organizationId = requireWriteOrganization(context);
     const payloads = buildRecurringPayloads(payload);
-    if (payloads.length === 1) {
-      return { items: [mapPayable(await this.repository.create(payloads[0]))] };
-    }
 
-    const result = await this.repository.createMany(payloads);
-    return { items: [], count: result.count };
+    return runAudited(context.actor, async (tx, audit) => {
+      await assertReferencesInOrganization(tx, organizationId, {
+        supplierId: payload.supplierId,
+        categoryId: payload.categoryId,
+      });
+
+      if (payloads.length === 1) {
+        const created = mapPayable(await this.repository.create(payloads[0], organizationId, tx));
+        await audit(auditEntry("criar", organizationId, created.id, { after: created }));
+        return { items: [created] };
+      }
+
+      const created = (await this.repository.createMany(payloads, organizationId, tx)).map(mapPayable);
+      await audit(created.map((item) => auditEntry("criar", organizationId, item.id, { after: item })));
+      return { items: [], count: created.length };
+    });
   }
 
-  async update(id: string, payload: PayablePayload) {
-    await this.assertExists(id);
-    return mapPayable(await this.repository.update(id, payload));
+  async update(context: RequestContext, id: string, payload: PayablePayload) {
+    return runAudited(context.actor, async (tx, audit) => {
+      const existing = await this.assertExists(context, id, tx);
+      await assertReferencesInOrganization(tx, existing.organizationId, {
+        supplierId: payload.supplierId,
+        categoryId: payload.categoryId,
+      });
+
+      const updated = mapPayable(await this.repository.update(id, payload, tx));
+      await audit(auditEntry("editar", existing.organizationId, id, { before: mapPayable(existing), after: updated }));
+      return updated;
+    });
   }
 
-  async settle(id: string, payload: PayableSettlementPayload = {}) {
-    const payable = await this.assertExists(id);
-    return mapPayable(
-      await this.repository.settle(id, {
-        settledAmount: payload.settledAmount ?? payable.amount.toNumber(),
-        settledAt: payload.settledAt ?? new Date(),
-        settlementMethod: payload.settlementMethod,
-        settlementBankAccountId: payload.settlementBankAccountId,
-      }),
-    );
+  async settle(context: RequestContext, id: string, payload: PayableSettlementPayload = {}) {
+    return runAudited(context.actor, async (tx, audit) => {
+      const payable = await this.assertExists(context, id, tx);
+      await assertReferencesInOrganization(tx, payable.organizationId, {
+        bankAccountId: payload.settlementBankAccountId,
+      });
+
+      const settled = mapPayable(
+        await this.repository.settle(
+          id,
+          {
+            settledAmount: payload.settledAmount ?? payable.amount.toNumber(),
+            settledAt: payload.settledAt ?? new Date(),
+            settlementMethod: payload.settlementMethod,
+            settlementBankAccountId: payload.settlementBankAccountId,
+          },
+          tx,
+        ),
+      );
+      await audit(auditEntry("baixar", payable.organizationId, id, { before: mapPayable(payable), after: settled }));
+      return settled;
+    });
   }
 
-  async remove(id: string, scope: "single" | "series" = "single") {
-    const payable = await this.assertExists(id);
+  async remove(context: RequestContext, id: string, scope: "single" | "series" = "single") {
+    await runAudited(context.actor, async (tx, audit) => {
+      const payable = await this.assertExists(context, id, tx);
 
-    if (scope === "series" && payable.recurrenceGroupId) {
-      await this.repository.deleteByRecurrenceGroupId(payable.recurrenceGroupId);
-      return;
-    }
+      if (scope === "series" && payable.recurrenceGroupId) {
+        const series = await this.repository.findByRecurrenceGroupId(
+          payable.recurrenceGroupId,
+          payable.organizationId,
+          tx,
+        );
+        await this.repository.deleteByRecurrenceGroupId(payable.recurrenceGroupId, payable.organizationId, tx);
+        await audit(
+          series.map((item) =>
+            auditEntry("excluir", item.organizationId, item.id, { before: mapPayable(item) }),
+          ),
+        );
+        return;
+      }
 
-    await this.repository.delete(id);
+      await this.repository.delete(id, tx);
+      await audit(auditEntry("excluir", payable.organizationId, id, { before: mapPayable(payable) }));
+    });
   }
 
-  private async assertExists(id: string) {
-    const payable = await this.repository.findById(id);
+  private async assertExists(context: RequestContext, id: string, tx: Prisma.TransactionClient) {
+    const payable = await this.repository.findById(id, context.readOrganizationIds, tx);
     if (!payable) throw new PayableNotFoundError();
     return payable;
   }

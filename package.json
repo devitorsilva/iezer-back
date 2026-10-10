@@ -18,7 +18,9 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:push": "prisma db push",
     "prisma:studio": "prisma studio",
-    "user:create": "tsx scripts/create-test-user.ts"
+    "user:create": "tsx scripts/create-test-user.ts",
+    "acesso:seed": "tsx scripts/seed-access.ts",
+    "user:assign": "tsx scripts/assign-profile.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.1.0",

@@ -1,9 +1,10 @@
 import { FastifyPluginAsync } from "fastify";
+import { loadAccessibleOrganizations } from "../../lib/access.js";
 import { MeRepository } from "./repository.js";
 
 const repository = new MeRepository();
 
-// GET /api/me (RT-AB04). Organizações e permissões por organização entram na Sprint 3.
+// GET /api/me (RT-AB04): usuário, pessoa, organizações alcançadas e permissões em cada uma.
 export const meRoutes: FastifyPluginAsync = async (app) => {
   app.get("/", async (request, reply) => {
     const user = await repository.findUser(request.user.id);
@@ -13,7 +14,15 @@ export const meRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const { person, ...userData } = user;
+    const organizations = await loadAccessibleOrganizations(user.id);
 
-    return { user: userData, person };
+    return {
+      user: userData,
+      person,
+      organizations: organizations.map(({ permissions, ...organization }) => ({
+        ...organization,
+        permissions: [...permissions].sort(),
+      })),
+    };
   });
 };

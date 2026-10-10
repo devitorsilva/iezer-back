@@ -40,6 +40,12 @@ enum UserStatus {
   SUSPENSO
 }
 
+enum AccessProfileFactoryKey {
+  PASTOR
+  TESOUREIRO
+  SECRETARIO
+}
+
 enum AuditActorType {
   USUARIO
   SUPORTE
@@ -81,22 +87,23 @@ enum RecurrenceFrequency {
 // User, Session, Account, Verification e TwoFactor seguem o schema do Better Auth
 // (core + plugin twoFactor). A senha fica em Account.password (providerId "credential").
 model User {
-  id               String      @id @default(cuid())
+  id               String           @id @default(cuid())
   name             String
-  email            String      @unique
-  emailVerified    Boolean     @default(false)
+  email            String           @unique
+  emailVerified    Boolean          @default(false)
   image            String?
-  twoFactorEnabled Boolean     @default(false)
-  status           UserStatus  @default(ATIVO)
+  twoFactorEnabled Boolean          @default(false)
+  status           UserStatus       @default(ATIVO)
   lastLoginAt      DateTime?
-  personId         String?     @unique
-  person           Person?     @relation(fields: [personId], references: [id], onDelete: Restrict)
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
+  personId         String?          @unique
+  person           Person?          @relation(fields: [personId], references: [id], onDelete: Restrict)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
   sessions         Session[]
   accounts         Account[]
   twoFactors       TwoFactor[]
   auditLogs        AuditLog[]
+  assignments      UserAssignment[]
 }
 
 model Session {
@@ -155,26 +162,28 @@ model TwoFactor {
 
 // Sede (parentId nulo) ou congregação (parentId aponta para a sede). Dois níveis só.
 model Organization {
-  id           String                @id @default(cuid())
-  name         String
-  slug         String                @unique
-  type         OrganizationType      @default(SEDE)
-  parentId     String?
-  parent       Organization?         @relation("OrganizationHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
-  children     Organization[]        @relation("OrganizationHierarchy")
-  cnpj         String?
-  isActive     Boolean               @default(true)
-  createdAt    DateTime              @default(now())
-  updatedAt    DateTime              @updatedAt
-  contacts     OrganizationContact[]
-  auditLogs    AuditLog[]
-  suppliers    Supplier[]
-  categories   Category[]
-  bankAccounts BankAccount[]
-  costCenters  CostCenter[]
-  people       Person[]
-  payables     Payable[]
-  receivables  Receivable[]
+  id             String                @id @default(cuid())
+  name           String
+  slug           String                @unique
+  type           OrganizationType      @default(SEDE)
+  parentId       String?
+  parent         Organization?         @relation("OrganizationHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children       Organization[]        @relation("OrganizationHierarchy")
+  cnpj           String?
+  isActive       Boolean               @default(true)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  contacts       OrganizationContact[]
+  auditLogs      AuditLog[]
+  accessProfiles AccessProfile[]
+  assignments    UserAssignment[]
+  suppliers      Supplier[]
+  categories     Category[]
+  bankAccounts   BankAccount[]
+  costCenters    CostCenter[]
+  people         Person[]
+  payables       Payable[]
+  receivables    Receivable[]
 
   @@index([parentId])
 }
@@ -193,6 +202,49 @@ model OrganizationContact {
   updatedAt      DateTime                @updatedAt
 
   @@unique([organizationId, role])
+}
+
+// Perfil de acesso da igreja-cliente (organizationId = sede), usável em qualquer
+// organização dela. factoryKey marca os perfis de fábrica, que podem ser restaurados.
+model AccessProfile {
+  id             String                    @id @default(cuid())
+  organizationId String
+  organization   Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  name           String
+  description    String?
+  factoryKey     AccessProfileFactoryKey?
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+  permissions    AccessProfilePermission[]
+  assignments    UserAssignment[]
+
+  @@unique([organizationId, name])
+  @@unique([organizationId, factoryKey])
+}
+
+// Chave do catálogo em código (src/modules/acesso/permissoes/catalog).
+model AccessProfilePermission {
+  profileId     String
+  profile       AccessProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  permissionKey String
+
+  @@id([profileId, permissionKey])
+}
+
+// Atribuição: perfil dado a um usuário numa organização. Na sede, alcança as congregações.
+model UserAssignment {
+  id             String        @id @default(cuid())
+  userId         String
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profileId      String
+  profile        AccessProfile @relation(fields: [profileId], references: [id], onDelete: Restrict)
+  organizationId String
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdAt      DateTime      @default(now())
+
+  @@unique([userId, profileId, organizationId])
+  @@index([organizationId])
+  @@index([profileId])
 }
 
 model AuditLog {

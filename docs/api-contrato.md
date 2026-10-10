@@ -47,3 +47,77 @@ Cadastro público desligado (`disableSignUp`) até a Sprint 6 (convite). Usuári
 ```
 
 Sprint 3 acrescenta organizações e permissões por organização (RT-AB04).
+
+## Organização ativa e permissões (Sprint 3)
+
+### Headers
+
+| Header | Valor | Efeito |
+| --- | --- | --- |
+| `X-Organization-Id` | id da sede ou congregação | Organização ativa. Sem o header, a primeira que o usuário alcança |
+| `X-Organization-Scope` | `todas` | Só com a sede: lê sede + congregações com as permissões da sede. Criar responde 400 `ORGANIZATION_REQUIRED` |
+
+Permissões efetivas numa organização = perfis atribuídos ali + perfis na sede (que alcançam as congregações). Conferidas a cada requisição: mudança vale na próxima ação, sem novo login.
+
+### Erros novos
+
+| Status | `code` | Quando |
+| --- | --- | --- |
+| 403 | `NO_ORGANIZATION` | Usuário sem atribuição em nenhuma organização ativa |
+| 403 | `ORGANIZATION_FORBIDDEN` | Header aponta para organização fora do alcance (ou `todas` sem ser sede) |
+| 403 | `PERMISSION_DENIED` | Falta a permissão da rota. Corpo traz `permission` e `permissionName`; `message` = `Você não tem a permissão "<nome>".` |
+| 400 | `ORGANIZATION_REQUIRED` | Criar em "Todas as congregações" |
+| 400 | `INVALID_REFERENCE` | Lançamento aponta para categoria, fornecedor, membro ou conta de outra organização |
+
+Registro de outra organização (fora do escopo de leitura) responde 404, como inexistente.
+
+### Permissão por rota
+
+| Rota | GET | POST / PUT / PATCH | DELETE |
+| --- | --- | --- | --- |
+| `/financeiro/contas-a-pagar` | `financeiro.pagar.ver` | `financeiro.pagar.editar` (inclui `/baixar`) | `financeiro.excluir` |
+| `/financeiro/contas-a-receber` | `financeiro.receber.ver` | `financeiro.receber.editar` (inclui `/baixar`) | `financeiro.excluir` |
+| `/cadastro/{centro-de-custo,bancos-contas,categorias,fornecedores}` | qualquer de `financeiro.pagar.ver`, `financeiro.receber.ver`, `financeiro.cadastros.editar` | `financeiro.cadastros.editar` | `financeiro.cadastros.editar` |
+| `/cadastro/membros` | `pessoas.ver` | POST `pessoas.criar`; PUT `pessoas.editar` | `pessoas.apagar_registro` |
+| `/acesso/perfis*` | `acesso.perfis.gerenciar` | `acesso.perfis.gerenciar` | — |
+
+`/me`, `/acesso/permissoes`, `/modulos` e os `/overview` pedem só sessão. Em contas a receber, `memberName` volta `null` para quem não tem `pessoas.ver`.
+
+### `GET /api/me` (alterado)
+
+Acrescenta `organizations` (sede primeiro, só se houver perfil nela; depois congregações por nome):
+
+```json
+{
+  "user": { "...": "igual à Sprint 2" },
+  "person": null,
+  "organizations": [
+    { "id": "cuid", "name": "Sede", "type": "SEDE", "parentId": null, "permissions": ["financeiro.pagar.ver", "pessoas.ver"] }
+  ]
+}
+```
+
+### `GET /api/acesso/permissoes`
+
+Catálogo fixo (RT-AB05). `{ items: [{ key, name, description, module, moduleName, protected, dependsOn: string[], group: string | null }] }`. `group` junta chaves mostradas como um switch só (`pessoas.notas_pastorais`).
+
+### `GET /api/acesso/perfis`
+
+Perfis da igreja da organização ativa: `{ items: [{ id, name, description, factoryKey: "PASTOR"|"TESOUREIRO"|"SECRETARIO"|null, permissions: string[], assignmentCount, createdAt, updatedAt }] }`.
+
+### `POST /api/acesso/perfis/:id/restaurar`
+
+Volta as permissões de um perfil de fábrica ao padrão (nome mantido). Responde o perfil.
+
+| Status | `code` | Quando |
+| --- | --- | --- |
+| 400 | `NOT_FACTORY_PROFILE` | Perfil criado pela igreja |
+| 403 | `PROTECTED_PERMISSION` | A restauração concederia protegida que o autor não tem |
+| 409 | `LAST_ADMIN` | A igreja ficaria sem usuário ativo com `acesso.perfis.gerenciar` |
+| 404 | — | Perfil de outra igreja ou inexistente |
+
+### Auditoria
+
+Toda criação, edição, baixa e exclusão nas rotas acima grava `AuditLog` na mesma transação: autor, organização do registro, módulo (`FINANCEIRO`, `CADASTRO`, `PESSOAS`, `ACESSO`), ação (`criar`, `editar`, `baixar`, `excluir`, `restaurar_perfil`), alvo (`Payable`, `Receivable`, `Category`, `Supplier`, `CostCenter`, `BankAccount`, `Person`, `AccessProfile`), `before`/`after` (DTO da API), IP e user agent. Séries recorrentes: um registro por parcela.
+
+Scripts: `npm run acesso:seed` (perfis de fábrica nas sedes sem eles) e `npm run user:assign -- <email> <PASTOR|TESOUREIRO|SECRETARIO> [slug]` (sede piloto por padrão).

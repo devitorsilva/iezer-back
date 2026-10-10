@@ -1,5 +1,4 @@
 import { Prisma, type Payable } from "@prisma/client";
-import { DEFAULT_ORGANIZATION_ID } from "../../../lib/organization.js";
 import { prisma } from "../../../lib/prisma.js";
 import type { PayablePayload, PayableQuery, PayableSettlementPayload } from "./schemas.js";
 
@@ -16,12 +15,14 @@ function mapPayload(payload: PayableCreatePayload) {
   };
 }
 
-function buildWhere(query: PayableQuery): Prisma.PayableWhereInput {
+type Db = Prisma.TransactionClient;
+
+function buildWhere(organizationIds: string[], query: PayableQuery): Prisma.PayableWhereInput {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
   return {
-    organizationId: DEFAULT_ORGANIZATION_ID,
+    organizationId: { in: organizationIds },
     ...(query.overdue ? { status: { not: "PAGO" }, dueDate: { lt: today } } : {}),
     ...(!query.overdue && query.status ? { status: query.status } : {}),
     ...(query.categoryId ? { categoryId: query.categoryId } : {}),
@@ -51,34 +52,49 @@ export type PayableWithCategory = Payable & {
 };
 
 export class PayableRepository {
-  findAll(query: PayableQuery): Promise<PayableWithCategory[]> {
+  findAll(organizationIds: string[], query: PayableQuery): Promise<PayableWithCategory[]> {
     return prisma.payable.findMany({
-      where: buildWhere(query),
+      where: buildWhere(organizationIds, query),
       include,
       orderBy: [{ dueDate: "asc" }, { description: "asc" }],
     });
   }
 
-  findById(id: string): Promise<PayableWithCategory | null> {
-    return prisma.payable.findUnique({ where: { id }, include });
+  findById(id: string, organizationIds: string[], db: Db = prisma): Promise<PayableWithCategory | null> {
+    return db.payable.findFirst({ where: { id, organizationId: { in: organizationIds } }, include });
   }
 
-  create(payload: PayableCreatePayload): Promise<PayableWithCategory> {
-    return prisma.payable.create({ data: { ...mapPayload(payload), organizationId: DEFAULT_ORGANIZATION_ID }, include });
+  findByRecurrenceGroupId(recurrenceGroupId: string, organizationId: string, db: Db = prisma) {
+    return db.payable.findMany({ where: { recurrenceGroupId, organizationId }, include });
   }
 
-  createMany(payloads: PayableCreatePayload[]): Promise<Prisma.BatchPayload> {
-    return prisma.payable.createMany({
-      data: payloads.map((payload) => ({ ...mapPayload(payload), organizationId: DEFAULT_ORGANIZATION_ID })),
+  create(payload: PayableCreatePayload, organizationId: string, db: Db = prisma): Promise<PayableWithCategory> {
+    return db.payable.create({ data: { ...mapPayload(payload), organizationId }, include });
+  }
+
+  async createMany(
+    payloads: PayableCreatePayload[],
+    organizationId: string,
+    db: Db = prisma,
+  ): Promise<PayableWithCategory[]> {
+    const created = await db.payable.createManyAndReturn({
+      data: payloads.map((payload) => ({ ...mapPayload(payload), organizationId })),
+      select: { id: true },
+    });
+
+    return db.payable.findMany({
+      where: { id: { in: created.map(({ id }) => id) } },
+      include,
+      orderBy: { dueDate: "asc" },
     });
   }
 
-  update(id: string, payload: PayablePayload): Promise<PayableWithCategory> {
-    return prisma.payable.update({ where: { id }, data: mapPayload(payload), include });
+  update(id: string, payload: PayablePayload, db: Db = prisma): Promise<PayableWithCategory> {
+    return db.payable.update({ where: { id }, data: mapPayload(payload), include });
   }
 
-  settle(id: string, payload: PayableSettlementPayload): Promise<PayableWithCategory> {
-    return prisma.payable.update({
+  settle(id: string, payload: PayableSettlementPayload, db: Db = prisma): Promise<PayableWithCategory> {
+    return db.payable.update({
       where: { id },
       data: {
         status: "PAGO",
@@ -91,11 +107,11 @@ export class PayableRepository {
     });
   }
 
-  delete(id: string): Promise<Payable> {
-    return prisma.payable.delete({ where: { id } });
+  delete(id: string, db: Db = prisma): Promise<Payable> {
+    return db.payable.delete({ where: { id } });
   }
 
-  deleteByRecurrenceGroupId(recurrenceGroupId: string): Promise<Prisma.BatchPayload> {
-    return prisma.payable.deleteMany({ where: { recurrenceGroupId } });
+  deleteByRecurrenceGroupId(recurrenceGroupId: string, organizationId: string, db: Db = prisma): Promise<Prisma.BatchPayload> {
+    return db.payable.deleteMany({ where: { recurrenceGroupId, organizationId } });
   }
 }
