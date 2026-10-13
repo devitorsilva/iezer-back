@@ -247,7 +247,7 @@ export function isUniqueViolation(error: unknown) {
 }
 
 // Nome normalizado parecido: mesmo primeiro nome, ou um contido no outro.
-function similarNames(a: string, b: string) {
+export function similarNames(a: string, b: string) {
   if (!a || !b) return false;
   return a.split(" ")[0] === b.split(" ")[0] || a.includes(b) || b.includes(a);
 }

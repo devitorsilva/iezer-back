@@ -603,3 +603,77 @@ Na planilha, célula que começa com `= + - @` recebe apóstrofo (contra injeç�
 - Traz só o módulo PESSOAS sobre a pessoa, em todas as organizações da igreja.
 - Pessoa fora do escopo de leitura dá 404.
 - O histórico completo (acesso, financeiro, login) fica na Auditoria, com `?pessoa=`.
+
+## Sprint 11 — Importação pela planilha modelo
+
+Todas as rotas exigem `pessoas.importar` e uma organização concreta no seletor ("todas" dá 400 `ORGANIZATION_REQUIRED`). Código em `src/modules/pessoas/importacao/` (`planilha.ts` gera e lê o `.xlsx` com `exceljs`).
+
+### `GET /pessoas/importacao/modelo` (RF-I01 a RF-I05)
+
+`.xlsx` com `Content-Disposition: attachment; filename="modelo-pessoas-<organizacao>.xlsx"`. Abas:
+- **Instruções**, com o aviso da guarda das fichas em papel.
+- **Pessoas:** cabeçalho, linha de exemplo ("Maria Exemplo da Silva", ignorada na leitura) e 34 colunas em formato texto (`@`), aplicado na coluna e em cada célula até a linha 2.002 (Numbers, Google Planilhas e LibreOffice ignoram o formato da coluna). Validações até a linha 2.002: listas (vínculo, sexo, estado civil, tipo de documento, S/N, UF, formas de admissão ativas da igreja) e datas `dd/mm/aaaa`.
+- **Listas** (oculta), fonte das validações.
+- **`_meta`** (`veryHidden`): `versao` (`pessoas-1`), `organizacao` (id) e `gerado_em`. O mesmo código fica visível no fim das Instruções ("Código do modelo: pessoas-1 · <id>"), porque o Numbers e o Google Planilhas podem descartar as abas ocultas ao exportar. Na leitura, o cabeçalho é procurado nas 5 primeiras linhas da aba Pessoas ou, se ela foi renomeada, da primeira aba que tiver "Nome completo".
+
+### `POST /pessoas/importacao/previa` (RF-I06, RT-B10, etapa 1)
+
+Body `{ arquivo: <base64 do .xlsx>, nomeArquivo? }`, até 5 MB e 2.000 linhas. **Não grava nada.**
+
+Recusa o arquivo inteiro (400):
+- `NUMBERS_FILE`: arquivo do Numbers (`.numbers`); a mensagem explica como exportar para Excel.
+- `TEMPLATE_INVALID`: arquivo ilegível, sem o código do modelo, sem o cabeçalho ou sem alguma coluna.
+- `TEMPLATE_OUTDATED`: versão do modelo diferente (`templateVersion` no corpo).
+- `TEMPLATE_ORGANIZATION`: modelo de outra organização (o nome aparece só se for da mesma igreja).
+- `EMPTY_FILE` e `TOO_MANY_ROWS`.
+
+Resposta:
+```
+{ organizationId, organizationName, templateVersion,
+  declaration: { text, version },
+  totals: { total, novos, duplicados, repetidas, recusadas },
+  rows: [{ line, name, bond | null, birthDate | null,
+           action: "criar" | "duplicado" | "repetida" | "recusada",
+           errors: string[], warnings: string[], repeatedLine | null,
+           guardian: { personId | null, name, line | null } | null,
+           duplicate: { personId, name, bond, status, birthDate, organizationName,
+                        reasons: ("CPF"|"NOME_NASCIMENTO"|"NOME_CELULAR"|"NOME_EMAIL")[] } | null }] }
+```
+
+Regras por linha:
+- **Recusada:** nome ou vínculo ausentes; formato inválido (data, CPF com dígito verificador, telefone, email, CEP, UF); valor fora das listas; data no futuro.
+- **Responsável (RF-P09):** menor de 18 anos ou Membro em formação precisa de responsável maior de idade, pelo "CPF do responsável" ou pelo "Nome do responsável". A busca é primeiro na planilha e depois na base. Responsável da base que já está numa família precisa ser Responsável ou Cônjuge nela. Menor também precisa de "Consentimento coletado" = S. Faltou algo, a linha é recusada.
+- **Repetida:** mesmo CPF, ou mesmo nome e nascimento, de uma linha anterior (só a primeira entra). Também é repetida a segunda linha que casa com o mesmo cadastro existente.
+- **Duplicado contra a base** (organização ativa): mesmo CPF, ou nome parecido com mesmo nascimento, celular ou email. Email ou celular sozinho não conta. CPFs diferentes nunca são duplicados.
+- **Avisos:**
+  - vínculo sem o mínimo entra como cadastro incompleto;
+  - vínculo da planilha diferente do cadastro (não muda);
+  - cadastro existente não Ativo;
+  - responsável informado para adulto é ignorado.
+
+### `POST /pessoas/importacao/confirmar` (RF-I07, RF-I08, RT-B10, etapa 2)
+
+Body `{ arquivo, nomeArquivo?, decisoes: { "<linha>": "pular" | "atualizar" }, declaracao: true }`. Sem `declaracao: true` dá 400 `VALIDATION_ERROR`.
+
+Comportamento:
+- Lê e confere tudo de novo; o servidor não guarda a prévia. Duplicado sem decisão é pulado.
+- Grava as linhas novas e as atualizações numa transação só (`runAudited` com timeout de 120 s, escritas em lote). Recusadas e repetidas ficam de fora.
+- **Novas:** situação Ativo, com `bondSince` pelo vínculo. Criança sem endereço herda o do responsável e entra como Filho na família dele, criada se ele ainda não tiver. Consentimento S grava `PersonConsent` (CADASTRO, `PLANILHA`, data da planilha ou hoje), dado pelo responsável quando a pessoa é menor.
+- **Atualizar:** grava só os campos preenchidos na planilha, sem apagar nada. Vínculo, situação e congregação não mudam. Ganha consentimento e família do responsável só se ainda não tiver.
+
+Erros:
+- 400 `NOTHING_TO_IMPORT`: nenhuma linha para gravar.
+- 409 `IMPORT_CONFLICT`: CPF ou família usados por outra pessoa durante a importação.
+
+Resposta (relatório, RF-I08):
+```
+{ importId, fileName,
+  totals: { criadas, atualizadas, puladas, recusadas },
+  rows: [{ line, name, result: "criada"|"atualizada"|"pulada"|"recusada", personId | null, messages: string[] }] }
+```
+
+O relatório não fica salvo; o front gera o CSV. Auditoria, com a descrição "Importação da planilha":
+- `criar`/`editar` por pessoa;
+- `criar` Family / `adicionar_membro`;
+- `registrar_consentimento`;
+- um `importar` (alvo `PersonImport`, `targetId = importId`) com `fileName`, `templateVersion`, os totais, `refusedLines`, `declaration`, `declarationVersion` e os `personIds` de todas as pessoas criadas e atualizadas (RF-P08).

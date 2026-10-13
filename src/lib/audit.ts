@@ -89,11 +89,16 @@ async function resolvePersonIds(tx: Prisma.TransactionClient, entry: AuditEntry)
   return [...new Set(ids)];
 }
 
+// Lote por INSERT: o Postgres aceita no máximo 65.535 parâmetros por consulta.
+const AUDIT_BATCH_SIZE = 1_000;
+
 // Helper único de auditoria (RT-AB10): a alteração e o AuditLog na mesma transação.
-// Se a gravação do log falhar, a alteração é desfeita.
+// Se a gravação do log falhar, a alteração é desfeita. `timeout` maior só para escritas em
+// lote (importação); o padrão de 15 s vale para o resto.
 export function runAudited<T>(
   actor: AuditActor,
   fn: (tx: Prisma.TransactionClient, audit: AuditWriter) => Promise<T>,
+  options: { timeout?: number } = {},
 ): Promise<T> {
   return prisma.$transaction(
     async (tx) => {
@@ -119,11 +124,13 @@ export function runAudited<T>(
           });
         }
 
-        await tx.auditLog.createMany({ data });
+        for (let start = 0; start < data.length; start += AUDIT_BATCH_SIZE) {
+          await tx.auditLog.createMany({ data: data.slice(start, start + AUDIT_BATCH_SIZE) });
+        }
       };
 
       return fn(tx, audit);
     },
-    { timeout: 15_000 },
+    { timeout: options.timeout ?? 15_000 },
   );
 }
