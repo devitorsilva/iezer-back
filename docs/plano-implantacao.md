@@ -114,7 +114,7 @@ Depois do MVP: itens F2 dos dois PRDs, priorizados com a igreja piloto.
 - **IDs:** RF-CV01 a RF-CV06, RF-CV08, RF-RS01 a RF-RS04, RF-OB01 a RF-OB04, RF-OR01, RF-OR03, RT-AB08, RT-AB09, RT-AB12, RF-LP07, RF-LP08.
 - **Pronto quando:** o pastor convida a secretaria e ela entra de ponta a ponta.
 
-## Sprint 7 — Pessoas: perfil e família `[ ]`
+## Sprint 7 — Pessoas: perfil e família `[x]`
 
 **Objetivo:** o perfil da pessoa como página, com edição por seção.
 
@@ -226,3 +226,8 @@ Entradas curtas (até 8 linhas), mais recente por último.
   Decisões: "Copiar link" gera token novo (o banco não guarda o token); quem convida precisa de "Gerenciar usuários" na organização e das protegidas do perfil; `/acesso/perfis` liberado também para `acesso.usuarios.gerenciar`; Organização exige a permissão na sede; congregação só é desativada; texto dos termos provisório (`TERMS_VERSION = 2026-10-10`).
   Testado por HTTP: convite → aceite → `/me` → `/pessoas`, link antigo e reuso dão 404, Tesoureiro barrado, senhas curta/com e-mail/vazada/com nome da igreja recusadas, redefinição com sessões encerradas. Usuário criado: `teste.secretaria@iezer.local` (Secretário). Os usuários de teste antigos vão aceitar os termos no próximo login.
   Pendências: domínio + Resend (SPF/DKIM, RT-AB12); em produção sem chave, "Esqueci a senha" não entrega; limites em memória (uma instância); telas de Organização e Usuários testadas só por typecheck/build; no Render: `prisma migrate deploy` e, quando os dados reais chegarem, `igreja:criar` com `"sedeId": "csedepiloto00000000000000"` no JSON; RF-CV07 (2FA obrigatório) fica para a Sprint 12.
+- 10/10/2026 · Sprint 7 · Sprint 6 commitada antes (`sprint-06-convite`, back e front). Back sem migração: slice `pessoas/familias` (`/pessoas/familias`: criar, renomear, adicionar, trocar papel, remover; trava do menor sem responsável em toda mudança; família vazia é apagada), `PATCH /pessoas/:id` com `applyToFamily` (endereço e telefone secundário, em lote), `GET /pessoas/:id/contribuicoes` e `GET /pessoas/:id/acesso`; membros da família com `bond`/`status`/`isGuardian`.
+  Front (`sprint-07-perfil`): `/app/pessoas/:id` com cabeçalho, abas na URL (`ui/tabs.tsx` à mão, `@radix-ui/react-tabs`), Visão geral, Dados pessoais, Contato e endereço, Família, Vida na igreja, Contribuições e Acesso (cada uma pela permissão); edição por seção em modal (`SecaoDialog`/`useEditarPessoa`); `CepInput` (ViaCEP); "aplicar a toda a família"; "Cadastrar filho" pelo cadastro rápido com `responsavelFixo`; "Dar acesso" com a pessoa já escolhida; "Apagar registro" no ⋯. Layout de página de detalhe no `CLAUDE.md` do front (RT-F10).
+  Decisões: família pode juntar congregações diferentes; pessoa em outra família dá 409 (remover antes, sem mover automático); último acompanhamento na Visão geral fica para a Sprint 9; CPF pelo `CpfCnpjInput cpfOnly`; vínculo e congregação só leitura até a Sprint 9.
+  Testado por HTTP (usuário novo `teste.sprint7@iezer.local`, Pastor; para usar, redefina a senha com `npm run user:create`): travas de responsável, 409 de família, aplicar à família (inclusive o 400 de contato), renomear, família apagada ao sair o último, contribuições e acesso. Pessoas de teste "Teste Sete …" (e a "Família Sete") ficaram no banco para o teste visual.
+  Pendências: banco remoto lento daqui (~1–3 s por consulta) chegou perto do timeout de 15 s da transação; telas testadas só por typecheck/build; "Gerenciar acesso" leva a Configurações › Usuários até a Sprint 8; família não aparece na listagem (F2).

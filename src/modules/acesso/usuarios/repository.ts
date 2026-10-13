@@ -33,6 +33,16 @@ export class UserRepository {
     });
   }
 
+  // Usuário da pessoa, com as atribuições nas organizações informadas.
+  findByPersonId(personId: string, organizationIds: string[]): Promise<UserWithAssignments | null> {
+    return prisma.user.findUnique({ where: { personId }, select: select(organizationIds) });
+  }
+
+  async personExists(personId: string, organizationIds: string[]) {
+    const count = await prisma.person.count({ where: { id: personId, organizationId: { in: organizationIds } } });
+    return count > 0;
+  }
+
   findById(id: string, organizationIds: string[], db: Db = prisma): Promise<UserWithAssignments | null> {
     return db.user.findFirst({
       where: { id, assignments: { some: { organizationId: { in: organizationIds } } } },

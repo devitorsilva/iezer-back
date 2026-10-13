@@ -126,7 +126,12 @@ export const personCreateSchema = z.object({
   consent: consentSchema.optional(),
 });
 
-export const personUpdateSchema = z.object({ name: name.optional(), ...personFields });
+export const personUpdateSchema = z.object({
+  name: name.optional(),
+  ...personFields,
+  // RF-F03: endereço e telefone secundário enviados valem também para o resto da família.
+  applyToFamily: z.boolean().optional(),
+});
 
 export const personParamsSchema = z.object({
   id: z.string().cuid(),
@@ -180,6 +185,7 @@ export const duplicateQuerySchema = z.object({
 
 export type PersonCreatePayload = z.infer<typeof personCreateSchema>;
 export type PersonUpdatePayload = z.infer<typeof personUpdateSchema>;
+export type PersonUpdateFields = Omit<PersonUpdatePayload, "applyToFamily">;
 export type GuardianPayload = z.infer<typeof guardianSchema>;
 export type ConsentPayload = z.infer<typeof consentSchema>;
 export type PersonListQuery = z.infer<typeof personListQuerySchema>;

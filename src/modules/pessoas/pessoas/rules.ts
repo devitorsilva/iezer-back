@@ -1,4 +1,4 @@
-import type { PersonBond } from "@prisma/client";
+import type { FamilyRole, PersonBond } from "@prisma/client";
 import { ageOn } from "../../../lib/civil-date.js";
 
 // Mínimo obrigatório por vínculo (PRD Pessoas › Vínculo e dados mínimos por estágio)
@@ -91,4 +91,26 @@ export function describeMissing(fields: MissingField[]) {
 export function familyNameFor(name: string) {
   const words = name.trim().split(/\s+/);
   return `Família ${words[words.length - 1]}`;
+}
+
+// Responsável na família (RF-F02): Responsável ou Cônjuge maior de idade.
+export const GUARDIAN_ROLES: FamilyRole[] = ["RESPONSAVEL", "CONJUGE"];
+
+export interface FamilyMemberRule {
+  personId: string;
+  role: FamilyRole;
+  birthDate: Date | null;
+  bond: PersonBond;
+}
+
+export function isGuardianMember(member: Pick<FamilyMemberRule, "role" | "birthDate">) {
+  return GUARDIAN_ROLES.includes(member.role) && !isMinor(member.birthDate);
+}
+
+// Quem precisa de responsável (menor de 18 ou Membro em formação) e não tem um na família.
+export function membersWithoutGuardian(members: FamilyMemberRule[]) {
+  return members
+    .filter((member) => isMinor(member.birthDate) || member.bond === "MEMBRO_EM_FORMACAO")
+    .filter((member) => !members.some((other) => other.personId !== member.personId && isGuardianMember(other)))
+    .map((member) => member.personId);
 }

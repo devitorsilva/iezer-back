@@ -1,8 +1,9 @@
 import { FastifyPluginAsync } from "fastify";
+import { familyRoutes } from "./familias/routes.js";
 import { churchListRoutes } from "./listas/routes.js";
 import { personRoutes } from "./pessoas/routes.js";
 
-const sections = ["listas"];
+const sections = ["listas", "familias"];
 
 export const pessoasRoutes: FastifyPluginAsync = async (app) => {
   app.get("/overview", async () => ({
@@ -12,5 +13,6 @@ export const pessoasRoutes: FastifyPluginAsync = async (app) => {
   }));
 
   await app.register(churchListRoutes);
+  await app.register(familyRoutes);
   await app.register(personRoutes);
 };

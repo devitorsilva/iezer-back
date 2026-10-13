@@ -26,9 +26,14 @@ export interface InviteAssignmentData {
 
 export class InviteRepository {
   // Pendentes (inclusive expirados) com perfil em alguma das organizações, mais recentes primeiro.
-  findPending(churchId: string, organizationIds: string[]): Promise<InviteWithRelations[]> {
+  findPending(churchId: string, organizationIds: string[], personId?: string): Promise<InviteWithRelations[]> {
     return prisma.invite.findMany({
-      where: { churchId, status: "PENDENTE", assignments: { some: { organizationId: { in: organizationIds } } } },
+      where: {
+        churchId,
+        personId,
+        status: "PENDENTE",
+        assignments: { some: { organizationId: { in: organizationIds } } },
+      },
       include,
       orderBy: { createdAt: "desc" },
     });

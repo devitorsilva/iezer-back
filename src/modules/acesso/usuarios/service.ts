@@ -15,6 +15,12 @@ export class UserNotFoundError extends Error {
   }
 }
 
+export class PersonNotFoundError extends Error {
+  constructor() {
+    super("PERSON_NOT_FOUND");
+  }
+}
+
 function mapUser(user: UserWithAssignments) {
   return {
     id: user.id,
@@ -42,6 +48,13 @@ export class UserService {
   async list(organizationIds: string[]) {
     const users = await this.repository.findAll(organizationIds);
     return users.map(mapUser);
+  }
+
+  // Aba Acesso do perfil (RF-US06): a pessoa precisa estar nas organizações que o usuário lê.
+  async findForPerson(readOrganizationIds: string[], organizationIds: string[], personId: string) {
+    if (!(await this.repository.personExists(personId, readOrganizationIds))) throw new PersonNotFoundError();
+    const user = await this.repository.findByPersonId(personId, organizationIds);
+    return user ? mapUser(user) : null;
   }
 
   // Troca o e-mail de login (e da pessoa), encerra as sessões, avisa o e-mail antigo e

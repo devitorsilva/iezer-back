@@ -1,4 +1,4 @@
-import { Prisma, type FamilyRole, type PersonBond } from "@prisma/client";
+import { Prisma, type PersonBond, type Receivable } from "@prisma/client";
 import { requireWriteOrganization, type RequestContext } from "../../../lib/access.js";
 import { runAudited, type AuditEntry, type AuditWriter } from "../../../lib/audit.js";
 import { ageOn, formatCivilDate, parseCivilDate, todayCivil } from "../../../lib/civil-date.js";
@@ -6,11 +6,14 @@ import { isValidCpf, normalizeCpf } from "../../../lib/cpf.js";
 import { AppError } from "../../../lib/errors.js";
 import { normalizePhone } from "../../../lib/phone.js";
 import { normalizeSearchText } from "../../../lib/text.js";
+import { mapFamilyMembers } from "../familias/service.js";
 import type { ChurchListRepository } from "../listas/repository.js";
 import type { PersonDetail, PersonListItem, PersonRepository } from "./repository.js";
 import {
   describeMissing,
   familyNameFor,
+  GUARDIAN_ROLES,
+  isGuardianMember,
   isMinor,
   missingFields,
   type MissingField,
@@ -21,13 +24,12 @@ import type {
   GuardianPayload,
   PersonCreatePayload,
   PersonListQuery,
+  PersonUpdateFields,
   PersonUpdatePayload,
 } from "./schemas.js";
 
 // Versão do texto de consentimento de cadastro (RF-P02). Mudou o texto, muda a versão.
 export const CONSENT_TEXT_VERSION = "cadastro-2026-10";
-
-const GUARDIAN_ROLES: FamilyRole[] = ["RESPONSAVEL", "CONJUGE"];
 
 export class PersonNotFoundError extends Error {
   constructor() {
@@ -49,11 +51,25 @@ const CIVIL_DATE_FIELDS = [
 
 type CivilDateField = (typeof CIVIL_DATE_FIELDS)[number];
 
+// Endereço e telefone fixo são do domicílio (RF-F03).
+const FAMILY_SHARED_FIELDS = [
+  "postalCode",
+  "street",
+  "number",
+  "complement",
+  "district",
+  "city",
+  "state",
+  "secondaryPhone",
+] as const;
+
 function familyGuardianIds(person: PersonDetail) {
   const members = person.familyMember?.family.members ?? [];
   return members
-    .filter((member) => member.personId !== person.id && GUARDIAN_ROLES.includes(member.role))
-    .filter((member) => !isMinor(member.person.birthDate))
+    .filter(
+      (member) =>
+        member.personId !== person.id && isGuardianMember({ role: member.role, birthDate: member.person.birthDate }),
+    )
     .map((member) => member.personId);
 }
 
@@ -84,13 +100,7 @@ function mapDetail(person: PersonDetail) {
           id: familyMember.family.id,
           name: familyMember.family.name,
           role: familyMember.role,
-          members: familyMember.family.members.map((member) => ({
-            personId: member.personId,
-            name: member.person.name,
-            preferredName: member.person.preferredName,
-            role: member.role,
-            age: member.person.birthDate ? ageOn(member.person.birthDate) : null,
-          })),
+          members: mapFamilyMembers(familyMember.family.members),
         }
       : null,
     consent: consent
@@ -111,6 +121,25 @@ function mapDetail(person: PersonDetail) {
 }
 
 type PersonDto = ReturnType<typeof mapDetail>;
+
+type ContributionRow = Receivable & { category: { name: string } | null; organization: { name: string } };
+
+function mapContribution(receivable: ContributionRow) {
+  return {
+    id: receivable.id,
+    description: receivable.description,
+    source: receivable.source,
+    organizationId: receivable.organizationId,
+    organizationName: receivable.organization.name,
+    categoryName: receivable.category?.name ?? null,
+    dueDate: receivable.dueDate.toISOString(),
+    amount: receivable.amount.toNumber(),
+    status: receivable.status,
+    settledAmount: receivable.settledAmount?.toNumber() ?? null,
+    settledAt: receivable.settledAt?.toISOString() ?? null,
+    settlementMethod: receivable.settlementMethod,
+  };
+}
 
 function mapListItem(person: PersonListItem) {
   return {
@@ -189,6 +218,18 @@ export class PersonService {
     const person = await this.repository.findById(id, context.readOrganizationIds);
     if (!person) throw new PersonNotFoundError();
     return mapDetail(person);
+  }
+
+  // Contribuições (RT-B04): endpoint separado do detalhe, com permissão própria.
+  async contributions(context: RequestContext, id: string) {
+    const person = await this.repository.findById(id, context.readOrganizationIds);
+    if (!person) throw new PersonNotFoundError();
+
+    const rows = await this.repository.listContributions(id, context.readOrganizationIds);
+    const totalReceived = rows
+      .filter((row) => row.status === "RECEBIDO")
+      .reduce((sum, row) => sum.plus(row.settledAmount ?? row.amount), new Prisma.Decimal(0));
+    return { items: rows.map(mapContribution), totalReceived: totalReceived.toNumber() };
   }
 
   // RF-C02: CPF igual bloqueia; email, celular ou nome parecido + mesmo nascimento avisam.
@@ -318,15 +359,16 @@ export class PersonService {
   // Edição dos dados cadastrais. A obrigatoriedade por vínculo vale para novas edições:
   // não dá para tirar um dado exigido, mas cadastro migrado incompleto continua editável.
   async update(context: RequestContext, id: string, payload: PersonUpdatePayload) {
+    const { applyToFamily, ...fields } = payload;
     try {
       return await runAudited(context.actor, async (tx, audit) => {
         const existing = await this.assertExists(context, id, tx);
-        await this.assertAdmissionMethod(context, payload.admissionMethodId, tx);
-        if (payload.cpf) await this.assertCpfAvailable(context, payload.cpf, id, tx);
+        await this.assertAdmissionMethod(context, fields.admissionMethodId, tx);
+        if (fields.cpf) await this.assertCpfAvailable(context, fields.cpf, id, tx);
 
         const changes = Object.fromEntries(
-          Object.entries(payload).filter(([, value]) => value !== undefined),
-        ) as PersonUpdatePayload;
+          Object.entries(fields).filter(([, value]) => value !== undefined),
+        ) as PersonUpdateFields;
         const current = requirementInput(existing);
         const before = new Set(missingFields(current));
         const worse = missingFields({ ...current, ...changes, name: changes.name ?? existing.name }).filter(
@@ -347,6 +389,7 @@ export class PersonService {
         await audit(
           auditEntry("editar", existing.organizationId, "Person", id, { before: mapDetail(existing), after: updated }),
         );
+        if (applyToFamily) await this.applyToFamily(context, existing, changes, tx, audit);
         return updated;
       });
     } catch (error) {
@@ -376,6 +419,57 @@ export class PersonService {
       await this.repository.delete(id, tx);
       await audit(auditEntry("apagar_registro", existing.organizationId, "Person", id, { before: mapDetail(existing) }));
     });
+  }
+
+  // RF-F03: copia endereço e telefone fixo para os outros membros da família que o usuário enxerga,
+  // com a mesma regra do "não piorar" do vínculo.
+  private async applyToFamily(
+    context: RequestContext,
+    person: PersonDetail,
+    changes: PersonUpdateFields,
+    db: Db,
+    audit: AuditWriter,
+  ) {
+    const shared: Partial<Record<(typeof FAMILY_SHARED_FIELDS)[number], string | null>> = {};
+    for (const field of FAMILY_SHARED_FIELDS) {
+      if (changes[field] !== undefined) shared[field] = changes[field];
+    }
+    if (Object.keys(shared).length === 0) return;
+
+    const otherIds = (person.familyMember?.family.members ?? [])
+      .map((member) => member.personId)
+      .filter((personId) => personId !== person.id);
+    const others = await this.repository.findManyByIds(otherIds, context.readOrganizationIds, db);
+    if (others.length === 0) return;
+
+    for (const existing of others) {
+      const current = requirementInput(existing);
+      const before = new Set(missingFields(current));
+      const worse = missingFields({ ...current, ...shared }).filter((field) => !before.has(field));
+      if (worse.length > 0) {
+        throw new AppError(
+          400,
+          "BOND_REQUIREMENTS",
+          `${existing.name} ficaria sem ${describeMissing(worse)}. Salve sem aplicar à família.`,
+          { missingFields: worse, target: "family", personId: existing.id },
+        );
+      }
+    }
+
+    // Uma escrita só (a transação roda no pooler; muitas idas ao banco estouram o tempo dela).
+    await this.repository.updateMany(
+      others.map((existing) => existing.id),
+      shared,
+      db,
+    );
+    await audit(
+      others.map((existing) =>
+        auditEntry("editar", existing.organizationId, "Person", existing.id, {
+          before: mapDetail(existing),
+          after: mapDetail({ ...existing, ...shared }),
+        }),
+      ),
+    );
   }
 
   private resolveCreateOrganization(context: RequestContext, requested: string | null | undefined) {

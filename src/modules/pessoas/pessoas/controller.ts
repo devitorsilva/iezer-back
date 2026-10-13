@@ -33,6 +33,17 @@ export class PersonController {
     }
   };
 
+  contributions = async (request: FastifyRequest, reply: FastifyReply) => {
+    const { id } = personParamsSchema.parse(request.params);
+
+    try {
+      return await this.service.contributions(getRequestContext(request), id);
+    } catch (error) {
+      if (error instanceof PersonNotFoundError) return reply.notFound("Pessoa não encontrada.");
+      throw error;
+    }
+  };
+
   create = async (request: FastifyRequest, reply: FastifyReply) => {
     const payload = personCreateSchema.parse(request.body);
     return reply.code(201).send(await this.service.create(getRequestContext(request), payload));

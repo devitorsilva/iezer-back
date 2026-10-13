@@ -2,6 +2,7 @@ import { Prisma, type FamilyRole } from "@prisma/client";
 import { addDays, yearsAgo } from "../../../lib/civil-date.js";
 import { prisma } from "../../../lib/prisma.js";
 import { normalizeSearchText } from "../../../lib/text.js";
+import { familyMemberPersonSelect } from "../familias/repository.js";
 import type { PersonListQuery } from "./schemas.js";
 
 type Db = Prisma.TransactionClient;
@@ -19,7 +20,7 @@ export const detailInclude = {
       family: {
         include: {
           members: {
-            include: { person: { select: { id: true, name: true, preferredName: true, birthDate: true } } },
+            include: { person: { select: familyMemberPersonSelect } },
             orderBy: { createdAt: "asc" },
           },
         },
@@ -100,6 +101,17 @@ export class PersonRepository {
     });
   }
 
+  findManyByIds(ids: string[], organizationIds: string[], db: Db): Promise<PersonDetail[]> {
+    return db.person.findMany({
+      where: { id: { in: ids }, organizationId: { in: organizationIds } },
+      include: detailInclude,
+    });
+  }
+
+  updateMany(ids: string[], data: Prisma.PersonUncheckedUpdateManyInput, db: Db) {
+    return db.person.updateMany({ where: { id: { in: ids } }, data });
+  }
+
   findByCpf(cpf: string, organizationIds: string[], excludeId?: string | null, db: Db = prisma) {
     return db.person.findFirst({
       where: { cpf, organizationId: { in: organizationIds }, ...(excludeId ? { id: { not: excludeId } } : {}) },
@@ -146,6 +158,15 @@ export class PersonRepository {
     return db.person.delete({ where: { id } });
   }
 
+  // Contribuições da pessoa (RT-B04): recebíveis vinculados, somente leitura.
+  listContributions(personId: string, organizationIds: string[]) {
+    return prisma.receivable.findMany({
+      where: { personId, organizationId: { in: organizationIds } },
+      include: { category: { select: { name: true } }, organization: { select: { name: true } } },
+      orderBy: [{ dueDate: "desc" }, { id: "asc" }],
+    });
+  }
+
   // Vínculos que impedem apagar o registro (RF-V05).
   async countLinks(id: string, db: Db) {
     const [receivables, family, user, followUps, consentsGiven] = await Promise.all([
@@ -156,10 +177,6 @@ export class PersonRepository {
       db.personConsent.count({ where: { givenByPersonId: id } }),
     ]);
     return { receivables, family, user, followUps, consentsGiven };
-  }
-
-  findFamilyMembership(personId: string, db: Db) {
-    return db.familyMember.findUnique({ where: { personId }, select: { familyId: true, role: true } });
   }
 
   createFamily(organizationId: string, name: string, db: Db) {

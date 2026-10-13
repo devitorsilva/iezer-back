@@ -360,3 +360,43 @@ Todas as rotas exigem `organizacoes.gerenciar` **na sede** (`requireChurchPermis
 ### E-mail
 
 `src/lib/mailer.ts` envia pelo Resend (`RESEND_API_KEY`, `EMAIL_FROM`) com remetente "Nome da Igreja via iEzer". Sem chave, o e-mail vai para o log: em dev com o link, em produção só destinatário e assunto.
+
+## Sprint 7 — Perfil da pessoa e família
+
+### `GET /pessoas/:id` (alterado)
+
+`family.members[]` ganha `bond`, `status` e `isGuardian` (Responsável ou Cônjuge maior de idade, RF-F02): `{ personId, name, preferredName, role, age, bond, status, isGuardian }`.
+
+### `PATCH /pessoas/:id` (alterado, RF-F03)
+
+Aceita `applyToFamily: true`. Os campos do domicílio enviados no corpo (`postalCode`, `street`, `number`, `complement`, `district`, `city`, `state`, `secondaryPhone`) são copiados para os outros membros da família que o usuário enxerga, cada um com um `editar` no log. Vale a mesma regra do "não piorar": se a cópia tirar o mínimo do vínculo de alguém (ex.: o único contato), nada é salvo e a resposta é 400 `BOND_REQUIREMENTS` com `target: "family"`, `personId` e `missingFields`.
+
+### Família (`pessoas.editar`, RF-F01, RF-F02, RT-B11)
+
+| Método | Rota | Corpo | Resposta |
+| --- | --- | --- | --- |
+| POST | `/pessoas/familias` | `{ name?, members: [{ personId, role }] }` (1 a 30, sem repetir) | 201 `Family` |
+| PATCH | `/pessoas/familias/:id` | `{ name }` | `Family` |
+| POST | `/pessoas/familias/:id/membros` | `{ personId, role }` | `Family` |
+| PATCH | `/pessoas/familias/:id/membros/:personId` | `{ role }` | `Family` |
+| DELETE | `/pessoas/familias/:id/membros/:personId` | — | `{ family: Family \| null }` (`null`: era o último e a família foi apagada) |
+
+- `role`: `RESPONSAVEL`, `CONJUGE`, `FILHO`, `OUTRO`.
+- `Family`: `{ id, name, organizationId, organizationName, members: FamilyMember[] }`. Sem `name`, vira "Família <sobrenome>" do primeiro responsável (ou da primeira pessoa). A família fica na organização da primeira pessoa; membros de congregações diferentes são aceitos.
+- A família é visível se for de uma organização que o usuário lê ou tiver alguém dela; trocar papel e remover só valem para quem o usuário enxerga (senão 404).
+- Erros:
+  - 409 `PERSON_IN_FAMILY` (`personId`, `familyId`, `familyName`): a pessoa já está em outra família (uma por pessoa). Remova de lá primeiro.
+  - 400 `GUARDIAN_REQUIRED` (`personIds`): a mudança deixaria sem responsável um menor de 18 anos ou Membro em formação (trocar o papel do único responsável, remover o responsável, remover o próprio menor).
+  - 400 `INVALID_REFERENCE`: pessoa fora do alcance.
+  - 404: família ou membro não encontrado.
+- Log (módulo `PESSOAS`, alvo `Family`): `criar`, `renomear`, `adicionar_membro`, `trocar_papel`, `remover_membro`, `apagar`.
+- **Filho a partir do responsável (RF-F04):** sem rota nova. `POST /pessoas` com `guardian: { personId }` põe a criança como Filho na família do responsável (cria a família se preciso) e copia o endereço quando ela vem sem endereço. Também vale para filho adulto (consentimento só é exigido de menor).
+
+### `GET /pessoas/:id/contribuicoes` (`pessoas.contribuicoes.ver`, RT-B04)
+
+`{ items: Contribution[], totalReceived }`. Recebíveis da pessoa nas organizações que o usuário lê, do vencimento mais recente para o mais antigo. `totalReceived` soma os `RECEBIDO` (valor baixado, ou o valor do lançamento).
+`Contribution`: `{ id, description, source, organizationId, organizationName, categoryName, dueDate, amount, status: "RECEBIDO"|"PENDENTE"|"ATRASADO", settledAmount, settledAt, settlementMethod }` (`dueDate`/`settledAt` ISO de data e hora, como em Contas a Receber). 404 se a pessoa não estiver no alcance.
+
+### `GET /pessoas/:id/acesso` (`acesso.usuarios.ver` ou `.gerenciar`, RF-US06)
+
+`{ user: User | null, invite: Invite | null }`, nos formatos de `/acesso/usuarios` e `/acesso/convites`. As atribuições vêm só das organizações em que quem consulta tem a permissão. `invite` (pendente ou expirado) só vem quando não há usuário. 404 se a pessoa não estiver no alcance.

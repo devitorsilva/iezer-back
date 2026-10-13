@@ -136,6 +136,12 @@ export class InviteService {
     return invites.map(mapInvite);
   }
 
+  // Aba Acesso do perfil da pessoa (RF-US06).
+  async findForPerson(churchId: string, organizationIds: string[], personId: string) {
+    const [invite] = await this.repository.findPending(churchId, organizationIds, personId);
+    return invite ? mapInvite(invite) : null;
+  }
+
   // Dar acesso (RF-CV01 a RF-CV03, RF-CV08).
   async create(context: InviteContext, input: CreateInviteInput) {
     const assignments = input.assignments.flatMap(({ organizationId, profileIds }) =>
