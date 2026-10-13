@@ -1,6 +1,7 @@
 import { fromNodeHeaders } from "better-auth/node";
 import { FastifyPluginAsync } from "fastify";
 import { auth } from "../../lib/auth.js";
+import { withClientIp } from "../../lib/client-ip.js";
 import { rateLimitByIp } from "../../lib/rate-limit.js";
 import { acceptInviteSchema, inviteTokenParamsSchema } from "../acesso/convites/schemas.js";
 import { inviteService } from "../acesso/convites/routes.js";
@@ -28,7 +29,7 @@ export const publicInviteRoutes: FastifyPluginAsync = async (app) => {
       try {
         const { headers } = await auth.api.signInEmail({
           body: { email, password: input.password },
-          headers: fromNodeHeaders(request.headers),
+          headers: withClientIp(fromNodeHeaders(request.headers), request.ip),
           returnHeaders: true,
         });
         const cookies = headers.getSetCookie();

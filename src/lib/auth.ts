@@ -1,10 +1,11 @@
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
-import { APIError, createAuthMiddleware } from "better-auth/api";
+import { APIError, createAuthMiddleware, isAPIError } from "better-auth/api";
 import { haveIBeenPwned } from "better-auth/plugins";
 import { env } from "../config/env.js";
-import { runAudited } from "./audit.js";
+import { runAudited, type AuditActor } from "./audit.js";
 import { findUserChurch } from "./church.js";
+import { CLIENT_IP_HEADER } from "./client-ip.js";
 import { passwordChangedEmail, passwordResetEmail, PASSWORD_RESET_TTL_SECONDS } from "./emails.js";
 import { trySendMail } from "./mailer.js";
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, passwordRuleViolation } from "./password-rules.js";
@@ -17,6 +18,35 @@ export const USER_INACTIVE_MESSAGE =
 export const INVITE_REQUIRED_CODE = "INVITE_REQUIRED";
 export const INVITE_REQUIRED_MESSAGE =
   "Não encontramos um acesso para este e-mail. Peça um convite ao administrador da sua igreja.";
+
+// Login, falha de login e logout no AuditLog (RF-LP01), na sede da igreja do usuário.
+// Falha com e-mail sem usuário fica sem organização (não aparece para nenhuma igreja).
+async function auditLogin(
+  action: "login" | "login_falhou" | "logout",
+  userId: string | null,
+  headers: Headers | null | undefined,
+  data: { actorUserId?: string | null; description?: string; after?: unknown } = {},
+) {
+  const actor: AuditActor = {
+    type: "USUARIO",
+    userId: data.actorUserId === undefined ? userId : data.actorUserId,
+    ip: headers?.get(CLIENT_IP_HEADER) ?? null,
+    userAgent: headers?.get("user-agent") ?? null,
+  };
+  const church = userId ? await findUserChurch(userId) : null;
+
+  await runAudited(actor, (_tx, audit) =>
+    audit({
+      organizationId: church?.id ?? null,
+      module: "LOGIN",
+      action,
+      targetType: "User",
+      targetId: userId,
+      description: data.description,
+      after: data.after,
+    }),
+  );
+}
 
 // Mesmas origens liberadas no CORS (src/app.ts).
 const localDevOrigins = Array.from({ length: 10 }, (_, index) => [
@@ -114,6 +144,24 @@ export const auth = betterAuth({
         throw APIError.from("BAD_REQUEST", { code: "WEAK_PASSWORD", message: violation });
       }
     }),
+    // Falha de login (o sucesso é gravado na criação da sessão). Sem autor: a tentativa
+    // não está autenticada.
+    after: createAuthMiddleware(async (ctx) => {
+      if (ctx.path !== "/sign-in/email" || !isAPIError(ctx.context.returned)) return;
+
+      const error = ctx.context.returned;
+      const email = String((ctx.body as { email?: unknown } | undefined)?.email ?? "").trim().toLowerCase();
+      const user = email
+        ? await prisma.user.findUnique({ where: { email }, select: { id: true } })
+        : null;
+      const reason = typeof error.body?.code === "string" ? error.body.code : error.status;
+
+      await auditLogin("login_falhou", user?.id ?? null, ctx.headers, {
+        actorUserId: null,
+        description: user ? undefined : `E-mail sem usuário: ${email}`,
+        after: { reason },
+      });
+    }),
   },
   databaseHooks: {
     user: {
@@ -147,11 +195,19 @@ export const auth = betterAuth({
             });
           }
         },
-        after: async (session) => {
+        after: async (session, context) => {
           await prisma.user.update({
             where: { id: session.userId },
             data: { lastLoginAt: new Date() },
           });
+          await auditLogin("login", session.userId, context?.headers);
+        },
+      },
+      delete: {
+        // Só o "Sair" do usuário; sessões encerradas pelo iEzer já têm a própria entrada.
+        after: async (session, context) => {
+          if (context?.path !== "/sign-out") return;
+          await auditLogin("logout", session.userId, context.headers);
         },
       },
     },

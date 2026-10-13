@@ -40,6 +40,7 @@ export async function suspendPersonAccess(
     description: `Suspensão automática: situação da pessoa mudou para ${reason}; ${count} sessão(ões) encerrada(s)`,
     before: { status: "ATIVO" },
     after: { status: "SUSPENSO" },
+    personIds: [personId],
   });
 
   return { ...user, reason };

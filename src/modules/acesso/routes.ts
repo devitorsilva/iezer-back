@@ -1,4 +1,5 @@
 import { FastifyPluginAsync } from "fastify";
+import { auditRoutes } from "./auditoria/routes.js";
 import { inviteRoutes } from "./convites/routes.js";
 import { onboardingRoutes } from "./onboarding/routes.js";
 import { accessProfileRoutes } from "./perfis/routes.js";
@@ -16,4 +17,5 @@ export const acessoRoutes: FastifyPluginAsync = async (app) => {
   await app.register(inviteRoutes);
   await app.register(userRoutes);
   await app.register(onboardingRoutes);
+  await app.register(auditRoutes);
 };

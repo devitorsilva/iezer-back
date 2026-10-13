@@ -1,5 +1,6 @@
 import { FastifyPluginAsync } from "fastify";
 import { auth } from "../../lib/auth.js";
+import { withClientIp } from "../../lib/client-ip.js";
 
 // Repassa /api/auth/* para o Better Auth
 // (https://www.better-auth.com/docs/integrations/fastify).
@@ -23,6 +24,8 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
           headers.append(key, Array.isArray(value) ? value.join(", ") : value);
         }
       }
+
+      withClientIp(headers, request.ip);
 
       const body = typeof request.body === "string" && request.body.length > 0 ? request.body : undefined;
       const response = await auth.handler(

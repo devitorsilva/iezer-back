@@ -1,5 +1,6 @@
 import { FastifyPluginAsync } from "fastify";
 import { requirePermission } from "../../../lib/access.js";
+import { auditController } from "../../acesso/auditoria/routes.js";
 import { userController } from "../../acesso/usuarios/routes.js";
 import { churchListRepository } from "../listas/routes.js";
 import { PersonController } from "./controller.js";
@@ -23,6 +24,7 @@ export const personRoutes: FastifyPluginAsync = async (app) => {
     { preHandler: requirePermission("acesso.usuarios.ver", "acesso.usuarios.gerenciar") },
     userController.personAccess,
   );
+  app.get("/:id/historico", { preHandler: requirePermission("pessoas.historico.ver") }, auditController.personHistory);
   app.post("/", { preHandler: requirePermission("pessoas.criar") }, controller.create);
   app.patch("/:id", { preHandler: requirePermission("pessoas.editar") }, controller.update);
   app.delete("/:id", { preHandler: requirePermission("pessoas.apagar_registro") }, controller.remove);

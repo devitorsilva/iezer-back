@@ -415,10 +415,13 @@ model AuditLog {
   after          Json?
   ip             String?
   userAgent      String?
+  // Pessoas afetadas (RF-LP04, aba Histórico). Sem FK: o log sobrevive ao "apagar registro".
+  personIds      String[]       @default([])
 
   @@index([organizationId, createdAt])
   @@index([actorUserId, createdAt])
   @@index([targetType, targetId])
+  @@index([personIds], type: Gin)
 }
 
 model Supplier {

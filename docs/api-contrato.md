@@ -543,3 +543,63 @@ Todas as datas são `"AAAA-MM-DD"`, obrigatórias e não podem ser futuras. `not
 
 - `User` ganha `personStatus` (situação da pessoa ou `null`).
 - `POST /acesso/usuarios/:id/reativar` dá 409 `PERSON_NOT_ACTIVE` quando a pessoa do usuário não está Ativa. Reative a pessoa antes.
+
+## Sprint 10 — Auditoria e aba Histórico
+
+Migração `20261013_trilha_auditoria`:
+- `AuditLog.personIds` (pessoas afetadas, índice GIN), preenchido também nos registros antigos;
+- trigger de somente inclusão (RF-LP03): `UPDATE`, `DELETE` e `TRUNCATE` no `AuditLog` dão erro. A única exceção é apagar `module = LOGIN` com mais de 12 meses (expurgo, RF-LP06).
+
+### Gravação (`runAudited`, `src/lib/audit.ts`)
+
+- **Minimização (RF-LP05):** com antes e depois, grava só os campos que mudaram. Criação guarda o retrato inteiro em `after`; exclusão guarda em `before`.
+- **`personIds`:** vem da entrada (`personIds`) ou é deduzido de:
+  - alvo `Person`;
+  - `personId` no antes/depois;
+  - `members[].personId`;
+  - a pessoa do `User` ou do `Invite` alvo.
+- **Login (RF-LP01)**, módulo `LOGIN`, alvo `User`, organização = sede da igreja do usuário:
+  - `login`: na criação da sessão;
+  - `login_falhou`: sem autor, `after: { reason }`. Com e-mail sem usuário, fica sem organização e não aparece para nenhuma igreja;
+  - `logout`: só no "Sair".
+- IP e dispositivo vêm do Fastify (`trustProxy`), repassados ao Better Auth no header interno `x-iezer-client-ip`.
+
+### `AuditEntry`
+
+```
+{ id, createdAt, actor: { type: "USUARIO"|"SUPORTE"|"SISTEMA", userId, name },
+  organization: { id, name } | null, module, moduleLabel, action, actionLabel,
+  targetType, targetTypeLabel, targetId, targetLabel, people: [{ id, name | null }],
+  changes: [{ field, label, before, after }], description, ip, userAgent }
+```
+
+- **`changes`:** valores já formatados em pt-BR (datas, Sim/Não, enums com rótulo) e sem os campos técnicos. `before: null` = criação; `after: null` = exclusão. Funciona igual para os registros antigos (retrato inteiro) e os novos (minimizados).
+- **`targetLabel`:** nome atual do registro ou, se ele foi apagado, o nome guardado no log.
+- **`people[].name` null:** a pessoa teve o registro apagado depois.
+- **Rótulos:** ficam em `src/modules/acesso/auditoria/rotulos.ts`, o mesmo arquivo que a exportação usa.
+
+### `/acesso/auditoria` (`auditoria.ver`, RF-LP02, RF-LP04)
+
+Escopo:
+- com a permissão na sede: todas as organizações da igreja, inclusive congregações desativadas;
+- só em congregações: as organizações em que a tem.
+
+Filtros (query), todos opcionais:
+- `autor` (userId), `pessoa` (personId), `modulo` (`ModuleKey`), `acao`, `organizacao`;
+- `de`/`ate` (`"AAAA-MM-DD"`, dia civil de Brasília; `de > ate` dá 400 `VALIDATION_ERROR`);
+- `suporte=true` (autor Suporte iEzer).
+
+| Método | Rota | Resposta |
+| --- | --- | --- |
+| GET | `/acesso/auditoria` | `{ items: AuditEntry[], total, page, pageSize }`, mais recente primeiro. `page`, `pageSize` (padrão 25, máx. 100) |
+| GET | `/acesso/auditoria/filtros` | `{ organizations: [{ id, name, type, isActive }], modules: [{ value, label }], actions: [{ value, label, modules }], authors: [{ id, name, email }] }`, só com o que existe no log do escopo |
+| GET | `/acesso/auditoria/exportar` | CSV (`;`, UTF-8 com BOM) com os mesmos filtros, até 10.000 linhas. Headers `X-Export-Rows` e `X-Export-Truncated`. Grava `exportar_auditoria` (alvo `AuditLog`, `after: { filters, rows, truncated }`) |
+
+Na planilha, célula que começa com `= + - @` recebe apóstrofo (contra injeção de fórmula).
+
+### `GET /pessoas/:id/historico` (`pessoas.historico.ver`, aba Histórico)
+
+- Responde `{ items: AuditEntry[], total, page, pageSize }`, com `page` e `pageSize` (padrão 20).
+- Traz só o módulo PESSOAS sobre a pessoa, em todas as organizações da igreja.
+- Pessoa fora do escopo de leitura dá 404.
+- O histórico completo (acesso, financeiro, login) fica na Auditoria, com `?pessoa=`.

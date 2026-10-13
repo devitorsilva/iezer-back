@@ -71,7 +71,11 @@ function toRule(member: { personId: string; role: FamilyRole; person: { birthDat
   return { personId: member.personId, role: member.role, birthDate: member.person.birthDate, bond: member.person.bond };
 }
 
-function auditEntry(action: string, family: { id: string; organizationId: string }, data: { before?: unknown; after?: unknown }): AuditEntry {
+function auditEntry(
+  action: string,
+  family: { id: string; organizationId: string },
+  data: { before?: unknown; after?: unknown; personIds?: string[] },
+): AuditEntry {
   return { organizationId: family.organizationId, module: "PESSOAS", action, targetType: "Family", targetId: family.id, ...data };
 }
 
@@ -123,7 +127,13 @@ export class FamilyService {
     return runAudited(context.actor, async (tx, audit) => {
       const family = await this.assertExists(context, id, tx);
       const updated = await this.repository.update(id, { name: payload.name }, tx);
-      await audit(auditEntry("renomear", family, { before: { name: family.name }, after: { name: updated.name } }));
+      await audit(
+        auditEntry("renomear", family, {
+          before: { name: family.name },
+          after: { name: updated.name },
+          personIds: family.members.map((member) => member.personId),
+        }),
+      );
       return mapFamily(updated);
     });
   }

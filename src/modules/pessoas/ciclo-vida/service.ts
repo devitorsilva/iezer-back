@@ -318,7 +318,10 @@ export class LifecycleService {
       );
 
       const dto = mapFollowUp(followUp);
-      await audit(auditEntry("registrar_acompanhamento", person.organizationId, "FollowUp", followUp.id, { after: dto }));
+      await audit({
+        ...auditEntry("registrar_acompanhamento", person.organizationId, "FollowUp", followUp.id, { after: dto }),
+        personIds: [id],
+      });
       return dto;
     });
   }
