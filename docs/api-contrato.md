@@ -102,7 +102,7 @@ Catálogo fixo (RT-AB05). `{ items: [{ key, name, description, module, moduleNam
 
 ### `GET /api/acesso/perfis`
 
-Perfis da igreja da organização ativa: `{ items: [{ id, name, description, factoryKey: "PASTOR"|"TESOUREIRO"|"SECRETARIO"|null, permissions: string[], assignmentCount, createdAt, updatedAt }] }`.
+Perfis da igreja da organização ativa: `{ items: [{ id, name, description, factoryKey: "PASTOR"|"TESOUREIRO"|"SECRETARIO"|null, permissions: string[], userCount, inviteCount, createdAt, updatedAt }] }`. `assignmentCount` saiu na Sprint 8 (ver abaixo).
 
 ### `POST /api/acesso/perfis/:id/restaurar`
 
@@ -300,7 +300,7 @@ Erros:
 
 Log: `criar_convite`, `reenviar_convite`, `gerar_link_convite`, `cancelar_convite`, `trocar_email_convite` (e `editar_pessoa` quando o e-mail da Pessoa muda).
 
-### `/acesso/usuarios` (lista básica; o resto fica na Sprint 8)
+### `/acesso/usuarios` (lista básica; ações na Sprint 8)
 
 - `GET /acesso/usuarios` (`acesso.usuarios.ver` ou `.gerenciar`) → `{ items: [{ id, name, email, status, twoFactorEnabled, lastLoginAt, personId, personName, assignments[] }] }`. Só usuários e atribuições das organizações em que quem consulta tem a permissão.
 - `PATCH /acesso/usuarios/:id/email` (`acesso.usuarios.gerenciar`) `{ email }` (RF-RS04):
@@ -400,3 +400,55 @@ Aceita `applyToFamily: true`. Os campos do domicílio enviados no corpo (`postal
 ### `GET /pessoas/:id/acesso` (`acesso.usuarios.ver` ou `.gerenciar`, RF-US06)
 
 `{ user: User | null, invite: Invite | null }`, nos formatos de `/acesso/usuarios` e `/acesso/convites`. As atribuições vêm só das organizações em que quem consulta tem a permissão. `invite` (pendente ou expirado) só vem quando não há usuário. 404 se a pessoa não estiver no alcance.
+
+## Sprint 8 — Usuários e perfis de acesso
+
+### Travas (RT-AB07, `src/modules/acesso/travas.ts`)
+
+Valem em perfis, usuários e no aceite de convite:
+
+- **Protegidas:** só quem tem a permissão protegida pode concedê-la ou retirá-la. Isso vale para um perfil (chave que entra ou sai) e para uma atribuição (perfil com protegida que entra ou sai). Erro 403 `PROTECTED_PERMISSION`.
+- **Último admin:** a igreja não pode ficar sem usuário ativo com `acesso.perfis.gerenciar` (409 `LAST_ADMIN`). A trava só dispara se havia algum antes. Organização desativada não conta.
+- **Próprio acesso:** ninguém edita as próprias atribuições, se desativa ou encerra as próprias sessões (400 `OWN_ACCESS`).
+- **E-mails (depois do commit):**
+  - quando alguém recebe uma protegida, inclusive por edição de perfil, restauração, troca de perfil, reativação ou aceite de convite, quem já a tinha recebe aviso;
+  - quem perde `acesso.perfis.gerenciar` recebe aviso, e os admins que continuam também.
+
+### `/acesso/perfis` (`acesso.perfis.gerenciar`, RF-PF01 a RF-PF04)
+
+| Método | Rota | Corpo | Resposta |
+| --- | --- | --- | --- |
+| POST | `/acesso/perfis` | `{ name, description?, permissions: string[] }` | 201 `AccessProfile`. Duplicar = POST com as permissões do original |
+| PATCH | `/acesso/perfis/:id` | idem | `AccessProfile`. Perfil de fábrica também pode ser editado |
+| DELETE | `/acesso/perfis/:id` | `{ moveToProfileId? }` | 204. Atribuições e convites pendentes vão para o destino |
+| POST | `/acesso/perfis/:id/restaurar` | — | `AccessProfile` (agora com as travas de protegida ao conceder e ao retirar) |
+
+- `permissions` é normalizado no back: o grupo inteiro (`pessoas.notas_pastorais.ver` + `.editar`) e as dependências (em cadeia) entram juntos. A resposta traz a lista final.
+- `userCount`: usuários distintos. `inviteCount`: convites pendentes com o perfil.
+- Erros:
+  - 400 `UNKNOWN_PERMISSION` (`field: "permissions"`);
+  - 409 `PROFILE_NAME_TAKEN` (`field: "name"`; o nome é único por igreja, sem diferenciar maiúsculas);
+  - 409 `FACTORY_PROFILE` (excluir perfil de fábrica);
+  - 409 `PROFILE_IN_USE` (excluir com usuários ou convites e sem `moveToProfileId`);
+  - 400 `INVALID_PROFILE` (destino inexistente ou o próprio perfil);
+  - os erros de trava acima.
+- Log: `criar_perfil`, `editar_perfil`, `restaurar_perfil`, `excluir_perfil` (com o destino), antes e depois.
+
+### `/acesso/usuarios` (`acesso.usuarios.gerenciar`, RF-US02, RF-US03, RF-US05)
+
+| Método | Rota | Corpo | Resposta |
+| --- | --- | --- | --- |
+| PUT | `/acesso/usuarios/:id/atribuicoes` | `{ assignments: [{ organizationId, profileIds[] }] }` | `User` |
+| POST | `/acesso/usuarios/:id/desativar` | — | `User` (`DESATIVADO`, sessões apagadas) |
+| POST | `/acesso/usuarios/:id/reativar` | — | `User` (`ATIVO`, de `DESATIVADO` ou `SUSPENSO`) |
+| POST | `/acesso/usuarios/:id/encerrar-sessoes` | — | `{ sessionsEnded }` (status não muda) |
+
+- **Atribuições:**
+  - o PUT substitui só as atribuições das organizações em que quem edita tem `acesso.usuarios.gerenciar`; as outras ficam como estão;
+  - uma organização gerenciada que fica fora da lista perde as atribuições dali;
+  - o usuário precisa terminar com ao menos uma atribuição (400 `NO_ASSIGNMENTS`, `field: "assignments"`).
+- **Alcance:** desativar, reativar e encerrar sessões exigem `acesso.usuarios.gerenciar` em todas as organizações em que o usuário tem atribuição. Sem isso, 403 `PERMISSION_DENIED`.
+- **Protegidas:** desativar e reativar também exigem as protegidas dos perfis do usuário (retirar ou conceder).
+- **Outros erros:** 400 `INVALID_STATUS` (já está no status pedido); 404 para usuário fora do alcance.
+- **Log:** `editar_acessos_usuario` (atribuições antes e depois), `desativar_usuario`, `reativar_usuario`, `encerrar_sessoes_usuario`.
+

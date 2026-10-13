@@ -63,3 +63,35 @@ export function summarizePermissions(keys: Iterable<string>) {
     permissions,
   }));
 }
+
+// Permissões de um perfil como serão gravadas: chaves do catálogo, grupos inteiros e
+// dependências incluídas (PRD Pessoas › Tela de perfis e permissões). Devolve as chaves
+// desconhecidas à parte, para o service recusar.
+export function normalizePermissions(keys: Iterable<string>) {
+  const unknown: string[] = [];
+  const selected = new Set<PermissionKey>();
+  const pending: PermissionKey[] = [];
+
+  for (const key of keys) {
+    if (isPermissionKey(key)) pending.push(key);
+    else unknown.push(key);
+  }
+
+  while (pending.length) {
+    const key = pending.pop()!;
+    if (selected.has(key)) continue;
+    selected.add(key);
+
+    const permission = getPermission(key);
+    const siblings = permission.group
+      ? permissionCatalog.filter((other) => "group" in other && other.group === permission.group).map((other) => other.key)
+      : [];
+
+    for (const next of [...permission.dependsOn, ...siblings]) {
+      if (isPermissionKey(next) && !selected.has(next)) pending.push(next);
+    }
+  }
+
+  const permissions = permissionCatalog.map((permission) => permission.key).filter((key) => selected.has(key));
+  return { permissions, unknown };
+}

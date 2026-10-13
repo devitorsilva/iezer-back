@@ -15,5 +15,9 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
   const gerenciar = { preHandler: requirePermission("acesso.usuarios.gerenciar") };
 
   app.get("/usuarios", ver, userController.list);
+  app.put("/usuarios/:id/atribuicoes", gerenciar, userController.updateAssignments);
+  app.post("/usuarios/:id/desativar", gerenciar, userController.deactivate);
+  app.post("/usuarios/:id/reativar", gerenciar, userController.reactivate);
+  app.post("/usuarios/:id/encerrar-sessoes", gerenciar, userController.endSessions);
   app.patch("/usuarios/:id/email", gerenciar, userController.changeEmail);
 };

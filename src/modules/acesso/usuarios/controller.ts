@@ -1,8 +1,12 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { getRequestContext, organizationIdsWith } from "../../../lib/access.js";
 import type { InviteService } from "../convites/service.js";
-import { PersonNotFoundError, UserNotFoundError, type UserService } from "./service.js";
-import { changeEmailSchema, userParamsSchema } from "./schemas.js";
+import { PersonNotFoundError, UserNotFoundError, type UserManageContext, type UserService } from "./service.js";
+import { changeEmailSchema, updateAssignmentsSchema, userParamsSchema } from "./schemas.js";
+
+function manageContext(request: FastifyRequest): UserManageContext {
+  return { ...getRequestContext(request), organizations: request.access.organizations };
+}
 
 export class UserController {
   constructor(
@@ -33,6 +37,27 @@ export class UserController {
     return { items };
   };
 
+  updateAssignments = async (request: FastifyRequest, reply: FastifyReply) => {
+    const { id } = userParamsSchema.parse(request.params);
+    const input = updateAssignmentsSchema.parse(request.body);
+    return this.handleNotFound(reply, () => this.service.updateAssignments(manageContext(request), id, input));
+  };
+
+  deactivate = async (request: FastifyRequest, reply: FastifyReply) => {
+    const { id } = userParamsSchema.parse(request.params);
+    return this.handleNotFound(reply, () => this.service.deactivate(manageContext(request), id));
+  };
+
+  reactivate = async (request: FastifyRequest, reply: FastifyReply) => {
+    const { id } = userParamsSchema.parse(request.params);
+    return this.handleNotFound(reply, () => this.service.reactivate(manageContext(request), id));
+  };
+
+  endSessions = async (request: FastifyRequest, reply: FastifyReply) => {
+    const { id } = userParamsSchema.parse(request.params);
+    return this.handleNotFound(reply, () => this.service.endSessions(manageContext(request), id));
+  };
+
   changeEmail = async (request: FastifyRequest, reply: FastifyReply) => {
     const { id } = userParamsSchema.parse(request.params);
     const input = changeEmailSchema.parse(request.body);
@@ -51,4 +76,15 @@ export class UserController {
       throw error;
     }
   };
+
+  private async handleNotFound<T>(reply: FastifyReply, fn: () => Promise<T>) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (error instanceof UserNotFoundError) {
+        return reply.notFound("Usuário não encontrado.");
+      }
+      throw error;
+    }
+  }
 }

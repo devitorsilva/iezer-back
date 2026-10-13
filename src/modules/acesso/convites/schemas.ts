@@ -15,17 +15,15 @@ const emailField = z
   .pipe(z.email("E-mail inválido.").max(254))
   .transform((value) => value.toLowerCase());
 
-// Linhas organização × perfis (RF-CV02).
+// Linha organização × perfis (RF-CV02), também usada ao editar os acessos de um usuário.
+export const assignmentRowSchema = z.object({
+  organizationId: id,
+  profileIds: z.array(id).min(1, "Escolha ao menos um perfil."),
+});
+
 export const createInviteSchema = z.object({
   personId: id,
-  assignments: z
-    .array(
-      z.object({
-        organizationId: id,
-        profileIds: z.array(id).min(1, "Escolha ao menos um perfil."),
-      }),
-    )
-    .min(1, "Escolha ao menos uma organização e um perfil."),
+  assignments: z.array(assignmentRowSchema).min(1, "Escolha ao menos uma organização e um perfil."),
 });
 
 export const resendInviteSchema = z

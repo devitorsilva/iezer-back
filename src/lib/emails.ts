@@ -80,3 +80,51 @@ export function emailChangedNotice(input: {
       SIGNATURE,
   };
 }
+
+// Toda concessão de permissão protegida avisa quem já a possui (Acesso › Travas de segurança).
+export function protectedGrantedNotice(input: {
+  to: string;
+  name: string;
+  churchName: string | null;
+  grants: { userName: string; permissions: string[] }[];
+}): MailMessage {
+  const lines = input.grants.map(({ userName, permissions }) => `- ${userName}: ${permissions.join(", ")}`);
+
+  return {
+    to: input.to,
+    churchName: input.churchName,
+    subject: "Permissões protegidas concedidas no iEzer",
+    text:
+      `Olá, ${firstName(input.name)}!\n\n` +
+      `Você recebe este aviso porque tem permissões protegidas no iEzer da sua igreja. ` +
+      `Estas pessoas acabam de recebê-las:\n\n${lines.join("\n")}\n\n` +
+      `Se você não reconhece essa mudança, confira em Configurações › Usuários ou fale com os outros administradores.` +
+      SIGNATURE,
+  };
+}
+
+// Quem perde "Gerenciar perfis de acesso" é avisado, e os demais admins também.
+export function adminRemovedNotice(input: {
+  to: string;
+  name: string;
+  churchName: string | null;
+  removedNames: string[];
+  self: boolean;
+}): MailMessage {
+  const others = input.removedNames.join(", ");
+
+  return {
+    to: input.to,
+    churchName: input.churchName,
+    subject: input.self
+      ? "Você deixou de administrar os acessos no iEzer"
+      : "Mudança nos administradores do iEzer",
+    text:
+      `Olá, ${firstName(input.name)}!\n\n` +
+      (input.self
+        ? `Você não tem mais a permissão "Gerenciar perfis de acesso" no iEzer da sua igreja.`
+        : `Deixaram de ter a permissão "Gerenciar perfis de acesso": ${others}.`) +
+      `\n\nSe você não reconhece essa mudança, fale agora com os outros administradores da sua igreja.` +
+      SIGNATURE,
+  };
+}

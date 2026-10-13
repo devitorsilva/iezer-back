@@ -9,8 +9,9 @@ import { trySendMail } from "../../../lib/mailer.js";
 import { assertValidNewPassword } from "../../../lib/password-rules.js";
 import { TERMS_VERSION } from "../../../lib/terms.js";
 import { generateToken, hashToken } from "../../../lib/tokens.js";
-import { getPermission, isPermissionKey, summarizePermissions } from "../permissoes/catalog/index.js";
-import type { InviteAssignmentData, InviteRepository, InviteWithRelations } from "./repository.js";
+import { summarizePermissions } from "../permissoes/catalog/index.js";
+import { assertCanChangeAssignments, runGuarded } from "../travas.js";
+import type { InviteRepository, InviteWithRelations } from "./repository.js";
 import type { AcceptInviteInput, ChangeEmailInput, CreateInviteInput } from "./schemas.js";
 
 type Db = Prisma.TransactionClient;
@@ -170,7 +171,7 @@ export class InviteService {
       }
 
       const email = person.email.toLowerCase();
-      await this.assertCanGrant(context, assignments, tx);
+      await assertCanChangeAssignments(tx, context.churchId, context.organizations, assignments);
       const canceled = await assertLoginEmailAvailable(tx, email, context.churchId, { personId: person.id });
 
       const created = await this.repository.create(
@@ -327,7 +328,8 @@ export class InviteService {
     // O autor do log é o próprio usuário, que só ganha id dentro da transação.
     const actor: AuditActor = { type: "USUARIO", userId: null, ip: meta.ip, userAgent: meta.userAgent };
 
-    return runAudited(actor, async (tx, audit) => {
+    // runGuarded: a concessão vale a partir do aceite, e quem já tem as protegidas é avisado agora.
+    return runGuarded(actor, invite.church.id, async (tx, audit) => {
       if (!(await this.repository.consume(invite.id, tx))) {
         throw new AppError(404, "INVITE_INVALID", INVITE_INVALID_MESSAGE);
       }
@@ -421,59 +423,6 @@ export class InviteService {
     }
 
     return invite;
-  }
-
-  // Perfis e organizações da igreja; quem concede precisa gerenciar usuários ali e já ter
-  // as permissões protegidas que concede (Acesso › Travas de segurança).
-  private async assertCanGrant(context: InviteContext, assignments: InviteAssignmentData[], db: Db) {
-    const profileIds = [...new Set(assignments.map((item) => item.profileId))];
-    const organizationIds = [...new Set(assignments.map((item) => item.organizationId))];
-
-    const profiles = await db.accessProfile.findMany({
-      where: { id: { in: profileIds }, organizationId: context.churchId },
-      select: { id: true, permissions: { select: { permissionKey: true } } },
-    });
-    if (profiles.length !== profileIds.length) {
-      throw new AppError(400, "INVALID_PROFILE", "Perfil de acesso não encontrado nesta igreja.");
-    }
-
-    const organizations = await db.organization.findMany({
-      where: {
-        id: { in: organizationIds },
-        isActive: true,
-        OR: [{ id: context.churchId }, { parentId: context.churchId }],
-      },
-      select: { id: true, name: true },
-    });
-    if (organizations.length !== organizationIds.length) {
-      throw new AppError(400, "INVALID_ORGANIZATION", "Organização não encontrada ou desativada.");
-    }
-
-    if (!context.organizations) return;
-
-    const profileKeys = new Map(profiles.map((profile) => [profile.id, profile.permissions.map((p) => p.permissionKey)]));
-
-    for (const { organizationId, profileId } of assignments) {
-      const reach = context.organizations.find((org) => org.id === organizationId);
-      const organizationName = organizations.find((org) => org.id === organizationId)!.name;
-
-      if (!reach?.permissions.has("acesso.usuarios.gerenciar")) {
-        throw new AppError(403, "PERMISSION_DENIED", `Você não pode dar acesso em ${organizationName}.`);
-      }
-
-      const missing = profileKeys
-        .get(profileId)!
-        .filter(isPermissionKey)
-        .find((key) => getPermission(key).protected && !reach.permissions.has(key));
-
-      if (missing) {
-        throw new AppError(
-          403,
-          "PROTECTED_PERMISSION",
-          `Só quem já tem a permissão "${getPermission(missing).name}" pode concedê-la.`,
-        );
-      }
-    }
   }
 
   private sendInviteEmail(invite: InviteWithRelations, token: string) {

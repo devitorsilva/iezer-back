@@ -1,6 +1,6 @@
 // Dá um perfil de fábrica a um usuário numa organização (atribuição).
 // Uso: npm run user:assign -- <email> <PASTOR|TESOUREIRO|SECRETARIO> [slug-da-organização]
-// Sem slug, usa a sede piloto. Até a Sprint 8 (tela de usuários) é o único jeito de atribuir.
+// Sem slug, usa a sede piloto. Atalho para testes; na interface, Configurações › Usuários.
 import { AccessProfileFactoryKey } from "@prisma/client";
 import { runAudited, SYSTEM_ACTOR } from "../src/lib/audit.js";
 import { DEFAULT_ORGANIZATION_ID } from "../src/lib/organization.js";

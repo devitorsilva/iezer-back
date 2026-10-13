@@ -1,4 +1,5 @@
-import type { Prisma } from "@prisma/client";
+import type { Prisma, UserStatus } from "@prisma/client";
+import type { AssignmentData } from "../travas.js";
 import { prisma } from "../../../lib/prisma.js";
 
 type Db = Prisma.TransactionClient;
@@ -48,5 +49,41 @@ export class UserRepository {
       where: { id, assignments: { some: { organizationId: { in: organizationIds } } } },
       select: select(organizationIds),
     });
+  }
+
+  // Releitura depois de uma alteração: o usuário pode ter ficado sem atribuição nas organizações.
+  reload(id: string, organizationIds: string[], db: Db = prisma): Promise<UserWithAssignments> {
+    return db.user.findUniqueOrThrow({ where: { id }, select: select(organizationIds) });
+  }
+
+  // Todas as atribuições do usuário na igreja (organizações ativas), alcançadas ou não por quem edita.
+  findChurchAssignments(userId: string, churchId: string, db: Db = prisma): Promise<AssignmentData[]> {
+    return db.userAssignment.findMany({
+      where: {
+        userId,
+        organization: { isActive: true, OR: [{ id: churchId }, { parentId: churchId }] },
+        profile: { organizationId: churchId },
+      },
+      select: { organizationId: true, profileId: true },
+    });
+  }
+
+  async replaceAssignments(userId: string, removed: AssignmentData[], added: AssignmentData[], db: Db = prisma) {
+    if (removed.length) {
+      await db.userAssignment.deleteMany({ where: { userId, OR: removed } });
+    }
+    await db.userAssignment.createMany({
+      data: added.map((item) => ({ ...item, userId })),
+      skipDuplicates: true,
+    });
+  }
+
+  async setStatus(id: string, status: UserStatus, db: Db = prisma) {
+    await db.user.update({ where: { id }, data: { status } });
+  }
+
+  async deleteSessions(userId: string, db: Db = prisma) {
+    const { count } = await db.session.deleteMany({ where: { userId } });
+    return count;
   }
 }
