@@ -12,7 +12,7 @@ const select = (organizationIds: string[]) =>
     status: true,
     lastLoginAt: true,
     twoFactorEnabled: true,
-    person: { select: { id: true, name: true, organizationId: true, email: true } },
+    person: { select: { id: true, name: true, organizationId: true, email: true, status: true } },
     assignments: {
       where: { organizationId: { in: organizationIds } },
       select: {

@@ -1,4 +1,5 @@
 import { FastifyPluginAsync } from "fastify";
+import { lifecycleRoutes } from "./ciclo-vida/routes.js";
 import { familyRoutes } from "./familias/routes.js";
 import { churchListRoutes } from "./listas/routes.js";
 import { personRoutes } from "./pessoas/routes.js";
@@ -15,4 +16,5 @@ export const pessoasRoutes: FastifyPluginAsync = async (app) => {
   await app.register(churchListRoutes);
   await app.register(familyRoutes);
   await app.register(personRoutes);
+  await app.register(lifecycleRoutes);
 };

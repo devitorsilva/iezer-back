@@ -135,6 +135,17 @@ enum FamilyRole {
   OUTRO
 }
 
+// Eventos da linha do tempo (RF-V02): mudança de vínculo ou de situação, com data e autor.
+enum PersonEventType {
+  PROMOCAO
+  INATIVACAO
+  TRANSFERENCIA_INTERNA
+  TRANSFERENCIA
+  DESLIGAMENTO
+  FALECIMENTO
+  REATIVACAO
+}
+
 enum FollowUpType {
   LIGACAO
   VISITA
@@ -186,6 +197,7 @@ model User {
   auditLogs        AuditLog[]
   assignments      UserAssignment[]
   followUps        FollowUp[]
+  personEvents     PersonEvent[]
   consentsRecorded PersonConsent[]
   invitesSent      Invite[]         @relation("InviteInvitedBy")
   invitesAccepted  Invite[]         @relation("InviteAcceptedUser")
@@ -258,6 +270,8 @@ model Organization {
   isActive                Boolean               @default(true)
   // Checklist de primeiro acesso (RF-OB03): admin conferiu as congregações. Só na sede.
   congregationsReviewedAt DateTime?
+  // Prazos dos indicadores da jornada (RT-B13). Só na sede; sem valor, os padrões do código.
+  peopleSettings          Json?
   createdAt               DateTime              @default(now())
   updatedAt               DateTime              @updatedAt
   contacts                OrganizationContact[]
@@ -273,6 +287,7 @@ model Organization {
   people                  Person[]
   families                Family[]
   followUps               FollowUp[]
+  personEvents            PersonEvent[]
   consents                PersonConsent[]
   churchLists             ChurchListItem[]
   payables                Payable[]
@@ -506,6 +521,8 @@ model Person {
   city                  String?
   state                 String?
   bond                  PersonBond         @default(VISITANTE)
+  // Desde quando está no vínculo atual (indicadores do Painel).
+  bondSince             DateTime?          @db.Date
   status                PersonStatus       @default(ATIVO)
   firstVisitDate        DateTime?          @db.Date
   conversionDate        DateTime?          @db.Date
@@ -522,12 +539,15 @@ model Person {
   // Legado do cadastro de membros: só leitura até existir a entidade Célula.
   cellName              String?
   notes                 String?
+  // Última mudança de celular, telefone, email ou endereço (indicador de contato desatualizado).
+  contactUpdatedAt      DateTime           @default(now())
   createdAt             DateTime           @default(now())
   updatedAt             DateTime           @updatedAt
   receivables           Receivable[]
   user                  User?
   familyMember          FamilyMember?
   followUps             FollowUp[]
+  events                PersonEvent[]
   consents              PersonConsent[]    @relation("ConsentSubject")
   consentsGiven         PersonConsent[]    @relation("ConsentGiver")
   invites               Invite[]
@@ -583,6 +603,32 @@ model FollowUp {
 
 // Consentimento por finalidade (RF-P02, RF-P09). givenByPersonId = responsável que
 // consentiu pelo menor; nulo quando foi o próprio titular.
+model PersonEvent {
+  id             String          @id @default(cuid())
+  // Organização da pessoa quando o evento aconteceu (na transferência interna, a de origem).
+  organizationId String
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  personId       String
+  person         Person          @relation(fields: [personId], references: [id], onDelete: Restrict)
+  type           PersonEventType
+  date           DateTime        @db.Date
+  fromBond       PersonBond?
+  toBond         PersonBond?
+  fromStatus     PersonStatus?
+  toStatus       PersonStatus?
+  reasonId       String?
+  reason         ChurchListItem? @relation(fields: [reasonId], references: [id], onDelete: Restrict)
+  note           String?
+  // Transferência: organização de destino ou igreja de destino e carta emitida.
+  details        Json?
+  authorUserId   String
+  author         User            @relation(fields: [authorUserId], references: [id], onDelete: Restrict)
+  createdAt      DateTime        @default(now())
+
+  @@index([personId, date])
+  @@index([organizationId, type, date])
+}
+
 model PersonConsent {
   id               String         @id @default(cuid())
   organizationId   String
@@ -616,6 +662,7 @@ model ChurchListItem {
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   admittedPeople Person[]
+  personEvents   PersonEvent[]
 
   @@unique([organizationId, type, name])
 }

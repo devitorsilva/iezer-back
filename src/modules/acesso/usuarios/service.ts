@@ -40,6 +40,7 @@ function mapUser(user: UserWithAssignments) {
     lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
     personId: user.person?.id ?? null,
     personName: user.person?.name ?? null,
+    personStatus: user.person?.status ?? null,
     assignments: user.assignments.map(({ organization, profile }) => ({
       organizationId: organization.id,
       organizationName: organization.name,
@@ -186,6 +187,15 @@ export class UserService {
           400,
           "INVALID_STATUS",
           status === "ATIVO" ? "Este acesso já está ativo." : "Este acesso já está desativado.",
+        );
+      }
+
+      // RF-US04: acesso de pessoa que não está Ativa não volta; reative a pessoa antes.
+      if (status === "ATIVO" && user.person && user.person.status !== "ATIVO") {
+        throw new AppError(
+          409,
+          "PERSON_NOT_ACTIVE",
+          "A pessoa deste acesso não está ativa em Pessoas. Reative a pessoa antes de reativar o acesso.",
         );
       }
 

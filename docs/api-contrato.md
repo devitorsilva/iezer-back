@@ -452,3 +452,94 @@ Valem em perfis, usuários e no aceite de convite:
 - **Outros erros:** 400 `INVALID_STATUS` (já está no status pedido); 404 para usuário fora do alcance.
 - **Log:** `editar_acessos_usuario` (atribuições antes e depois), `desativar_usuario`, `reativar_usuario`, `encerrar_sessoes_usuario`.
 
+
+## Sprint 9 — Ciclo de vida, acompanhamento e indicadores
+
+Migração `20261013_ciclo_vida`: `PersonEvent` (linha do tempo), `Person.bondSince` e `Person.contactUpdatedAt`, `Organization.peopleSettings`.
+
+### `GET /pessoas/:id` (alterado)
+
+- `bondSince` (`"AAAA-MM-DD"`): desde quando está no vínculo atual. Vai para a data da promoção. No cadastro, vale a data que define o vínculo (primeira visita, conversão ou admissão) ou hoje.
+- `contactUpdatedAt` (ISO): muda quando o PATCH altera celular, telefone, e-mail ou endereço, inclusive pelo `applyToFamily`.
+- `lastFollowUp`: `{ id, date, type, note, authorName }` ou `null`.
+- `promotionRequirements`: `{ [vínculo]: MissingField[] }`, para cada vínculo diferente do atual. Lista o que falta para promover, pela regra do "não piorar". `guardian` e `consent` não se resolvem no modal: vincule o responsável na aba Família.
+
+### Ciclo de vida (RT-B02, RF-V01 a RF-V04)
+
+Todas as datas são `"AAAA-MM-DD"`, obrigatórias e não podem ser futuras. `note` é opcional, com até 500 caracteres.
+
+| Método | Rota | Permissão | Corpo | Situação de origem |
+| --- | --- | --- | --- | --- |
+| POST | `/pessoas/:id/promover` | `pessoas.promover_vinculo` | `{ bond, date, note?, name?, birthDate?, conversionDate?, admissionMethodId?, admissionDate? }` | Ativo |
+| POST | `/pessoas/:id/inativar` | `pessoas.alterar_situacao` | `{ date, reasonId (MOTIVO_INATIVACAO), note? }` | Ativo |
+| POST | `/pessoas/:id/transferir` | idem | `{ kind: "INTERNA", date, organizationId, note? }` ou `{ kind: "EXTERNA", date, churchName, letterIssued?, note? }` | Ativo, Inativo |
+| POST | `/pessoas/:id/desligar` | idem | `{ date, reasonId (MOTIVO_DESLIGAMENTO), note? }` | Ativo, Inativo |
+| POST | `/pessoas/:id/falecimento` | idem | `{ date, note? }` | qualquer, menos Falecido |
+| POST | `/pessoas/:id/reativar` | idem | `{ date, note? }` | qualquer, menos Ativo |
+
+**Resposta (200):** `{ person: PersonDetail, event: TimelineEvent, accessChange }`. `accessChange` pode ser:
+- `"SUSPENDED"`: a ação suspendeu o acesso agora;
+- `"STILL_SUSPENDED"`: a pessoa foi reativada, mas o acesso dela continua suspenso;
+- `null`.
+
+**Promover:**
+- aceita qualquer vínculo diferente do atual, inclusive voltar um estágio para corrigir;
+- os campos enviados são gravados na pessoa;
+- `bondSince` passa a ser `date`.
+
+**Transferência interna:**
+- o destino precisa ser sede ou congregação ativa da igreja, entre as organizações em que o usuário tem `pessoas.alterar_situacao`;
+- muda `organizationId` e mantém situação, acesso, família, lançamentos e acompanhamentos;
+- o evento fica na organização de origem, com `details: { fromOrganizationId, fromOrganizationName, toOrganizationId, toOrganizationName }`.
+
+**Transferência externa:** situação Transferido, com `details: { churchName, letterIssued }`.
+
+**Suspensão automática (RF-US04, RT-AB13):** inativar, desligar, falecimento e transferência externa suspendem o usuário da pessoa, se ele estiver ATIVO.
+- O status vira `SUSPENSO` e as sessões são apagadas, na mesma transação. As requisições seguintes dele dão 401.
+- Depois do commit, os admins ativos (com `acesso.perfis.gerenciar`) recebem e-mail.
+- Não é barrada pela trava do último admin. Se nenhum admin sobrar, o aviso vai ao responsável pela conta, e o log registra o caso para o suporte.
+- Reativar a pessoa não devolve o acesso.
+
+**Erros:**
+- 409 `INVALID_STATUS` (`status`): a ação não vale para a situação atual;
+- 409 `PERSON_NOT_ACTIVE`: promover pessoa que não está Ativa;
+- 400 `SAME_BOND`, 400 `SAME_ORGANIZATION`;
+- 400 `BOND_REQUIREMENTS` ou `GUARDIAN_REQUIRED` (`missingFields`);
+- 400 `INVALID_REFERENCE`: motivo ou forma de admissão fora das listas da igreja, ou destino inválido;
+- 409 `CPF_CONFLICT`: o CPF já existe na congregação de destino;
+- 404 para pessoa fora do escopo.
+
+**Log:** `promover_vinculo`, `inativar`, `transferir`, `desligar`, `registrar_falecimento` e `reativar` (Person, antes e depois). A suspensão gera `suspender_usuario` (User, módulo ACESSO).
+
+### Acompanhamento e linha do tempo (RF-V06, RT-B12)
+
+| Método | Rota | Permissão | Corpo | Resposta |
+| --- | --- | --- | --- | --- |
+| POST | `/pessoas/:id/acompanhamentos` | `pessoas.acompanhamento.registrar` | `{ date, type: "LIGACAO"\|"VISITA"\|"MENSAGEM"\|"CONVERSA", note? }` | 201 `TimelineFollowUp` |
+| GET | `/pessoas/:id/linha-do-tempo` | `pessoas.ver` | — | `{ items: (TimelineEvent \| TimelineFollowUp)[] }`, por `date` e depois `createdAt`, mais recente primeiro |
+
+- `TimelineEvent`: `{ kind: "EVENTO", id, type: "PROMOCAO"|"INATIVACAO"|"TRANSFERENCIA_INTERNA"|"TRANSFERENCIA"|"DESLIGAMENTO"|"FALECIMENTO"|"REATIVACAO", date, organizationId, fromBond, toBond, fromStatus, toStatus, reasonName, note, details, authorName, createdAt }`.
+- `TimelineFollowUp`: `{ kind: "ACOMPANHAMENTO", id, type, date, organizationId, note, authorName, createdAt }`.
+- O autor é sempre o usuário logado. O autor e a organização do acompanhamento são os da pessoa no momento do registro.
+- No MVP não há editar nem apagar. Log: `registrar_acompanhamento`.
+- O cadastro não gera evento; o front mostra "Cadastrado em" a partir de `createdAt`.
+- `DELETE /pessoas/:id` passa a contar `events` entre os vínculos (`PERSON_HAS_LINKS`).
+
+### Indicadores da jornada (RT-B13, RF-P10)
+
+**`GET /pessoas/indicadores`** (`pessoas.ver`) devolve `{ items: [{ key, count, days }] }`, só contadores, nas organizações que o usuário lê. Todos consideram apenas pessoas Ativas.
+
+| `key` | Critério | Padrão de `days` |
+| --- | --- | --- |
+| `visitantes_recentes` | Visitante com primeira visita nos últimos N dias | 30 |
+| `visitantes_sem_acompanhamento` | Visitante sem acompanhamento nos últimos N dias (ou nunca) | 15 |
+| `contato_desatualizado` | `contactUpdatedAt` há mais de N dias | 365 |
+| `congregados_discipulado` | Congregado não batizado há mais de N dias no vínculo (`bondSince`) | 180 |
+
+- **Prazos:** vêm de `Organization.peopleSettings` da sede (`{ visitorDays, followUpDays, contactStaleDays, congregationDays }`). Valor ausente ou inválido usa o padrão. Ainda não há tela para editá-los.
+- **Lista de cada contador:** **`GET /pessoas?indicador=<key>`**, com o mesmo filtro. Combina com os outros filtros e respeita `pessoas.ver` e o escopo. Chave desconhecida dá 400 `VALIDATION_ERROR`.
+
+### `/acesso/usuarios` (alterado, RF-US04)
+
+- `User` ganha `personStatus` (situação da pessoa ou `null`).
+- `POST /acesso/usuarios/:id/reativar` dá 409 `PERSON_NOT_ACTIVE` quando a pessoa do usuário não está Ativa. Reative a pessoa antes.

@@ -128,3 +128,30 @@ export function adminRemovedNotice(input: {
       SIGNATURE,
   };
 }
+
+// Suspensão automática (RF-US04, A15): a situação da pessoa saiu de Ativo. Vai para os admins e,
+// quando nenhum sobra, para o responsável pela conta.
+export function accessSuspendedNotice(input: {
+  to: string;
+  name: string;
+  churchName: string | null;
+  userName: string;
+  reason: string;
+  noAdminLeft: boolean;
+}): MailMessage {
+  return {
+    to: input.to,
+    churchName: input.churchName,
+    subject: input.noAdminLeft
+      ? "Sua igreja ficou sem administrador no iEzer"
+      : `Acesso de ${input.userName} suspenso no iEzer`,
+    text:
+      `Olá, ${firstName(input.name)}!\n\n` +
+      `O acesso de ${input.userName} ao iEzer foi suspenso automaticamente: a situação no cadastro de Pessoas ` +
+      `mudou para "${input.reason}". As sessões abertas foram encerradas.\n\n` +
+      (input.noAdminLeft
+        ? `Era a última pessoa com "Gerenciar perfis de acesso". Fale com o suporte do iEzer para recuperar a administração da conta.`
+        : `Se foi engano, reative a pessoa em Pessoas e depois o acesso em Configurações › Usuários.`) +
+      SIGNATURE,
+  };
+}

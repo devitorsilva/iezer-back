@@ -17,6 +17,10 @@ export class PersonController {
     return this.service.list(getRequestContext(request), query);
   };
 
+  indicators = async (request: FastifyRequest) => {
+    return this.service.indicators(getRequestContext(request));
+  };
+
   duplicates = async (request: FastifyRequest) => {
     const query = duplicateQuerySchema.parse(request.query);
     return this.service.findDuplicates(getRequestContext(request), query);

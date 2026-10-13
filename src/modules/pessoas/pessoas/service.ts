@@ -8,6 +8,7 @@ import { normalizePhone } from "../../../lib/phone.js";
 import { normalizeSearchText } from "../../../lib/text.js";
 import { mapFamilyMembers } from "../familias/service.js";
 import type { ChurchListRepository } from "../listas/repository.js";
+import { indicatorDays, JOURNEY_INDICATORS, loadJourneySettings } from "./jornada.js";
 import type { PersonDetail, PersonListItem, PersonRepository } from "./repository.js";
 import {
   describeMissing,
@@ -47,6 +48,7 @@ const CIVIL_DATE_FIELDS = [
   "baptismDate",
   "professionOfFaithDate",
   "admissionDate",
+  "bondSince",
 ] as const;
 
 type CivilDateField = (typeof CIVIL_DATE_FIELDS)[number];
@@ -63,6 +65,21 @@ const FAMILY_SHARED_FIELDS = [
   "secondaryPhone",
 ] as const;
 
+// Mudou um destes, o contato conta como atualizado (indicador de contato desatualizado).
+const CONTACT_FIELDS = ["mobilePhone", "secondaryPhone", "email", ...FAMILY_SHARED_FIELDS] as const;
+
+const PERSON_BONDS: PersonBond[] = ["VISITANTE", "NOVO_CONVERTIDO", "CONGREGADO", "MEMBRO", "MEMBRO_EM_FORMACAO"];
+
+// Desde quando a pessoa está no vínculo: a data que o define, ou hoje.
+export function initialBondSince(
+  bond: PersonBond,
+  fields: { firstVisitDate?: Date | null; conversionDate?: Date | null; admissionDate?: Date | null },
+) {
+  const defining =
+    bond === "VISITANTE" ? fields.firstVisitDate : bond === "NOVO_CONVERTIDO" ? fields.conversionDate : bond === "MEMBRO" ? fields.admissionDate : null;
+  return defining ?? parseCivilDate(todayCivil());
+}
+
 function familyGuardianIds(person: PersonDetail) {
   const members = person.familyMember?.family.members ?? [];
   return members
@@ -73,7 +90,7 @@ function familyGuardianIds(person: PersonDetail) {
     .map((member) => member.personId);
 }
 
-function requirementInput(person: PersonDetail): RequirementInput {
+export function requirementInput(person: PersonDetail): RequirementInput {
   return {
     ...person,
     hasGuardian: familyGuardianIds(person).length > 0,
@@ -81,9 +98,30 @@ function requirementInput(person: PersonDetail): RequirementInput {
   };
 }
 
-function mapDetail(person: PersonDetail) {
-  const { organization, admissionMethod, familyMember, consents, searchName: _searchName, ...fields } = person;
+// O que falta para cada outro vínculo (RF-V03): o modal de promover pede só isso.
+function promotionRequirements(person: PersonDetail) {
+  const current = requirementInput(person);
+  const before = new Set(missingFields(current));
+  return Object.fromEntries(
+    PERSON_BONDS.filter((bond) => bond !== person.bond).map((bond) => [
+      bond,
+      missingFields({ ...current, bond }).filter((field) => !before.has(field)),
+    ]),
+  ) as Partial<Record<PersonBond, MissingField[]>>;
+}
+
+export function mapDetail(person: PersonDetail) {
+  const {
+    organization,
+    admissionMethod,
+    familyMember,
+    consents,
+    followUps,
+    searchName: _searchName,
+    ...fields
+  } = person;
   const consent = consents[0] ?? null;
+  const lastFollowUp = followUps[0] ?? null;
   const missing = missingFields(requirementInput(person));
   const dates = Object.fromEntries(
     CIVIL_DATE_FIELDS.map((field) => [field, formatCivilDate(person[field])]),
@@ -113,8 +151,19 @@ function mapDetail(person: PersonDetail) {
           givenByName: consent.givenBy?.name ?? null,
         }
       : null,
+    lastFollowUp: lastFollowUp
+      ? {
+          id: lastFollowUp.id,
+          date: formatCivilDate(lastFollowUp.date),
+          type: lastFollowUp.type,
+          note: lastFollowUp.note,
+          authorName: lastFollowUp.author.name,
+        }
+      : null,
     missingFields: missing,
     incomplete: missing.length > 0,
+    promotionRequirements: promotionRequirements(person),
+    contactUpdatedAt: person.contactUpdatedAt.toISOString(),
     createdAt: person.createdAt.toISOString(),
     updatedAt: person.updatedAt.toISOString(),
   };
@@ -161,7 +210,7 @@ function mapListItem(person: PersonListItem) {
   };
 }
 
-function auditEntry(
+export function auditEntry(
   action: string,
   organizationId: string,
   targetType: string,
@@ -193,7 +242,7 @@ function invalidReference(message: string) {
   return new AppError(400, "INVALID_REFERENCE", message);
 }
 
-function isUniqueViolation(error: unknown) {
+export function isUniqueViolation(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 }
 
@@ -210,8 +259,22 @@ export class PersonService {
   ) {}
 
   async list(context: RequestContext, query: PersonListQuery) {
-    const { items, total } = await this.repository.list(context.readOrganizationIds, query);
+    const settings = query.indicador ? await loadJourneySettings(context.churchId) : null;
+    const { items, total } = await this.repository.list(context.readOrganizationIds, query, settings);
     return { items: items.map(mapListItem), total, page: query.page, pageSize: query.pageSize };
+  }
+
+  // Indicadores da jornada (RT-B13, RF-P10): só contadores, nas organizações que o usuário lê.
+  async indicators(context: RequestContext) {
+    const settings = await loadJourneySettings(context.churchId);
+    const items = await Promise.all(
+      JOURNEY_INDICATORS.map(async (key) => ({
+        key,
+        count: await this.repository.countIndicator(context.readOrganizationIds, key, settings),
+        days: indicatorDays(key, settings),
+      })),
+    );
+    return { items };
   }
 
   async getById(context: RequestContext, id: string) {
@@ -321,6 +384,7 @@ export class PersonService {
             ...address,
             name: fields.name,
             bond,
+            bondSince: initialBondSince(bond, fields),
             organizationId,
             searchName: normalizeSearchText(`${fields.name} ${fields.preferredName ?? ""}`),
           },
@@ -378,11 +442,18 @@ export class PersonService {
 
         const name = changes.name ?? existing.name;
         const preferredName = changes.preferredName !== undefined ? changes.preferredName : existing.preferredName;
+        const contactChanged = CONTACT_FIELDS.some(
+          (field) => changes[field] !== undefined && changes[field] !== existing[field],
+        );
 
         const updated = mapDetail(
           await this.repository.update(
             id,
-            { ...changes, searchName: normalizeSearchText(`${name} ${preferredName ?? ""}`) },
+            {
+              ...changes,
+              searchName: normalizeSearchText(`${name} ${preferredName ?? ""}`),
+              ...(contactChanged ? { contactUpdatedAt: new Date() } : {}),
+            },
             tx,
           ),
         );
@@ -457,16 +528,17 @@ export class PersonService {
     }
 
     // Uma escrita só (a transação roda no pooler; muitas idas ao banco estouram o tempo dela).
+    const contactUpdatedAt = new Date();
     await this.repository.updateMany(
       others.map((existing) => existing.id),
-      shared,
+      { ...shared, contactUpdatedAt },
       db,
     );
     await audit(
       others.map((existing) =>
         auditEntry("editar", existing.organizationId, "Person", existing.id, {
           before: mapDetail(existing),
-          after: mapDetail({ ...existing, ...shared }),
+          after: mapDetail({ ...existing, ...shared, contactUpdatedAt }),
         }),
       ),
     );
@@ -534,6 +606,7 @@ export class PersonService {
         organizationId,
         name: guardian.name,
         bond,
+        bondSince: initialBondSince(bond, {}),
         mobilePhone: guardian.mobilePhone,
         mobileIsWhatsapp: guardian.mobileIsWhatsapp,
         email: guardian.email,

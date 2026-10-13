@@ -2,6 +2,7 @@ import { z } from "zod";
 import { isCivilDate, parseCivilDate } from "../../../lib/civil-date.js";
 import { isValidCpf, normalizeCpf } from "../../../lib/cpf.js";
 import { normalizePhone } from "../../../lib/phone.js";
+import { JOURNEY_INDICATORS } from "./jornada.js";
 
 export const PERSON_BONDS = ["VISITANTE", "NOVO_CONVERTIDO", "CONGREGADO", "MEMBRO", "MEMBRO_EM_FORMACAO"] as const;
 export const PERSON_STATUSES = ["ATIVO", "INATIVO", "TRANSFERIDO", "DESLIGADO", "FALECIDO"] as const;
@@ -17,11 +18,11 @@ function blankToNull(value: unknown) {
   return trimmed === "" ? null : trimmed;
 }
 
-const nullable = <T extends z.ZodType>(schema: T) => z.preprocess(blankToNull, schema.nullable().optional());
+export const nullable = <T extends z.ZodType>(schema: T) => z.preprocess(blankToNull, schema.nullable().optional());
 
-const text = (max: number) => nullable(z.string().max(max, `Use no máximo ${max} caracteres.`));
+export const text = (max: number) => nullable(z.string().max(max, `Use no máximo ${max} caracteres.`));
 
-const civilDate = nullable(
+export const civilDate = nullable(
   z
     .string()
     .refine(isCivilDate, "Data inválida (use AAAA-MM-DD).")
@@ -95,7 +96,7 @@ const personFields = {
   notes: text(2000),
 };
 
-const name = z.string().trim().min(2, "Nome é obrigatório.").max(150, "Use no máximo 150 caracteres.");
+export const name = z.string().trim().min(2, "Nome é obrigatório.").max(150, "Use no máximo 150 caracteres.");
 
 const consentSchema = z.object({
   method: z.enum(CONSENT_METHODS, "Forma de coleta inválida."),
@@ -168,6 +169,8 @@ export const personListQuerySchema = z.object({
   familia: optionalBoolean,
   sexo: z.preprocess(blankToNull, z.enum(SEXES, "Sexo inválido.").nullable().optional()),
   semContato: optionalBoolean,
+  // Lista por trás de um contador do Painel (RF-P10).
+  indicador: z.preprocess(blankToNull, z.enum(JOURNEY_INDICATORS, "Indicador inválido.").nullable().optional()),
   sort: z
     .enum(["nome", "-nome", "cadastro", "-cadastro", "nascimento", "-nascimento", "aniversario"])
     .default("nome"),

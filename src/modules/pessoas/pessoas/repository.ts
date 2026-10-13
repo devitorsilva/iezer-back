@@ -3,6 +3,7 @@ import { addDays, yearsAgo } from "../../../lib/civil-date.js";
 import { prisma } from "../../../lib/prisma.js";
 import { normalizeSearchText } from "../../../lib/text.js";
 import { familyMemberPersonSelect } from "../familias/repository.js";
+import { indicatorWhere, type JourneyIndicator, type JourneySettings } from "./jornada.js";
 import type { PersonListQuery } from "./schemas.js";
 
 type Db = Prisma.TransactionClient;
@@ -32,6 +33,12 @@ export const detailInclude = {
     orderBy: { givenAt: "desc" },
     take: 1,
     include: { givenBy: { select: { id: true, name: true } } },
+  },
+  // Último acompanhamento, para a Visão geral.
+  followUps: {
+    orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+    take: 1,
+    include: { author: { select: { name: true } } },
   },
 } satisfies Prisma.PersonInclude;
 
@@ -64,8 +71,8 @@ const SORTS: Record<Exclude<PersonListQuery["sort"], "aniversario">, Prisma.Pers
 };
 
 export class PersonRepository {
-  async list(organizationIds: string[], query: PersonListQuery) {
-    const where = await this.buildWhere(organizationIds, query);
+  async list(organizationIds: string[], query: PersonListQuery, settings: JourneySettings | null) {
+    const where = await this.buildWhere(organizationIds, query, settings);
     if (query.sort === "aniversario") return this.listByBirthday(where, query);
 
     const [items, total] = await Promise.all([
@@ -169,14 +176,22 @@ export class PersonRepository {
 
   // Vínculos que impedem apagar o registro (RF-V05).
   async countLinks(id: string, db: Db) {
-    const [receivables, family, user, followUps, consentsGiven] = await Promise.all([
+    const [receivables, family, user, followUps, events, consentsGiven] = await Promise.all([
       db.receivable.count({ where: { personId: id } }),
       db.familyMember.count({ where: { personId: id } }),
       db.user.count({ where: { personId: id } }),
       db.followUp.count({ where: { personId: id } }),
+      db.personEvent.count({ where: { personId: id } }),
       db.personConsent.count({ where: { givenByPersonId: id } }),
     ]);
-    return { receivables, family, user, followUps, consentsGiven };
+    return { receivables, family, user, followUps, events, consentsGiven };
+  }
+
+  // Contadores dos indicadores da jornada (RT-B13): só números.
+  countIndicator(organizationIds: string[], indicator: JourneyIndicator, settings: JourneySettings) {
+    return prisma.person.count({
+      where: { AND: [{ organizationId: { in: organizationIds } }, indicatorWhere(indicator, settings)] },
+    });
   }
 
   createFamily(organizationId: string, name: string, db: Db) {
@@ -191,7 +206,11 @@ export class PersonRepository {
     return db.personConsent.create({ data });
   }
 
-  private async buildWhere(organizationIds: string[], query: PersonListQuery): Promise<Prisma.PersonWhereInput> {
+  private async buildWhere(
+    organizationIds: string[],
+    query: PersonListQuery,
+    settings: JourneySettings | null,
+  ): Promise<Prisma.PersonWhereInput> {
     const and: Prisma.PersonWhereInput[] = [];
 
     const scope = query.organizacao
@@ -216,6 +235,8 @@ export class PersonRepository {
         WHERE "organizationId" = ANY(${scope}) AND EXTRACT(MONTH FROM "birthDate") = ${query.aniversarioMes}`;
       and.push({ id: { in: rows.map((row) => row.id) } });
     }
+
+    if (query.indicador && settings) and.push(indicatorWhere(query.indicador, settings));
 
     if (query.q) and.push(searchFilter(query.q));
 

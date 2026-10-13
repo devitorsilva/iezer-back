@@ -15,6 +15,7 @@ export const personRoutes: FastifyPluginAsync = async (app) => {
 
   app.get("/", ver, controller.list);
   app.get("/duplicados", ver, controller.duplicates);
+  app.get("/indicadores", ver, controller.indicators);
   app.get("/:id", ver, controller.getById);
   app.get("/:id/contribuicoes", { preHandler: requirePermission("pessoas.contribuicoes.ver") }, controller.contributions);
   app.get(
