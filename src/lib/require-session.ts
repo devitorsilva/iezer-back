@@ -6,6 +6,7 @@ import {
   USER_INACTIVE_CODE,
   USER_INACTIVE_MESSAGE,
 } from "./auth.js";
+import { findTeamMember, TEAM_TWO_FACTOR_SETUP_MESSAGE, touchTeamSession } from "./team.js";
 import {
   requiresTwoFactor,
   TWO_FACTOR_REQUIRED_CODE,
@@ -24,6 +25,8 @@ declare module "fastify" {
 // Exige sessão válida e usuário ATIVO em toda rota de dados (RT-AB04), com o 2FA concluído
 // (sessão do Google) e configurado por quem tem permissão protegida (RF-CV07). Sem o 2FA
 // configurado, só /api/me (Minha conta e a tela de configuração) responde.
+// Conta da equipe iEzer (RT-BB03): sessão cai após 12h sem uso e o 2FA vale só pelo app
+// autenticador; sem ele, só /api/me e /api/admin/me respondem.
 export async function requireSession(request: FastifyRequest, reply: FastifyReply) {
   const { headers, response } = await auth.api.getSession({
     headers: fromNodeHeaders(request.headers),
@@ -60,8 +63,27 @@ export async function requireSession(request: FastifyRequest, reply: FastifyRepl
     });
   }
 
-  const meRoute = request.routeOptions.url?.startsWith("/api/me") ?? false;
-  if (!meRoute && !response.user.twoFactorEnabled && (await requiresTwoFactor(response.user.id))) {
+  const team = await findTeamMember(response.user.id);
+  const url = request.routeOptions.url ?? "";
+  const meRoute = url.startsWith("/api/me") || (team !== null && url.startsWith("/api/admin/me"));
+
+  if (team) {
+    if (!(await touchTeamSession(response.session.id))) {
+      return reply.code(401).send({
+        statusCode: 401,
+        code: "SESSION_IDLE",
+        message: "Sua sessão encerrou depois de 12 horas sem uso. Entre novamente.",
+      });
+    }
+
+    if (!meRoute && !(response.user.twoFactorEnabled && team.totpEnabled)) {
+      return reply.code(403).send({
+        statusCode: 403,
+        code: TWO_FACTOR_SETUP_REQUIRED_CODE,
+        message: TEAM_TWO_FACTOR_SETUP_MESSAGE,
+      });
+    }
+  } else if (!meRoute && !response.user.twoFactorEnabled && (await requiresTwoFactor(response.user.id))) {
     return reply.code(403).send({
       statusCode: 403,
       code: TWO_FACTOR_SETUP_REQUIRED_CODE,
@@ -70,5 +92,6 @@ export async function requireSession(request: FastifyRequest, reply: FastifyRepl
   }
 
   request.user = response.user;
+  request.team = team;
   request.session = response.session;
 }

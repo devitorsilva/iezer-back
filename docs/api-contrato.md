@@ -817,7 +817,7 @@ Leitura: qualquer de `acesso.suporte.autorizar`, `acesso.perfis.gerenciar` ou `a
 
 ### Back-office (`/api/suporte/*`, só atendente)
 
-Fora da organização ativa. Quem não é atendente recebe 403 `SUPPORT_AGENT_REQUIRED`. Tudo vai para o `AuditLog` com `actorType: SUPORTE`, na organização da igreja.
+Fora da organização ativa. Desde a Sprint 15, só membro da equipe com o papel Suporte (ou Administrador iEzer); os outros recebem 403 `TEAM_ROLE_FORBIDDEN`. Tudo vai para o `AuditLog` com `actorType: SUPORTE`, na organização da igreja.
 
 | Método | Rota | Corpo | Resposta |
 | --- | --- | --- | --- |
@@ -836,3 +836,52 @@ Fora da organização ativa. Quem não é atendente recebe 403 `SUPPORT_AGENT_RE
   - registra `suporte_recuperar_admin` com a verificação e avisa os admins atuais e o responsável pela conta;
   - erros: 409 `USER_OTHER_CHURCH` (usuário de outra igreja ou atendente), 409 `USER_NOT_ACTIVE`, 409 `PASTOR_PROFILE_MISSING`.
 - **Ações novas no log:** `suporte_pedir`, `suporte_autorizar`, `suporte_aprovar`, `suporte_recusar`, `suporte_revogar`, `suporte_encerrar`, `suporte_cancelar`, `suporte_emergencia_pedir`, `suporte_emergencia_aprovar`, `suporte_recuperar_admin`, `suporte_ler` (alvos `SupportGrant`, `Rota`, `User` ou `Person`), e `marcar_atendente_suporte` / `desmarcar_atendente_suporte` (script, ator Sistema).
+
+## Sprint 15 — Equipe iEzer e sessão da equipe
+
+Conta da equipe = `User` sem pessoa e sem atribuições, com `TeamMember` (`roles`: `ADMINISTRADOR`, `SUPORTE`, `IMPLANTACAO`; o Administrador faz tudo). O status é o do `User` (`ATIVO`/`DESATIVADO`). `User.isSupportAgent` saiu do banco: o atendente agora é membro com o papel Suporte. `GET /api/me` continua devolvendo `user.isSupportAgent`, calculado a partir do papel.
+
+### Regras da sessão da equipe (todas as rotas protegidas)
+
+| Status | `code` | Quando |
+| --- | --- | --- |
+| 401 | `SESSION_IDLE` | Sessão da equipe sem uso há mais de 12h (`Session.lastActiveAt`, gravado a cada 5 min). A sessão é apagada |
+| 403 | `TWO_FACTOR_SETUP_REQUIRED` | Conta da equipe sem app autenticador (TOTP verificado). Só `/api/me/*` e `/api/admin/me*` respondem |
+| 403 | `TEAM_TOTP_ONLY` | Conta da equipe em `/api/auth/two-factor/send-otp`, `/verify-otp` ou `/enable` com `method: "otp"` |
+| 403 | `TEAM_GOOGLE_FORBIDDEN` | Conta da equipe no login pelo Google (volta em `?error=`) |
+| 403 | `TEAM_EMAIL_CHANGE_FORBIDDEN` | Conta da equipe em `POST /api/me/email` |
+
+- **Login da equipe:** e-mail a todos os Administradores iEzer (nome, data e hora, navegador, local, IP; RF-BO55), no lugar do alerta de dispositivo novo. No bloqueio após 5 erros, os Administradores também recebem aviso. No log, `actorType: SUPORTE`, organização nula.
+- **`/sign-in/email`** ainda lista `twoFactorMethods: ["totp", "otp"]` para a equipe; o app admin oferece só o app autenticador.
+- **Contas exclusivas:** convite ou troca de e-mail de igreja para um e-mail da equipe (membro ou convite da equipe válido) dá 409 `TEAM_EMAIL` (`/acesso/convites`, `/acesso/usuarios`); em `/me/email`, 409 `EMAIL_IN_USE`.
+
+### Convite da equipe (público, limite por IP)
+
+| Método | Rota | Corpo | Resposta |
+| --- | --- | --- | --- |
+| GET | `/api/admin/convites/:token` | — | `{ name, email, roles, inviterName, expiresAt, termsVersion }`. 404 `TEAM_INVITE_INVALID` |
+| POST | `/api/admin/convites/:token/aceitar` | `{ password, acceptTerms: true }` | `{ signedIn }` + cookie da sessão. Cria o `User` sem pessoa, a senha e o `TeamMember` com o termo aceito. Erros: 400 `WEAK_PASSWORD`, `PASSWORD_COMPROMISED`, `VALIDATION_ERROR`; 404 `TEAM_INVITE_INVALID`; 409 `EMAIL_IN_USE`, `CHURCH_USER_EMAIL` |
+
+Depois do aceite, a sessão só configura o app autenticador: `POST /api/auth/two-factor/enable { password }` → `{ totpURI, backupCodes[10] }`, depois `POST /api/auth/two-factor/verify-totp { code }`.
+
+### `/api/admin/*` (só conta da equipe)
+
+Conta de igreja: 403 `TEAM_ACCOUNT_REQUIRED` ("Esta conta não tem acesso ao back-office do iEzer."). Sem o termo da versão atual: 403 `TEAM_TERMS_REQUIRED`, exceto em `/admin/me*`. Papel insuficiente: 403 `TEAM_ROLE_FORBIDDEN`.
+
+| Método | Rota | Papel | Corpo | Resposta |
+| --- | --- | --- | --- | --- |
+| GET | `/admin/me` | qualquer | — | `{ user: { id, name, email, lastLoginAt }, memberId, roles, terms: { version, accepted }, twoFactor: { enabled, required: true } }` |
+| POST | `/admin/me/termo` | qualquer | — | `{ version, accepted: true }` |
+| GET | `/admin/equipe` | Administrador | — | `{ items: TeamItem[] }`: membros e convites pendentes (inclusive vencidos), por nome |
+| POST | `/admin/equipe/convites` | Administrador | `{ name, email, roles[] }` | 201 `{ invite: TeamItem, link, emailSent }` (72h, uso único). 409 `TEAM_MEMBER_EXISTS`, `CHURCH_USER_EMAIL`, `TEAM_INVITE_PENDING` |
+| POST | `/admin/equipe/convites/:id/reenviar` | Administrador | `{ sendEmail? }` | `{ invite, link, emailSent }`. Novo token e mais 72h. 409 `TEAM_INVITE_NOT_PENDING` |
+| POST | `/admin/equipe/convites/:id/cancelar` | Administrador | — | `TeamItem` com `status: "CANCELADO"` |
+| PATCH | `/admin/equipe/:id/papeis` | Administrador | `{ roles[] }` | `TeamItem`. 409 `TEAM_SELF_CHANGE`, `TEAM_LAST_ADMIN` |
+| POST | `/admin/equipe/:id/desativar` | Administrador | — | `TeamItem`. Derruba as sessões. 409 `TEAM_SELF_CHANGE`, `TEAM_LAST_ADMIN`, `TEAM_ALREADY_INACTIVE` |
+| POST | `/admin/equipe/:id/reativar` | Administrador | — | `TeamItem`. 409 `TEAM_ALREADY_ACTIVE` |
+| POST | `/admin/equipe/:id/autenticador/redefinir` | Administrador | — | `TeamItem`. Apaga o app autenticador e os códigos, derruba as sessões e avisa o membro por e-mail (RF-BO09) |
+
+`TeamItem`: `{ id, kind: "MEMBRO"|"CONVITE", userId, name, email, roles, status: "CONVIDADO"|"ATIVO"|"DESATIVADO"|"CANCELADO", twoFactorEnabled, lastLoginAt, invitedByName, inviteExpiresAt, createdAt }`. O `id` é o do membro ou o do convite, conforme o `kind`. `twoFactorEnabled` só conta o app autenticador.
+
+- **Auditoria:** organização nula, módulo `BACKOFFICE`, `actorType: SUPORTE`. Ações: `convidar_equipe`, `reenviar_convite_equipe`, `cancelar_convite_equipe`, `aceitar_convite_equipe`, `aceitar_termo_equipe`, `alterar_papeis_equipe`, `desativar_equipe`, `reativar_equipe`, `redefinir_autenticador_equipe`, `promover_administrador_equipe` (script). Alvos `TeamMember` e `TeamInvite`.
+- **Bootstrap:** `npm run suporte:agente -- <email> "<nome>"` só roda sem Administrador iEzer ativo. Membro da equipe existente ganha o papel; e-mail novo recebe convite de Administrador (link no log).

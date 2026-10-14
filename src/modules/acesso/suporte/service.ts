@@ -40,7 +40,7 @@ export function grantStatus(grant: Pick<SupportGrantRow, "status" | "expiresAt">
 }
 
 const personName = (person: SupportGrantRow["requestedBy"]) =>
-  person ? (person.isSupportAgent ? `${person.name} (Suporte iEzer)` : person.name) : null;
+  person ? (person.teamMember ? `${person.name} (Suporte iEzer)` : person.name) : null;
 
 export function mapGrant(grant: SupportGrantRow) {
   return {

@@ -4,7 +4,7 @@ import { activeGrantWhere } from "../../../lib/support.js";
 
 type Db = Prisma.TransactionClient;
 
-const person = { select: { id: true, name: true, isSupportAgent: true } } as const;
+const person = { select: { id: true, name: true, teamMember: { select: { id: true } } } } as const;
 
 const select = {
   id: true,

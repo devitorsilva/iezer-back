@@ -231,14 +231,14 @@ export class BackOfficeService {
     const previousAdmins = await supportAdmins(churchId);
     const existingUser = await prisma.user.findUnique({
       where: { email: input.email },
-      select: { id: true, name: true, status: true, isSupportAgent: true },
+      select: { id: true, name: true, status: true, teamMember: { select: { id: true } } },
     });
 
     let result: { adminName: string; viaInvite: boolean; link: string | null; emailSent: boolean };
 
     if (existingUser) {
       const userChurch = await findUserChurch(existingUser.id);
-      if (existingUser.isSupportAgent || userChurch?.id !== churchId) {
+      if (existingUser.teamMember || userChurch?.id !== churchId) {
         throw new AppError(409, "USER_OTHER_CHURCH", "Este e-mail é de um usuário de fora desta igreja.");
       }
       if (existingUser.status !== "ATIVO") {

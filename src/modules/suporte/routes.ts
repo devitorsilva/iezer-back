@@ -1,4 +1,5 @@
-import { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
+import { FastifyPluginAsync } from "fastify";
+import { requireTeamRole } from "../../lib/team.js";
 import { supportGrantRepository } from "../acesso/suporte/routes.js";
 import { BackOfficeController } from "./controller.js";
 import { BackOfficeService } from "./service.js";
@@ -6,20 +7,11 @@ import { BackOfficeService } from "./service.js";
 const service = new BackOfficeService(supportGrantRepository);
 const controller = new BackOfficeController(service);
 
-// Só o atendente do suporte (conta nominal, 2FA obrigatório pelo requireSession: RF-SP06, RT-AB14).
-async function requireSupportAgent(request: FastifyRequest, reply: FastifyReply) {
-  if (request.user.isSupportAgent === true) return;
-
-  return reply.code(403).send({
-    statusCode: 403,
-    code: "SUPPORT_AGENT_REQUIRED",
-    message: "Área restrita à equipe de suporte do iEzer.",
-  });
-}
-
-// Back-office do suporte: fora da organização ativa, porque atende todas as igrejas.
+// Back-office do suporte: fora da organização ativa, porque atende todas as igrejas. Só a equipe
+// com o papel Suporte (ou Administrador iEzer), com o app autenticador pelo requireSession.
+// Muda para /api/admin/* na Sprint 19.
 export const backOfficeRoutes: FastifyPluginAsync = async (app) => {
-  app.addHook("onRequest", requireSupportAgent);
+  app.addHook("onRequest", requireTeamRole("SUPORTE"));
 
   app.get("/igrejas", controller.churches);
   app.post("/igrejas/:churchId/recuperar-admin", controller.recoverAdmin);

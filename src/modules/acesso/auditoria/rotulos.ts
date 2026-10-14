@@ -17,6 +17,7 @@ export const MODULE_LABELS: Record<ModuleKey, string> = {
   CONTEUDO: "Conteúdo",
   ACESSO: "Acesso",
   PESSOAS: "Pessoas",
+  BACKOFFICE: "Back-office",
 };
 
 export const ACTOR_TYPE_LABELS: Record<AuditActorType, string> = {
@@ -80,6 +81,17 @@ export const ACTION_LABELS: Record<string, string> = {
   suporte_emergencia_aprovar: "Emergência do suporte aprovada",
   suporte_recuperar_admin: "Admin nomeado pelo suporte",
   suporte_ler: "Suporte abriu tela ou registro",
+  // Equipe iEzer (back-office; só na auditoria interna)
+  convidar_equipe: "Membro da equipe convidado",
+  reenviar_convite_equipe: "Convite da equipe reenviado",
+  cancelar_convite_equipe: "Convite da equipe cancelado",
+  aceitar_convite_equipe: "Convite da equipe aceito",
+  alterar_papeis_equipe: "Papéis da equipe alterados",
+  desativar_equipe: "Membro da equipe desativado",
+  reativar_equipe: "Membro da equipe reativado",
+  redefinir_autenticador_equipe: "App autenticador da equipe redefinido",
+  aceitar_termo_equipe: "Termo da equipe aceito",
+  promover_administrador_equipe: "Administrador iEzer criado pelo script",
   // Pessoas
   editar_pessoa: "Pessoa editada",
   apagar_registro: "Registro apagado",
@@ -129,6 +141,8 @@ export const TARGET_TYPE_LABELS: Record<string, string> = {
   ChurchListItem: "Lista da igreja",
   AuditLog: "Auditoria",
   SupportGrant: "Acesso do suporte",
+  TeamMember: "Membro da equipe",
+  TeamInvite: "Convite da equipe",
   Rota: "Tela ou registro",
 };
 
@@ -211,6 +225,7 @@ const FIELD_LABELS: Record<string, string> = {
   acceptedAt: "Aceito em",
   assignments: "Acessos",
   termsVersion: "Versão dos termos",
+  roles: "Papéis",
   twoFactorEnabled: "Verificação em duas etapas",
   lockedUntil: "Bloqueado até",
   permissions: "Permissões",

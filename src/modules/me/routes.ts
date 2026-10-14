@@ -3,6 +3,7 @@ import { loadAccessibleOrganizations } from "../../lib/access.js";
 import { runAudited } from "../../lib/audit.js";
 import { findUserChurch } from "../../lib/church.js";
 import { TERMS_VERSION } from "../../lib/terms.js";
+import { hasTeamRole } from "../../lib/team.js";
 import { requiresTwoFactor } from "../../lib/two-factor.js";
 import { accountRoutes } from "./conta/routes.js";
 import { MeRepository } from "./repository.js";
@@ -21,11 +22,13 @@ export const meRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const { person, termsVersion, ...userData } = user;
-    // Atendente: as igrejas com acesso do suporte ativo, com prazo e escrita em `support`.
-    const organizations = await loadAccessibleOrganizations(user.id, user.isSupportAgent);
+    // Atendente (equipe com o papel Suporte): as igrejas com acesso do suporte ativo, com prazo e
+    // escrita em `support`; o front abre o back-office (/app/suporte) até a Sprint 19.
+    const isSupportAgent = hasTeamRole(request.team?.roles, "SUPORTE");
+    const organizations = await loadAccessibleOrganizations(user.id, isSupportAgent);
 
     return {
-      user: userData,
+      user: { ...userData, isSupportAgent },
       // Sem o aceite da versão atual, o front pede os termos antes de liberar o app (RF-CV06).
       terms: { version: TERMS_VERSION, accepted: termsVersion === TERMS_VERSION },
       // Com permissão protegida e sem 2FA, o front abre a configuração obrigatória (RF-CV07).

@@ -29,6 +29,14 @@ import { trySendMail } from "./mailer.js";
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, passwordRuleViolation } from "./password-rules.js";
 import { prisma } from "./prisma.js";
 import { isRateLimited } from "./rate-limit.js";
+import {
+  findTeamMember,
+  isTeamUser,
+  teamAdminRecipients,
+  TEAM_TOTP_ONLY_CODE,
+  TEAM_TOTP_ONLY_MESSAGE,
+} from "./team.js";
+import { teamLoginLockedNotice, teamLoginNotice } from "./team-emails.js";
 import { requiresTwoFactor, TWO_FACTOR_REQUIRED_CODE, TWO_FACTOR_REQUIRED_MESSAGE } from "./two-factor.js";
 
 export const USER_INACTIVE_CODE = "USER_INACTIVE";
@@ -65,26 +73,45 @@ const BLOCKED_PATHS = new Set([
 
 const isCallbackPath = (path: string | undefined) => Boolean(path?.startsWith("/callback/"));
 
+type AuthMiddlewareContext = Parameters<Parameters<typeof createAuthMiddleware>[0]>[0];
+
+// Usuário de uma rota do 2FA: o da sessão ou, no login, o do cookie do desafio (como o plugin faz
+// em verifyTwoFactor).
+async function twoFactorUserId(ctx: AuthMiddlewareContext) {
+  const current = await getSessionFromCtx(ctx);
+  if (current) return current.user.id;
+
+  const cookie = ctx.context.createAuthCookie("two_factor");
+  const identifier = await ctx.getSignedCookie(cookie.name, ctx.context.secret);
+  if (!identifier) return null;
+
+  const verification = await ctx.context.internalAdapter.findVerificationValue(identifier);
+  return verification?.value ?? null;
+}
+
 // Cookie do desafio do 2FA (plugin twoFactor): a sessão criada na verificação é um login.
 const TWO_FACTOR_COOKIE = /(?:^|;\s*)(?:__Secure-)?better-auth\.two_factor=/;
 
-const headerActor = (headers: Headers | null | undefined, userId: string | null): AuditActor => ({
-  type: "USUARIO",
+// Conta da equipe iEzer grava como Suporte (RT-BB12).
+const headerActor = (headers: Headers | null | undefined, userId: string | null, isTeam = false): AuditActor => ({
+  type: isTeam ? "SUPORTE" : "USUARIO",
   userId,
   ip: headers?.get(CLIENT_IP_HEADER) ?? null,
   userAgent: headers?.get("user-agent") ?? null,
 });
 
 // Login, falha de login e logout no AuditLog (RF-LP01), na sede da igreja do usuário.
-// Falha com e-mail sem usuário fica sem organização (não aparece para nenhuma igreja).
+// Falha com e-mail sem usuário fica sem organização (não aparece para nenhuma igreja), como os
+// logins da equipe iEzer, que só aparecem na auditoria interna.
 async function auditLogin(
   action: "login" | "login_falhou" | "logout" | "login_bloqueado",
   userId: string | null,
   headers: Headers | null | undefined,
   data: { actorUserId?: string | null; description?: string; after?: unknown } = {},
 ) {
-  const actor = headerActor(headers, data.actorUserId === undefined ? userId : data.actorUserId);
-  const church = userId ? await findUserChurch(userId) : null;
+  const isTeam = userId ? await isTeamUser(userId) : false;
+  const actor = headerActor(headers, data.actorUserId === undefined ? userId : data.actorUserId, isTeam);
+  const church = userId && !isTeam ? await findUserChurch(userId) : null;
 
   await runAudited(actor, (_tx, audit) =>
     audit({
@@ -100,13 +127,37 @@ async function auditLogin(
 }
 
 // Login concluído (com o 2FA, quando há): último acesso, alerta de dispositivo novo e log.
+// Login da equipe iEzer avisa todos os Administradores iEzer (RF-BO55).
 async function recordLogin(userId: string, headers: Headers | null | undefined) {
+  const at = new Date();
   const user = await prisma.user.update({
     where: { id: userId },
-    data: { lastLoginAt: new Date() },
+    data: { lastLoginAt: at },
     select: { email: true, name: true },
   });
   await clearLoginFailures(user.email);
+
+  if (await isTeamUser(userId)) {
+    await auditLogin("login", userId, headers);
+    const admins = await teamAdminRecipients();
+    await Promise.all(
+      admins.map((admin) =>
+        trySendMail(
+          teamLoginNotice({
+            to: admin.email,
+            adminName: admin.name,
+            memberName: user.name,
+            memberEmail: user.email,
+            at,
+            device: describeDevice(headers?.get("user-agent")),
+            ip: headers?.get(CLIENT_IP_HEADER) ?? null,
+            location: approximateLocation(headers),
+          }),
+        ),
+      ),
+    );
+    return;
+  }
 
   // Dispositivo novo: navegador e sistema que não aparecem nos logins dos últimos 90 dias.
   // O primeiro login da conta não avisa.
@@ -167,7 +218,8 @@ export const auth = betterAuth({
   basePath: "/api/auth",
   secret: env.BETTER_AUTH_SECRET,
   database: prismaAdapter(prisma, { provider: "postgresql" }),
-  trustedOrigins: [env.WEB_ORIGIN, ...localDevOrigins],
+  // App das igrejas e app admin da equipe (RT-BB03).
+  trustedOrigins: [env.WEB_ORIGIN, env.ADMIN_WEB_ORIGIN, ...localDevOrigins],
   // Tokens de redefinição (e os próximos códigos de verificação) guardados como hash (RT-AB08).
   verification: { storeIdentifier: "hashed" },
   emailAndPassword: {
@@ -217,7 +269,6 @@ export const auth = betterAuth({
       personId: { type: "string", required: false, input: false },
       lastLoginAt: { type: "date", required: false, input: false },
       termsVersion: { type: "string", required: false, input: false },
-      isSupportAgent: { type: "boolean", required: false, defaultValue: false, input: false },
     },
   },
   rateLimit: {
@@ -277,6 +328,19 @@ export const auth = betterAuth({
         return;
       }
 
+      // Equipe iEzer só usa o app autenticador (B2): código por e-mail recusado no envio, na
+      // conferência e na ativação.
+      if (
+        ctx.path === "/two-factor/send-otp" ||
+        ctx.path === "/two-factor/verify-otp" ||
+        (ctx.path === "/two-factor/enable" && (ctx.body as { method?: unknown } | undefined)?.method === "otp")
+      ) {
+        const userId = await twoFactorUserId(ctx);
+        if (userId && (await isTeamUser(userId))) {
+          throw APIError.from("FORBIDDEN", { code: TEAM_TOTP_ONLY_CODE, message: TEAM_TOTP_ONLY_MESSAGE });
+        }
+      }
+
       // Sessão do Google com 2FA pendente só envia e confere o código. E o 2FA obrigatório
       // (RF-CV07, RF-MC03) não pode ser desligado.
       if (ctx.path.startsWith("/two-factor/") && ctx.path !== "/two-factor/send-otp" && !TWO_FACTOR_VERIFY_PATHS.has(ctx.path)) {
@@ -325,6 +389,24 @@ export const auth = betterAuth({
           await auditLogin("login_bloqueado", user.id, ctx.headers, { actorUserId: null, after: { lockedUntil } });
           const church = await findUserChurch(user.id);
           await trySendMail(loginLockedNotice({ to: email, name: user.name, churchName: church?.name ?? null }));
+
+          // Conta da equipe: aviso também aos Administradores iEzer (Segurança da equipe › Tentativas).
+          if (await isTeamUser(user.id)) {
+            const admins = await teamAdminRecipients();
+            await Promise.all(
+              admins.map((admin) =>
+                trySendMail(
+                  teamLoginLockedNotice({
+                    to: admin.email,
+                    adminName: admin.name,
+                    memberName: user.name,
+                    memberEmail: email,
+                    lockedUntil,
+                  }),
+                ),
+              ),
+            );
+          }
         }
         return;
       }
@@ -384,7 +466,7 @@ export const auth = betterAuth({
           if (!disabled && !user.twoFactorEnabled) return;
 
           await recordAccountEvent({
-            actor: headerActor(context?.headers, user.id),
+            actor: headerActor(context?.headers, user.id, await isTeamUser(user.id)),
             userId: user.id,
             action: disabled ? "desativar_2fa" : "ativar_2fa",
             notice: (target) => twoFactorChangedNotice({ ...target, change: disabled ? "desativada" : "ativada" }),
@@ -404,6 +486,15 @@ export const auth = betterAuth({
             throw APIError.from("FORBIDDEN", {
               code: USER_INACTIVE_CODE,
               message: USER_INACTIVE_MESSAGE,
+            });
+          }
+
+          // O back-office não tem login pelo Google: a conta da equipe entra só com senha e app
+          // autenticador (PRD Back-office › validações).
+          if (isCallbackPath(context?.path) && (await findTeamMember(session.userId))) {
+            throw APIError.from("FORBIDDEN", {
+              code: "TEAM_GOOGLE_FORBIDDEN",
+              message: "Contas da equipe iEzer entram só com e-mail, senha e app autenticador.",
             });
           }
 
@@ -464,6 +555,8 @@ export const auth = betterAuth({
         period: TWO_FACTOR_CODE_TTL_MINUTES,
         storeOTP: "hashed",
         sendOTP: async ({ user, otp }) => {
+          // A equipe não recebe código por e-mail (B2); o hook "before" já recusa com 403.
+          if (await isTeamUser(user.id)) return;
           const church = await findUserChurch(user.id);
           await trySendMail(twoFactorCodeEmail({ to: user.email, name: user.name, churchName: church?.name ?? null, code: otp }));
         },

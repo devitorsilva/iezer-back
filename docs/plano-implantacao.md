@@ -51,7 +51,7 @@ Depois do MVP: itens F2 dos dois PRDs, priorizados com a igreja piloto.
 - `docs/go-live.md`: variáveis do Render e da Vercel (com `BETTER_AUTH_SECRET` e segredo do Google próprios de produção), `migrate deploy`, seeds, `igreja:criar` com os dados reais, `suporte:agente`, conferências pós-deploy (IP, headers `x-vercel-ip-*`, `trustedOrigins`, cookie) e teste rápido.
 - Homologação repetida em produção, só com dados fictícios, antes de importar a base real.
 
-**Painel administrativo do iEzer** (depois do MVP; RT-AB14, A10, A11, RF-OB01). Hoje existe só o back-office do suporte em `/app/suporte`, mais os scripts `igreja:criar` e `suporte:agente`. O painel deve cobrir:
+**Painel administrativo do iEzer** (depois do MVP; RT-AB14, A10, A11, RF-OB01). Virou o back-office das Sprints 15 a 22 (PRD `docs/prd/backoffice.md`); o texto abaixo fica como histórico. Hoje existe só o back-office do suporte em `/app/suporte`, mais os scripts `igreja:criar` e `suporte:agente`. O painel deve cobrir:
 
 - igrejas: criação de igreja e congregações pela tela, no lugar do script;
 - troca do responsável pela conta e do encarregado de LGPD, mediante documento;
@@ -211,6 +211,106 @@ Decisão em aberto: o RT-AB14 pede autenticação própria da equipe, o que apon
 - Usar só dados fictícios: o banco atual não tem backup e guarda registros de auditoria que não podem ser apagados.
 - **Pronto quando:** o roteiro passa sem achados que bloqueiam, e o pastor percorreu as jornadas dele.
 
+## Back-office do iEzer (Sprints 15 a 22)
+
+Requisitos: `docs/prd/backoffice.md`, citados por ID (RF-BO, RT-BB, RT-BF e decisões B1 a B15). As regras das sprints valem iguais: nos PRDs, buscar só os IDs citados com `grep`.
+
+A Sprint 14 (homologação no navegador) continua adiada; estas sprints vêm antes dela. O app admin é um segundo app no `iezer-front` (RT-BF01). Na seção Go-live, o item "Painel administrativo do iEzer" passa a apontar para estas sprints.
+
+## Sprint 15 — Equipe iEzer e sessão da equipe (back) `[x]`
+
+**Objetivo:** contas da equipe separadas das contas de igreja, com papéis e regras de segurança próprias.
+
+- `TeamMember` com papéis (Administrador iEzer, Suporte, Implantação), status, quem convidou e aceite do termo. `User.personId` passa a aceitar nulo só para contas da equipe. `User.isSupportAgent` migra para `TeamMember` com papel Suporte, e o campo sai.
+- Namespace `/api/admin/*` com `requireTeamRole` e `GET /api/admin/me`. Sessão de conta de igreja é recusada em `/api/admin/*`. As rotas `/api/suporte/*` continuam onde estão até a Sprint 19, para não quebrar o suporte atual.
+- Regras da equipe em hooks e middleware: 2FA só por TOTP (OTP por e-mail recusado para conta da equipe), sessão revogada após 12h sem uso, bloqueio após 5 erros com aviso aos Administradores iEzer, e-mail de conta da equipe não pode ser de usuário de igreja, `trustedOrigins` com o segundo front.
+- API da equipe: convite (72h, uso único), listar, mudar papéis, desativar e reativar, redefinir autenticador. Travas: ninguém altera os próprios papéis nem se desativa, e nunca fica sem Administrador iEzer ativo.
+- E-mail a todos os Administradores iEzer a cada login da equipe. Ações da equipe sem igreja (login, equipe) gravam no `AuditLog` com organização nula.
+- `npm run suporte:agente` vira o bootstrap do primeiro Administrador iEzer.
+- Atualizar em `docs/prd/acesso.md` a A17, o RF-SP02 e o item "Prazos do suporte" das validações com os prazos da B15.
+- **IDs:** B1 a B3, RF-BO03, RF-BO06 a RF-BO10, RF-BO55, RT-BB01 a RT-BB03, RT-BB12, RT-BB13; backoffice › Segurança da equipe; backoffice › Migração (linhas `isSupportAgent` e `suporte:agente`).
+- **Pronto quando:** o primeiro Administrador iEzer, criado pelo script, convida um Suporte pela API; `/api/admin/*` recusa conta de igreja; e o login da equipe sem TOTP é recusado.
+
+## Sprint 16 — App admin: estrutura, entrada e equipe (front) `[ ]`
+
+**Objetivo:** a equipe entra num app próprio e gere a si mesma.
+
+- Segundo app no `iezer-front`, com build próprio, reaproveitando `ui/*`, os campos padronizados e os padrões do `CLAUDE.md`, sem importar telas do app das igrejas. Título, favicon e cor de destaque próprios; `noindex`.
+- Rotas `/login`, `/convite/:token`, `/minha-conta` e `/equipe`. Menu por papel com `useTeamRole` e `<CanTeam>`; `queryKeys` próprios do admin.
+- Login com e-mail, senha e código do app autenticador. Primeiro acesso por convite: definir senha, configurar o autenticador, guardar os códigos de recuperação e aceitar o termo. Minha conta: senha, autenticador, códigos e sessões.
+- Tela Equipe com as travas, tabela virando cards abaixo de `md` e skeleton espelhando o layout.
+- **Pendência manual:** criar o projeto do app admin na Vercel (o Claude Code deixa o build pronto e descreve a configuração). Usa a URL da Vercel até haver domínio.
+- **IDs:** RF-BO01, RF-BO03 a RF-BO10, RT-BF01 a RT-BF03, RT-BF06, RT-BF07.
+- **Pronto quando:** um membro convidado entra pela primeira vez, configura o TOTP e vê só o menu do seu papel; uma conta de igreja não entra no app admin.
+
+## Sprint 17 — Igrejas: lista, criação e detalhe (back + front) `[ ]`
+
+**Objetivo:** criar e acompanhar igrejas sem terminal.
+
+- `Organization.status` (IMPLANTACAO, ATIVA, SUSPENSA, ENCERRADA) na sede, com data e motivo da última mudança. As igrejas fictícias que já existem viram Ativa.
+- Serviço único de criação de igreja, numa transação: sede, congregações, contatos, seed dos perfis de fábrica e das listas, Pessoa e convite do primeiro admin com o perfil Pastor na sede. A igreja nasce em Implantação. O script `igreja:criar` é removido.
+- Telas: lista com busca por nome ou CNPJ e filtro por situação; "Nova igreja" com `CpfCnpjInput` (CNPJ alfanumérico) e bloqueio de CNPJ repetido; página da igreja com as abas Visão geral, Congregações e Usuários. As abas Pedidos de acesso e Histórico chegam nas Sprints 19 e 22.
+- Editar sede, congregações e contatos da conta. Reenviar o convite de admin com motivo, aviso por e-mail ao responsável pela conta e registro na Auditoria da igreja.
+- Nenhuma rota desta sprint devolve dados de pessoa além do que a B8 permite.
+- **IDs:** B4, B5, B8, RF-BO11 a RF-BO18, RF-BO29, RF-BO32, RF-BO56, RT-BB04 (campo de situação), RT-BB05.
+- **Pronto quando:** uma igreja criada pela tela nasce em Implantação com o convite do primeiro admin, e a aba Usuários mostra só nome, e-mail, perfis, status, último acesso.
+
+## Sprint 18 — Situação da igreja e troca do responsável (back + front) `[ ]`
+
+**Objetivo:** cada igreja tem um estado claro, e a troca do responsável fica documentada.
+
+- "Marcar como ativa" (só com admin ativo), "Suspender" e "Reativar", com motivo e e-mails. A checagem de sessão do app das igrejas recusa igreja suspensa ou encerrada, e o app das igrejas ganha a tela de igreja suspensa.
+- Supabase Storage: bucket privado, upload só pelo back (10 MB, tipo conferido pelo conteúdo), caminho por organização, links assinados de 5 minutos com cada abertura registrada. `AccountDocument` com tipo, data, número da ata, arquivo e data de descarte.
+- Troca do responsável pela conta com documento e anexo; e-mails ao anterior, ao novo e aos admins; histórico de responsáveis.
+- Componente `FileUpload`, passando pelo checklist da CLI.
+- **Pendência manual:** criar o bucket no Supabase (o Claude Code descreve como).
+- **IDs:** B5, B7, RF-BO19 a RF-BO21, RF-BO25 a RF-BO28, RF-BO57, RF-BO58, RT-BB04, RT-BB06, RT-BF04 (tela de igreja suspensa), RT-BF05.
+- **Pronto quando:** suspender derruba as sessões da igreja e mostra a tela de suspensa; a troca sem anexo é recusada; e o link do anexo expira.
+
+## Sprint 19 — Suporte no back-office: ações sem acesso e pedidos de acesso (back + front) `[ ]`
+
+**Objetivo:** o suporte sai do app das igrejas e passa a seguir os novos prazos.
+
+- **Antes de planejar:** conferir como o atendente vê os dados hoje com o grant ativo (validação "Modo suporte" do PRD) e propor o desenho do RF-BO38.
+- Mover `/api/suporte/*` para `/api/admin/*` e remover `/app/suporte` do app das igrejas.
+- Redefinir 2FA de admin (com verificação anotada) e destravar login, sempre com motivo, aviso ao responsável pela conta e auditoria. Recuperação de admin no back-office, sem mudar as regras.
+- `SupportGrant`: escrita passa antes pelo Administrador iEzer; prazo a partir da aprovação da igreja (24h padrão, 72h máximo); pedido sem resposta expira em 7 dias; autor diferente do aprovador; Implantação só pede leitura e só com a igreja em Implantação; encerrar pelo back-office; emergência aprovada por outro Administrador iEzer.
+- Modo suporte: conta da equipe só entra no app das igrejas com pedido ativo, nos módulos do escopo, com a faixa fixa. Fora disso, sessão da equipe é recusada no app das igrejas.
+- Aba Pedidos de acesso na página da igreja e lista geral de pedidos. Grants abertos em homologação são encerrados.
+- **IDs:** B9, B15, RF-BO02, RF-BO30 a RF-BO40, RT-BB01, RT-BB03 (modo suporte), RT-BB11, RT-BF04 (saída de `/app/suporte` e faixa do modo suporte).
+- **Pronto quando:** um pedido com escrita passa pelo Administrador iEzer antes da igreja, o prazo só começa na aprovação, ninguém aprova o próprio pedido, e `/app/suporte` não existe mais.
+
+## Sprint 20 — Painel de saúde e e-mails da equipe (back + front) `[ ]`
+
+**Objetivo:** a equipe percebe os problemas antes da igreja reclamar.
+
+- Página inicial com os sete alertas por igreja, a partir de consultas agregadas que nunca devolvem dados de pessoa. Prazos (15, 7 e 30 dias) em parâmetros no código.
+- Webhook do Resend com verificação de assinatura e `EmailEvent`; marca de e-mail rejeitado na aba Usuários. Sem domínio, testar com um evento simulado.
+- E-mails para a equipe: pedido aprovado ou recusado, emergência aberta, igreja que ficou sem admin. Fecha a pendência da Sprint 13.
+- **IDs:** B10, B12, RF-BO41 a RF-BO43, RF-BO54, RT-BB08, RT-BB09, RT-BB13.
+- **Pronto quando:** uma igreja de teste sem admin aparece no painel e gera e-mail (no log) para Suporte e Administradores.
+
+## Sprint 21 — Avisos em massa (back + front) `[ ]`
+
+**Objetivo:** a equipe avisa as igrejas sem depender de e-mail em massa.
+
+- `Announcement` e `AnnouncementView`. Tela de avisos, só para o Administrador iEzer: público, nível, início e fim, status (rascunho, agendado, no ar, encerrado) e contagem de quem viu e dispensou.
+- `GET /me/avisos` e a faixa acima do header no app das igrejas. Informativo e manutenção podem ser dispensados; o importante fica até o fim.
+- E-mail opcional aos admins e ao responsável pela conta quando o aviso entra no ar.
+- **IDs:** B13, RF-BO44 a RF-BO49, RT-BB10, RT-BF04 (faixa de avisos).
+- **Pronto quando:** um aviso para "só admins" das igrejas ativas aparece só para eles, no horário marcado, e some no fim.
+
+## Sprint 22 — Fim de contrato e auditoria interna (back + front) `[ ]`
+
+**Objetivo:** encerrar uma igreja com os dados devolvidos e ver tudo o que a equipe fez.
+
+- Exportação em segundo plano: uma planilha por conjunto num `.zip` no Storage, link de uso único de 7 dias ao responsável pela conta, download registrado, rotina diária que apaga os vencidos. Notas pastorais, quando existirem, vão num arquivo separado só para quem tem a permissão.
+- Registrar a eliminação definitiva (quando, quem, documento) e passar a igreja para Encerrada. Escrever `docs/roteiro-eliminacao.md`: dados, arquivos no Storage, prazo dos backups do Supabase, trava do audit log e comprovante à igreja.
+- Tela Auditoria interna (filtros por membro, igreja, ação e período) e aba Histórico na página da igreja.
+- Conferir as rotinas agendadas no Render (expirar pedidos, apagar exportações, painel).
+- **IDs:** B6, B11, B14, RF-BO15, RF-BO22 a RF-BO24, RF-BO51, RF-BO52, RF-BO59 a RF-BO61, RT-BB07, RT-BB12, RT-BB14.
+- **Pronto quando:** a exportação de uma igreja de teste chega por link ao responsável (no log) sem a equipe conseguir baixá-la, e as ações feitas pela equipe nas sprints 15 a 22 aparecem na auditoria interna.
+
 ---
 
 ## Registro
@@ -298,3 +398,11 @@ Entradas curtas (até 8 linhas), mais recente por último.
   Decisões: o grant é da equipe, não de um atendente; o escopo são módulos, valendo para a igreja inteira; um ativo por vez (409); a igreja não revoga a emergência, só o iEzer encerra; a recuperação de admin precisa de um atendente só, com a verificação anotada; ninguém é avisado na revogação.
   Testado por HTTP, com `teste.sprint13@iezer.local` (Pastor) e os atendentes `suporte.um`/`suporte.dois`/`suporte.tres@iezer.local` (2FA por e-mail; para trocar a senha, `npm run user:create`). Coberto: guardas, pedido e aprovação com prazo encurtado, leituras no log e no Histórico, bloqueio de escrita, escrita liberada, revogação, expiração simulada, emergência com dupla aprovação, recusa, cancelamento, recuperação de admin e atendente sem 2FA. Ficaram no banco os grants de teste e a pessoa "Teste Treze Novo Admin", com convite pendente.
   Pendências: telas testadas só por typecheck e build. Ajustes após teste no navegador: em acesso somente leitura, o front deixa o atendente só com as permissões de leitura (`SUPPORT_READ_ONLY_KEYS`), e as telas de gestão (Perfis, Organização) ainda mostram os botões. As leituras gravam o nome da tela (ex.: "Perfil da pessoa"), e o endereço só quando há busca ou filtro. O log de leitura virou INSERT direto (`recordAudit`, sem transação): com o banco em us-west-2 e pool de 5, as transações simultâneas de um perfil davam 500 (`Unable to start a transaction`). O `runAudited` ganhou `maxWait` de 10 s. Fornecedores: o back confere o dígito do CPF/CNPJ (inclusive alfanumérico, `isValidAnyCnpj`); os 5 fornecedores de teste têm documento inválido. A aba Histórico mostra só alterações (`READ_ACTIONS` fora); quem acessou a pessoa fica na Auditoria (RF-LP04), e o link da aba virou "Ver acessos e alterações na Auditoria". Ficaram 15 registros `teste_carga_sprint13` (Sistema) na auditoria. O GET recusado por permissão também vira `suporte_ler`. No Render: `migrate deploy` e marcar os atendentes reais; a equipe do suporte ainda não tem e-mail de aviso.
+- 14/10/2026 · Preparação do back-office · PRD em `docs/prd/backoffice.md`; sprints 15 a 22 adicionadas; Sprint 14 continua adiada.
+- 14/10/2026 · Sprint 15 · Branch `sprint-15-equipe` (só back). PRD renomeado para `docs/prd/backoffice.md`; rascunho `plano-backoffice-sprints.md` apagado. Migração `20261014_equipe` (`migrate deploy`; antes, CSV dos atendentes em `backups/sprint15-atendentes-*`): `TeamRole`, `TeamMember`, `TeamInvite` (pendente único por e-mail), `Session.lastActiveAt`, `ModuleKey.BACKOFFICE`; os 3 atendentes viraram `TeamMember` Suporte com o 2FA por e-mail zerado; `User.isSupportAgent` saiu.
+  `lib/team.ts`: `request.team` no `requireSession`, sessão da equipe cai após 12h sem uso (401 `SESSION_IDLE`), 2FA só TOTP (`TEAM_TOTP_ONLY` em send/verify-otp e enable otp; Google recusado), `requireTeamSession`/`requireTeamRole`. Login e bloqueio da equipe avisam os Administradores (`lib/team-emails.ts`). `/api/admin/me`, `/api/admin/equipe/*` (convite, reenviar, cancelar, papéis, desativar, reativar, redefinir autenticador) e o convite público `/api/admin/convites/:token`. `/api/suporte/*` passa a exigir o papel Suporte.
+  Decisões: status do membro = `User.status` + convite pendente (sem coluna duplicada); Administrador tem todos os papéis (vê `/app/suporte` no app das igrejas até a Sprint 19); log da equipe com autor `SUPORTE`, organização nula e módulo `BACKOFFICE`; travas com `pg_advisory_xact_lock`; e-mail da equipe e de igreja exclusivos (409 `TEAM_EMAIL`); equipe não troca e-mail em `/me/email`; o login da equipe não manda o alerta de dispositivo novo. `suporte:agente` agora só cria o primeiro Administrador (convite ou promoção de membro). A17, RF-SP02 e "Prazos do suporte" do PRD Acesso com a B15.
+  Testado por HTTP (servidor na 3399): bootstrap (`admin.um@iezer.local`, igreja recusada), aceite com senha fraca e sem termo, uso único, barreira sem TOTP, OTP recusado no desafio e na ativação, TOTP com 10 códigos, convite do Suporte (`suporte.quatro@iezer.local`) com repetido, e-mail de igreja e membro recusados, travas de si mesmo, papéis, desativar/reativar, redefinir autenticador, cancelar convite, conta de igreja (`teste.sprint15@iezer.local`) recusada em `/api/admin` e `/api/suporte`, troca de e-mail para e-mail da equipe recusada, atendente migrado (`suporte.um`) com TOTP no `/api/suporte`, 12h ociosa simulada, bloqueio com aviso, alertas de login e auditoria.
+  Senhas de teste: `admin.um` e `suporte.quatro` têm TOTP com o segredo só no scratchpad desta janela (para entrar no navegador, redefina o autenticador pela API ou apague o `TwoFactor`); `suporte.um` com senha nova e TOTP; ficou o convite cancelado de `cancelar.teste@iezer.local`.
+  Pendências: `TEAM_LAST_ADMIN` não é alcançável pela API (quem age é Administrador ativo e não mexe em si), ficou como defesa; `/sign-in/email` ainda lista `otp` nos métodos da equipe (o app admin ignora); requisições da equipe a 10–20 s daqui pelo banco remoto. No Render: `migrate deploy` e `ADMIN_WEB_ORIGIN` (quando houver o app admin).
+  Ajustes no front (ainda na `sprint-14-homologacao`, sem commit): código de 6 dígitos pelo `CodigoInput` (InputOTP do shadcn) no login e na configuração do 2FA; o `ProtectedLayout` pede o 2FA antes dos termos; código de recuperação também em InputOTP (5 + hífen + 5). Testado no navegador pelo usuário: `admin.um` configurou o TOTP, entrou com código de recuperação e chegou ao `/app/suporte`.

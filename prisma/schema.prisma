@@ -22,6 +22,8 @@ enum ModuleKey {
   CONTEUDO
   ACESSO
   PESSOAS
+  // Ações da equipe iEzer sem igreja (equipe, termo): só na auditoria interna (RT-BB12).
+  BACKOFFICE
 }
 
 enum OrganizationType {
@@ -50,6 +52,13 @@ enum InviteStatus {
   PENDENTE
   ACEITO
   CANCELADO
+}
+
+// Papéis internos da equipe iEzer (PRD Back-office, B3): fixos no código, se somam.
+enum TeamRole {
+  ADMINISTRADOR
+  SUPORTE
+  IMPLANTACAO
 }
 
 enum AuditActorType {
@@ -199,36 +208,39 @@ enum SupportEmergencyKind {
 // User, Session, Account, Verification e TwoFactor seguem o schema do Better Auth
 // (core + plugin twoFactor). A senha fica em Account.password (providerId "credential").
 model User {
-  id               String           @id @default(cuid())
-  name             String
-  email            String           @unique
-  emailVerified    Boolean          @default(false)
-  image            String?
-  twoFactorEnabled Boolean          @default(false)
-  status           UserStatus       @default(ATIVO)
-  // Atendente do suporte do iEzer (RF-SP06): conta nominal, sem atribuições, 2FA obrigatório.
-  isSupportAgent   Boolean          @default(false)
-  lastLoginAt      DateTime?
+  id                  String           @id @default(cuid())
+  name                String
+  email               String           @unique
+  emailVerified       Boolean          @default(false)
+  image               String?
+  twoFactorEnabled    Boolean          @default(false)
+  status              UserStatus       @default(ATIVO)
+  lastLoginAt         DateTime?
   // Versão dos termos de uso e de confidencialidade aceita (RF-CV06, RF-LP07).
-  termsVersion     String?
-  termsAcceptedAt  DateTime?
-  personId         String?          @unique
-  person           Person?          @relation(fields: [personId], references: [id], onDelete: Restrict)
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
-  sessions         Session[]
-  accounts         Account[]
-  twoFactors       TwoFactor[]
-  auditLogs        AuditLog[]
-  assignments      UserAssignment[]
-  followUps        FollowUp[]
-  personEvents     PersonEvent[]
-  consentsRecorded PersonConsent[]
-  invitesSent      Invite[]         @relation("InviteInvitedBy")
-  invitesAccepted  Invite[]         @relation("InviteAcceptedUser")
-  supportRequested SupportGrant[]   @relation("SupportGrantRequestedBy")
-  supportApproved  SupportGrant[]   @relation("SupportGrantApprovedBy")
-  supportClosed    SupportGrant[]   @relation("SupportGrantClosedBy")
+  termsVersion        String?
+  termsAcceptedAt     DateTime?
+  // Nulo só para conta da equipe iEzer (RT-BB02); conta de igreja nasce do convite, com pessoa.
+  personId            String?          @unique
+  person              Person?          @relation(fields: [personId], references: [id], onDelete: Restrict)
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  sessions            Session[]
+  accounts            Account[]
+  twoFactors          TwoFactor[]
+  auditLogs           AuditLog[]
+  assignments         UserAssignment[]
+  followUps           FollowUp[]
+  personEvents        PersonEvent[]
+  consentsRecorded    PersonConsent[]
+  invitesSent         Invite[]         @relation("InviteInvitedBy")
+  invitesAccepted     Invite[]         @relation("InviteAcceptedUser")
+  supportRequested    SupportGrant[]   @relation("SupportGrantRequestedBy")
+  supportApproved     SupportGrant[]   @relation("SupportGrantApprovedBy")
+  supportClosed       SupportGrant[]   @relation("SupportGrantClosedBy")
+  teamMember          TeamMember?      @relation("TeamMemberUser")
+  teamInvited         TeamMember[]     @relation("TeamMemberInvitedBy")
+  teamInvitesSent     TeamInvite[]     @relation("TeamInviteInvitedBy")
+  teamInvitesAccepted TeamInvite[]     @relation("TeamInviteAcceptedUser")
 }
 
 model Session {
@@ -243,6 +255,8 @@ model Session {
   location         String?
   // Sessão aberta pelo Google de quem tem 2FA: só vale depois do código (A3 revisto na Sprint 12).
   twoFactorPending Boolean  @default(false)
+  // Último uso, para a sessão da equipe que cai após 12h ociosa (RT-BB03). Gravado só para a equipe.
+  lastActiveAt     DateTime @default(now())
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -428,6 +442,44 @@ model Invite {
   @@index([churchId, status])
   @@index([email, status])
   @@index([personId])
+}
+
+// Membro da equipe iEzer (RT-BB02): conta só do back-office, sem pessoa nem atribuições. O
+// status é o do User (ATIVO/DESATIVADO); o convite pendente fica em TeamInvite.
+model TeamMember {
+  id              String     @id @default(cuid())
+  userId          String     @unique
+  user            User       @relation("TeamMemberUser", fields: [userId], references: [id], onDelete: Restrict)
+  roles           TeamRole[]
+  invitedById     String?
+  invitedBy       User?      @relation("TeamMemberInvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
+  // Termo de confidencialidade da equipe (Segurança da equipe › Termo).
+  termsVersion    String?
+  termsAcceptedAt DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+}
+
+// Convite da equipe (RF-BO03, RF-BO07): token só como SHA-256, 72h, uso único. Um pendente por
+// e-mail (índice único parcial no SQL).
+model TeamInvite {
+  id             String       @id @default(cuid())
+  email          String
+  name           String
+  roles          TeamRole[]
+  tokenHash      String       @unique
+  status         InviteStatus @default(PENDENTE)
+  expiresAt      DateTime
+  invitedById    String?
+  invitedBy      User?        @relation("TeamInviteInvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
+  acceptedUserId String?
+  acceptedUser   User?        @relation("TeamInviteAcceptedUser", fields: [acceptedUserId], references: [id], onDelete: SetNull)
+  acceptedAt     DateTime?
+  canceledAt     DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([email, status])
 }
 
 model InviteAssignment {

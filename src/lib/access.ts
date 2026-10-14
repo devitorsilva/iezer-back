@@ -15,6 +15,7 @@ import {
   SUPPORT_WRITE_BLOCKED_PREFIXES,
   type SupportGrantAccess,
 } from "./support.js";
+import { hasTeamRole } from "./team.js";
 import { TERMS_VERSION } from "./terms.js";
 
 export interface AccessibleOrganization {
@@ -125,7 +126,8 @@ export async function resolveOrganization(request: FastifyRequest, reply: Fastif
     });
   }
 
-  const isSupportAgent = request.user.isSupportAgent === true;
+  // Equipe com o papel Suporte alcança as igrejas com acesso do suporte ativo (até a Sprint 19).
+  const isSupportAgent = hasTeamRole(request.team?.roles, "SUPORTE");
   const organizations = await loadAccessibleOrganizations(request.user.id, isSupportAgent);
 
   if (organizations.length === 0) {

@@ -3,6 +3,7 @@ import { resolveOrganization } from "../lib/access.js";
 import { requireSession } from "../lib/require-session.js";
 import { logSupportRead } from "../lib/support-log.js";
 import { acessoCatalogRoutes, acessoRoutes } from "./acesso/routes.js";
+import { adminRoutes, publicTeamInviteRoutes } from "./admin/routes.js";
 import { authRoutes } from "./auth/routes.js";
 import { cadastroRoutes } from "./cadastro/routes.js";
 import { publicInviteRoutes } from "./convites/routes.js";
@@ -16,16 +17,18 @@ import { backOfficeRoutes } from "./suporte/routes.js";
 import { placeholdersRoutes } from "./placeholders/routes.js";
 
 export const registerModuleRoutes: FastifyPluginAsync = async (app) => {
-  // Público: handler do Better Auth, página do convite e confirmação da troca de e-mail.
+  // Público: handler do Better Auth, páginas dos convites (igreja e equipe) e confirmação da troca de e-mail.
   await app.register(authRoutes, { prefix: "/auth" });
   await app.register(publicInviteRoutes, { prefix: "/convites" });
   await app.register(publicEmailRoutes, { prefix: "/email" });
+  await app.register(publicTeamInviteRoutes, { prefix: "/admin/convites" });
 
   // Todo o resto exige sessão.
   await app.register(async (protectedApp) => {
     protectedApp.decorateRequest("user");
     protectedApp.decorateRequest("session");
     protectedApp.decorateRequest("access");
+    protectedApp.decorateRequest("team", null);
     protectedApp.addHook("onRequest", requireSession);
 
     await protectedApp.register(meRoutes, { prefix: "/me" });
@@ -33,6 +36,8 @@ export const registerModuleRoutes: FastifyPluginAsync = async (app) => {
     await protectedApp.register(placeholdersRoutes, { prefix: "/modulos" });
     // Back-office do suporte do iEzer (só atendentes).
     await protectedApp.register(backOfficeRoutes, { prefix: "/suporte" });
+    // Back-office da equipe iEzer (só contas da equipe; RT-BB01).
+    await protectedApp.register(adminRoutes, { prefix: "/admin" });
 
     // Rotas de dados: organização ativa (X-Organization-Id) e permissões por rota.
     await protectedApp.register(async (organizationApp) => {

@@ -8,6 +8,7 @@ import { AppError } from "../../../lib/errors.js";
 import { trySendMail } from "../../../lib/mailer.js";
 import { prisma } from "../../../lib/prisma.js";
 import { assertValidNewPassword } from "../../../lib/password-rules.js";
+import { isTeamEmail, teamEmailError } from "../../../lib/team.js";
 import { TERMS_VERSION } from "../../../lib/terms.js";
 import { generateToken, hashToken } from "../../../lib/tokens.js";
 import { summarizePermissions } from "../permissoes/catalog/index.js";
@@ -93,6 +94,8 @@ export async function assertLoginEmailAvailable(
   churchId: string,
   options: { personId?: string; ignoreInviteId?: string } = {},
 ) {
+  if (await isTeamEmail(email, db)) throw teamEmailError();
+
   const user = await db.user.findUnique({ where: { email }, select: { id: true } });
 
   if (user) {

@@ -28,6 +28,9 @@ const envSchema = z.object({
   SUPABASE_PUBLISHABLE_KEY: optionalNonEmptyString,
   SUPABASE_SERVICE_ROLE_KEY: optionalNonEmptyString,
   WEB_ORIGIN: z.string().default("http://localhost:5173"),
+  // Origem do app admin da equipe iEzer (RT-BB03, RT-BF01): CORS, trustedOrigins e links dos
+  // e-mails da equipe. URL da Vercel até haver admin.<domínio>.
+  ADMIN_WEB_ORIGIN: z.string().default("http://localhost:5174"),
   BETTER_AUTH_SECRET: z.string().min(32),
   // URL pública da API vista pelo navegador. Em produção é o domínio do front,
   // que repassa /api/* para o Render (cookie de sessão fica first-party).

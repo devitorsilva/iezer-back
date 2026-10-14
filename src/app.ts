@@ -13,7 +13,7 @@ function isAllowedOrigin(origin: string | undefined) {
     return true;
   }
 
-  if (origin === env.WEB_ORIGIN) {
+  if (origin === env.WEB_ORIGIN || origin === env.ADMIN_WEB_ORIGIN) {
     return true;
   }
 

@@ -13,6 +13,7 @@ import { assertValidNewPassword } from "../../../lib/password-rules.js";
 import { prisma } from "../../../lib/prisma.js";
 import { isRateLimited } from "../../../lib/rate-limit.js";
 import { generateToken, hashToken } from "../../../lib/tokens.js";
+import { isTeamUser } from "../../../lib/team.js";
 import { requiresTwoFactor } from "../../../lib/two-factor.js";
 import { summarizePermissions } from "../../acesso/permissoes/catalog/index.js";
 import { assertLoginEmailAvailable } from "../../acesso/convites/service.js";
@@ -198,6 +199,11 @@ export class AccountService {
   // acontece na confirmação, que avisa o antigo.
   async requestEmailChange(context: AccountContext, input: ChangeEmailInput) {
     const user = await this.findUserOrThrow(context.userId);
+
+    // Conta da equipe iEzer não troca o e-mail por aqui (fora do RF-BO05).
+    if (await isTeamUser(context.userId)) {
+      throw new AppError(403, "TEAM_EMAIL_CHANGE_FORBIDDEN", "Contas da equipe iEzer não trocam o e-mail por aqui.");
+    }
 
     if (input.email === user.email) {
       throw new AppError(400, "SAME_EMAIL", "O e-mail novo é igual ao atual.");

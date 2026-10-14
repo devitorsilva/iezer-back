@@ -76,7 +76,7 @@ Sete decisões vêm do PRD de Pessoas e 21 foram validadas nesta rodada; todas o
 | A14 | Rol não é acesso: a pessoa é de rol numa congregação e pode ter perfil em outra | Ex.: tesoureiro que serve em outra congregação |
 | A15 | Quando a situação da pessoa sai de Ativo (Inativo, Desligado do rol, Falecido, Transferido para fora), o acesso é suspenso na hora, as sessões caem e os admins são avisados | Saída de voluntário sem depender de alguém lembrar |
 | A16 | Desativar acesso não mexe na Pessoa. Conta compartilhada é proibida pelos termos de uso | O audit log precisa de um autor real |
-| A17 | Suporte do iEzer só acessa dados com autorização de um admin, com prazo (padrão de 72h) e motivo, somente leitura por padrão, nunca notas pastorais, tudo no log visível à igreja e revogável | A igreja é a controladora; o iEzer, operador |
+| A17 | Suporte do iEzer só acessa dados com autorização de um admin, com prazo (padrão de 24h, máximo de 72h, contado da aprovação; revisto pela B15 do PRD Back-office) e motivo, somente leitura por padrão, nunca notas pastorais, tudo no log visível à igreja e revogável | A igreja é a controladora; o iEzer, operador |
 | A18 | Emergência sem autorização só com dupla aprovação interna e aviso imediato ao responsável pela conta | Incidente, ordem judicial ou igreja sem admin |
 | A19 | Sem personificação ("ver como usuário X") no MVP. O admin tem uma prévia do que cada perfil vê | Evita que alguém aja em nome de outro |
 | A20 | Audit log visível com uma permissão própria, "Ver log de auditoria", dada ao Pastor de fábrica. Leituras registradas: notas pastorais, exportações, impressões e todo acesso do suporte | Prova de quem viu o quê, sem o volume de logar cada visualização |
@@ -289,7 +289,7 @@ No caminho normal, nada é visto sem um admin autorizar; a emergência pula a au
 | ID | Requisito | Fase |
 | --- | --- | --- |
 | RF-SP01 | Dois caminhos: o suporte pede pelo back-office (ligado a um chamado, com motivo, prazo e escopo) e o admin aprova em Configurações › Acesso do suporte; ou o admin autoriza por conta própria ao abrir o chamado | MVP |
-| RF-SP02 | Prazo padrão de 72h e máximo de 7 dias. Somente leitura por padrão; escrita exige marcar e justificar (ex.: corrigir uma importação) | MVP |
+| RF-SP02 | Prazo padrão de 24h e máximo de 72h, contado a partir da aprovação da igreja; pedido sem resposta expira em 7 dias (B15 do PRD Back-office). Somente leitura por padrão; escrita exige marcar e justificar (ex.: corrigir uma importação) e passa antes pelo Administrador iEzer | MVP |
 | RF-SP03 | Aprova quem tem "Autorizar acesso do suporte". Todos os admins recebem e-mail da autorização | MVP |
 | RF-SP04 | Enquanto o acesso está ativo, uma faixa em Configurações mostra "Suporte iEzer com acesso até dd/mm, hh:mm" e o botão Revogar | MVP |
 | RF-SP05 | Notas pastorais nunca: o endpoint recusa qualquer requisição do suporte, mesmo autorizada | MVP |
@@ -413,7 +413,7 @@ A validar com a igreja piloto e com o jurídico:
 - Nomes amigáveis das seis permissões do Acesso, testados com quem vai configurá-las.
 - Código por e-mail como segunda etapa é aceito pelo pastor no dia a dia, ou ele prefere o app autenticador.
 - Sessão de 7 dias sem uso no computador compartilhado da secretaria; avaliar um prazo máximo absoluto (ex.: 30 dias).
-- Prazos do suporte: 72h padrão, 7 dias no máximo e 24h na emergência.
+- Prazos do suporte: revistos pela B15 do PRD Back-office: 24h padrão e 72h no máximo, contados da aprovação da igreja; pedido sem resposta expira em 7 dias; 24h na emergência.
 - Retenção dos logs (12 meses de login, contrato inteiro para alterações) com o jurídico ou o encarregado da igreja.
 - Mesma pessoa servindo em duas igrejas-clientes: no MVP o e-mail de login é único no iEzer e o segundo convite é recusado. Confirmar que é raro.
 - Documento aceito para trocar o responsável pela conta (ata, procuração, cartão CNPJ).
