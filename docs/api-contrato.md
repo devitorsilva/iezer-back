@@ -677,3 +677,85 @@ O relatório não fica salvo; o front gera o CSV. Auditoria, com a descrição "
 - `criar` Family / `adicionar_membro`;
 - `registrar_consentimento`;
 - um `importar` (alvo `PersonImport`, `targetId = importId`) com `fileName`, `templateVersion`, os totais, `refusedLines`, `declaration`, `declarationVersion` e os `personIds` de todas as pessoas criadas e atualizadas (RF-P08).
+
+## Sprint 12 — Google, 2FA, alertas e Minha conta
+
+### Erros novos nas rotas protegidas
+
+| Status | `code` | Quando |
+| --- | --- | --- |
+| 403 | `TWO_FACTOR_REQUIRED` | Sessão aberta pelo Google de quem tem 2FA: vale só depois do código. Todas as rotas `/api/*` protegidas, inclusive `/me`. O front mostra a verificação |
+| 403 | `TWO_FACTOR_SETUP_REQUIRED` | Quem tem permissão protegida numa organização ativa e ainda não ligou o 2FA (RF-CV07). Só `/api/me/*` responde. O front mostra a configuração obrigatória |
+
+O login pelo Google **não** dispensa o 2FA (A3 revisto na Sprint 12).
+
+### `/api/auth/*` (alterado)
+
+| Método | Rota | Corpo | Resposta |
+| --- | --- | --- | --- |
+| POST | `/sign-in/email` | `{ email, password }` | Sem 2FA: igual. Com 2FA: 200 `{ twoFactorRedirect: true, twoFactorMethods: ("totp"\|"otp")[] }` + cookie `two_factor` (10 min), sem sessão |
+| POST | `/sign-in/social` | `{ provider: "google", callbackURL, errorCallbackURL }` | 200 `{ url, redirect: true }`. Volta em `callbackURL` com sessão, ou em `errorCallbackURL?error=CODIGO` |
+| POST | `/two-factor/send-otp` | — | Envia o código de 6 dígitos por e-mail (10 min) |
+| POST | `/two-factor/verify-totp` · `/verify-otp` · `/verify-backup-code` | `{ code }` | 200 `{ token, user }` + cookie da sessão. Também libera a sessão pendente do Google |
+| POST | `/two-factor/enable` | `{ password?, method: "totp"\|"otp" }` | `totp`: `{ totpURI, backupCodes[10] }`, e liga no primeiro `verify-totp`. `otp`: liga na hora |
+| POST | `/two-factor/disable` | `{ password? }` | 403 `TWO_FACTOR_MANDATORY` para quem tem protegida |
+| POST | `/two-factor/generate-backup-codes` | `{ password? }` | `{ backupCodes }` (só com app configurado) |
+
+- **Senha nas rotas de 2FA:** é exigida só de quem tem senha; quem só usa Google não informa.
+- **Erros do 2FA** (em inglês; o front traduz): `INVALID_CODE`, `INVALID_BACKUP_CODE`, `OTP_HAS_EXPIRED`, `TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE`, 429 `ACCOUNT_TEMPORARILY_LOCKED` (5 erros, 15 min), `INVALID_TWO_FACTOR_COOKIE`, `TOTP_NOT_ENABLED`.
+- **Erros do Google** em `?error=`:
+  - `INVITE_REQUIRED`: sem usuário nem convite válido, ou o Google não confirmou o e-mail (RF-LG02);
+  - `USER_INACTIVE`;
+  - `account_not_linked`;
+  - `access_denied`: a pessoa cancelou.
+- **Fechadas ao navegador (404 `NOT_FOUND`):** `/change-password`, `/set-password`, `/change-email`, `/update-user`, `/delete-user`, `/link-social`, `/unlink-account`, `/list-accounts`, `/update-session`, `/list-sessions`, `/revoke-session(s)`, `/revoke-other-sessions`. Use `/api/me/*`.
+- **Bloqueio por e-mail (A6):** depois de 5 erros seguidos, `/sign-in/email` dá 429 `LOGIN_LOCKED` com a mensagem em português. São 15 min, que dobram a cada nova série de 5, até 24 h. Vale também para e-mail sem usuário. O usuário recebe aviso por e-mail. Login certo ou senha redefinida zeram a contagem.
+- **Primeiro acesso pelo Google com convite:**
+  - o usuário nasce com a pessoa do convite, e o convite é consumido ao abrir a sessão (auditoria `aceitar_convite` com `method: "google"`);
+  - os termos são aceitos depois, em `POST /me/termos`. O front aceita sozinho quando a pessoa já marcou os termos na página do convite.
+
+### `GET /api/me` (alterado)
+
+Acrescenta:
+- `user.twoFactorEnabled`;
+- `twoFactor: { enabled, required }`;
+- `person.preferredName` (RF-MC01).
+
+### Minha conta (`/api/me/*`, só sessão; responde também a quem precisa configurar o 2FA)
+
+| Método | Rota | Corpo | Resposta |
+| --- | --- | --- | --- |
+| GET | `/me/seguranca` | — | `{ twoFactorEnabled, twoFactorRequired, totpEnabled, hasPassword, hasGoogle }` |
+| POST | `/me/senha` | `{ currentPassword?, newPassword }` | `{ hasPassword: true }`. Com senha: troca, encerra as outras sessões e renova o cookie. Sem senha (só Google): define. Erros: 400 `CURRENT_PASSWORD_REQUIRED`, `INVALID_PASSWORD` (atual errada), `WEAK_PASSWORD`, `PASSWORD_COMPROMISED` |
+| GET | `/me/sessoes` | — | `{ items: [{ id, device, ipAddress, location, pendingTwoFactor, createdAt, lastUsedAt, current }] }` (RF-MC04; `lastUsedAt` muda uma vez por dia) |
+| DELETE | `/me/sessoes/:id` | — | `{ sessionsEnded }`. 400 `CURRENT_SESSION` (use Sair), 404 `SESSION_NOT_FOUND` |
+| POST | `/me/sessoes/encerrar-outras` | — | `{ sessionsEnded }` |
+| GET | `/me/acessos` | — | `{ items: [{ organizationId, organizationName, type, profiles[], permissions: [{ module, moduleName, permissions[] }] }] }` (RF-MC05) |
+| POST | `/me/email` | `{ email }` | `{ email, emailSent }`. Link de 1 h no e-mail novo (RF-MC06). Erros: 400 `SAME_EMAIL`, 409 `EMAIL_IN_USE`, 429 `RATE_LIMITED` (3 por hora) |
+
+### `POST /api/email/confirmar/:token` (público, limite por IP)
+
+- Confirma a troca de e-mail e devolve `{ email }`.
+- Troca o login e também o e-mail da pessoa, quando era o mesmo.
+- Encerra todas as sessões e avisa o e-mail antigo.
+- Erro: 404 `EMAIL_CHANGE_INVALID` (link inválido, expirado ou já usado).
+
+### `POST /api/acesso/usuarios/:id/2fa/redefinir` (`acesso.usuarios.gerenciar`, RF-RS05)
+
+- Apaga o app e os códigos de recuperação, desliga o 2FA, encerra as sessões e avisa por e-mail. Devolve o usuário.
+- Erros:
+  - 400 `OWN_ACCESS`: tentar redefinir o próprio 2FA;
+  - 400 `TWO_FACTOR_DISABLED`: o usuário não usa 2FA;
+  - 403: usuário com acesso fora do alcance de quem redefine.
+
+### Alertas por e-mail e auditoria
+
+- **Alertas:**
+  - login em dispositivo novo (navegador e sistema fora dos logins dos últimos 90 dias; o primeiro login não avisa);
+  - senha trocada, definida ou redefinida;
+  - 2FA ativado, desativado ou redefinido;
+  - e-mail trocado (aviso ao antigo);
+  - login bloqueado;
+  - permissão protegida concedida (desde a Sprint 8).
+- **Ações novas no log:** `login_bloqueado`, `trocar_senha`, `definir_senha`, `ativar_2fa`, `desativar_2fa`, `redefinir_2fa`, `encerrar_sessao`, `encerrar_outras_sessoes`, `trocar_email`.
+- **Quando conta como login:** com 2FA, o `login` é gravado depois do código. A sessão recriada ao ligar o 2FA não conta.

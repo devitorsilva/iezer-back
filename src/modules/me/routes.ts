@@ -3,12 +3,16 @@ import { loadAccessibleOrganizations } from "../../lib/access.js";
 import { runAudited } from "../../lib/audit.js";
 import { findUserChurch } from "../../lib/church.js";
 import { TERMS_VERSION } from "../../lib/terms.js";
+import { requiresTwoFactor } from "../../lib/two-factor.js";
+import { accountRoutes } from "./conta/routes.js";
 import { MeRepository } from "./repository.js";
 
 const repository = new MeRepository();
 
 // GET /api/me (RT-AB04): usuário, pessoa, organizações alcançadas e permissões em cada uma.
 export const meRoutes: FastifyPluginAsync = async (app) => {
+  await app.register(accountRoutes);
+
   app.get("/", async (request, reply) => {
     const user = await repository.findUser(request.user.id);
 
@@ -23,6 +27,11 @@ export const meRoutes: FastifyPluginAsync = async (app) => {
       user: userData,
       // Sem o aceite da versão atual, o front pede os termos antes de liberar o app (RF-CV06).
       terms: { version: TERMS_VERSION, accepted: termsVersion === TERMS_VERSION },
+      // Com permissão protegida e sem 2FA, o front abre a configuração obrigatória (RF-CV07).
+      twoFactor: {
+        enabled: user.twoFactorEnabled,
+        required: await requiresTwoFactor(user.id),
+      },
       person,
       organizations: organizations.map(({ permissions, ...organization }) => ({
         ...organization,

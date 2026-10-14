@@ -19,5 +19,6 @@ export const userRoutes: FastifyPluginAsync = async (app) => {
   app.post("/usuarios/:id/desativar", gerenciar, userController.deactivate);
   app.post("/usuarios/:id/reativar", gerenciar, userController.reactivate);
   app.post("/usuarios/:id/encerrar-sessoes", gerenciar, userController.endSessions);
+  app.post("/usuarios/:id/2fa/redefinir", gerenciar, userController.resetTwoFactor);
   app.patch("/usuarios/:id/email", gerenciar, userController.changeEmail);
 };

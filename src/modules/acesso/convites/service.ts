@@ -6,6 +6,7 @@ import { findUserChurch } from "../../../lib/church.js";
 import { INVITE_TTL_MS, inviteEmail, inviteUrl } from "../../../lib/emails.js";
 import { AppError } from "../../../lib/errors.js";
 import { trySendMail } from "../../../lib/mailer.js";
+import { prisma } from "../../../lib/prisma.js";
 import { assertValidNewPassword } from "../../../lib/password-rules.js";
 import { TERMS_VERSION } from "../../../lib/terms.js";
 import { generateToken, hashToken } from "../../../lib/tokens.js";
@@ -127,6 +128,29 @@ export async function assertLoginEmailAvailable(
     });
   }
   return expiredIds;
+}
+
+// Atribuições do convite para quem o aceitou, por senha ou pelo Google. Devolve o registro do log.
+async function grantInvite(tx: Db, invite: InviteWithRelations, userId: string, method: "senha" | "google" = "senha") {
+  const assignments = invite.assignments.map(({ organization, profile }) => ({
+    organizationId: organization.id,
+    profileId: profile.id,
+  }));
+
+  await tx.userAssignment.createMany({
+    data: assignments.map((item) => ({ ...item, userId })),
+    skipDuplicates: true,
+  });
+  await tx.invite.update({ where: { id: invite.id }, data: { acceptedUserId: userId } });
+
+  return {
+    organizationId: invite.church.id,
+    module: "ACESSO" as const,
+    action: "aceitar_convite",
+    targetType: "Invite",
+    targetId: invite.id,
+    after: { userId, method, assignments },
+  };
 }
 
 export class InviteService {
@@ -358,32 +382,10 @@ export class InviteService {
       await tx.account.create({
         data: { userId: user.id, accountId: user.id, providerId: "credential", password: passwordHash },
       });
-      await tx.userAssignment.createMany({
-        data: invite.assignments.map(({ organization, profile }) => ({
-          userId: user.id,
-          organizationId: organization.id,
-          profileId: profile.id,
-        })),
-        skipDuplicates: true,
-      });
-      await tx.invite.update({ where: { id: invite.id }, data: { acceptedUserId: user.id } });
 
       actor.userId = user.id;
       await audit([
-        {
-          organizationId: invite.church.id,
-          module: "ACESSO",
-          action: "aceitar_convite",
-          targetType: "Invite",
-          targetId: invite.id,
-          after: {
-            userId: user.id,
-            assignments: invite.assignments.map(({ organization, profile }) => ({
-              organizationId: organization.id,
-              profileId: profile.id,
-            })),
-          },
-        },
+        await grantInvite(tx, invite, user.id),
         {
           organizationId: invite.church.id,
           module: "ACESSO",
@@ -395,6 +397,25 @@ export class InviteService {
       ]);
 
       return { userId: user.id, email: user.email };
+    });
+  }
+
+  // Primeiro acesso pelo Google (RF-CV05): o Better Auth cria o usuário com a pessoa do convite
+  // (user.create.before em lib/auth.ts) e, ao abrir a sessão, o convite é consumido aqui. Sem
+  // convite válido para a mesma pessoa, não faz nada. Os termos são aceitos na tela de termos.
+  async completeForGoogleUser(userId: string, meta: { ip: string | null; userAgent: string | null }) {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { email: true, personId: true } });
+    if (!user?.personId) return;
+
+    const invite = await this.repository.findPendingByEmail(user.email);
+    if (!invite || invite.person.id !== user.personId) return;
+
+    const actor: AuditActor = { type: "USUARIO", userId, ip: meta.ip, userAgent: meta.userAgent };
+
+    await runGuarded(actor, invite.church.id, async (tx, audit) => {
+      // Outro aceite concorrente já consumiu o convite.
+      if (!(await this.repository.consume(invite.id, tx))) return;
+      await audit(await grantInvite(tx, invite, userId, "google"));
     });
   }
 

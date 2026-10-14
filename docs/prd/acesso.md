@@ -62,7 +62,7 @@ Sete decisões vêm do PRD de Pessoas e 21 foram validadas nesta rodada; todas o
 | --- | --- | --- |
 | A1 | Login por e-mail e senha e por Google. O e-mail do Google precisa ser o mesmo do convite. Código por WhatsApp fica para a F2 | Cobre o hábito do Gmail sem criar contas soltas; WhatsApp depende da Mensageria |
 | A2 | Senha com mínimo de 12 caracteres, sem regras de composição, com bloqueio de senhas vazadas e comuns, sem expiração | Meio-termo pragmático com o NIST 800-63B-4 para voluntários |
-| A3 | 2FA obrigatório para quem tem permissão protegida e opcional para os demais. Código por e-mail ou app autenticador. Login com Google dispensa o 2FA do iEzer | Tendência do mercado para papéis com acesso amplo, sem travar quem não é técnico |
+| A3 | 2FA obrigatório para quem tem permissão protegida e opcional para os demais. Código por e-mail ou app autenticador. Login com Google **não** dispensa o 2FA do iEzer (revisto na Sprint 12) | Tendência do mercado para papéis com acesso amplo, sem travar quem não é técnico. O Google não informa se a conta tem verificação em duas etapas, e Gmail só com senha daria acesso amplo sem segundo fator |
 | A4 | Sessão encerra após 7 dias sem uso. Não há nova pergunta de senha antes de ações críticas | Equilíbrio entre conveniência e computador compartilhado |
 | A5 | "Sair de todos os dispositivos" e aviso por e-mail de login em dispositivo novo | Dá ao usuário como reagir a um acesso estranho |
 | A6 | Bloqueio temporário progressivo após 5 tentativas erradas, com aviso por e-mail | Contém tentativa de adivinhar senha |
@@ -151,7 +151,7 @@ O módulo tem três superfícies públicas (login, convite, redefinir senha), ci
 | RF-CV04 | Convites pendentes listados com status (pendente, expirado). Reenviar invalida o link anterior; cancelar invalida na hora | MVP |
 | RF-CV05 | O link abre uma página com o nome da igreja, quem convidou e o resumo do acesso. A pessoa define a senha ou escolhe "Continuar com Google" (mesmo e-mail) | MVP |
 | RF-CV06 | No primeiro acesso a pessoa aceita os termos de uso e o termo de confidencialidade (versão registrada no log) | MVP |
-| RF-CV07 | Se algum perfil atribuído tem permissão protegida e o login não é pelo Google, a configuração do 2FA é obrigatória antes de entrar | MVP |
+| RF-CV07 | Se algum perfil atribuído tem permissão protegida, a configuração do 2FA é obrigatória antes de entrar, também no login pelo Google | MVP |
 | RF-CV08 | Convite para um e-mail que já é usuário em outra igreja-cliente do iEzer é recusado com mensagem clara (ver validações) | MVP |
 
 ### Recuperação de senha
@@ -248,7 +248,7 @@ A permissão "Ver contribuições" de Pessoas (`pessoas.contribuicoes.ver`) cont
 ### Travas de segurança
 
 - **Protegidas:** só quem já tem a permissão pode concedê-la a um perfil ou atribuir um perfil que a contenha. Toda concessão avisa por e-mail quem já a possui e entra no log.
-- **Protegida exige 2FA:** quem passa a ter uma permissão protegida configura o 2FA no próximo login (exceto login pelo Google).
+- **Protegida exige 2FA:** quem passa a ter uma permissão protegida configura o 2FA no próximo login, também pelo Google.
 - **Nunca ficar sem admin:** o sistema bloqueia remover "Gerenciar perfis de acesso" do último usuário ativo que a tem, e também desativá-lo. Se a suspensão automática atingir o último admin (ex.: falecimento), o acesso é suspenso e o responsável pela conta e o suporte do iEzer são avisados para a recuperação.
 - **Ninguém altera o próprio acesso:** um usuário não muda os próprios perfis nem desativa a si mesmo. Evita autoconcessão.
 - **Admin removido é avisado:** quem perde "Gerenciar perfis de acesso" recebe e-mail, e os demais admins também, como proteção contra tomada de conta.
@@ -263,7 +263,7 @@ As regras seguem o NIST 800-63B-4 com um ajuste para voluntários (senha de 12 e
 | Item | Regra | Fase |
 | --- | --- | --- |
 | Senha | Mínimo de 12 caracteres e aceita pelo menos 64. Sem exigência de maiúscula, número ou símbolo. Aceita espaço e acento. Recusa senhas vazadas, comuns, o e-mail e o nome da igreja, dizendo o motivo. Sem expiração; troca só com suspeita de comprometimento. Colar e gerenciador de senhas permitidos | MVP |
-| 2FA, quem | Obrigatório para quem tem qualquer permissão protegida; opcional para os demais. Login pelo Google dispensa o 2FA do iEzer | MVP |
+| 2FA, quem | Obrigatório para quem tem qualquer permissão protegida; opcional para os demais. Login pelo Google pede o 2FA do iEzer como o login por senha | MVP |
 | 2FA, como | Código de 6 dígitos por e-mail (válido por 10 min) ou app autenticador (TOTP). Ao ativar, 10 códigos de recuperação de uso único | MVP |
 | Sessão | Encerra após 7 dias sem uso. Sem nova pergunta de senha antes de ações críticas | MVP |
 | Encerramento imediato | Desativar, suspender, trocar a senha, redefinir o 2FA ou trocar o e-mail derruba as sessões do usuário | MVP |

@@ -47,6 +47,14 @@ export class InviteRepository {
     return db.invite.findUnique({ where: { tokenHash }, include });
   }
 
+  // Convite válido do e-mail (só há um pendente por e-mail): primeiro acesso pelo Google.
+  findPendingByEmail(email: string, db: Db = prisma): Promise<InviteWithRelations | null> {
+    return db.invite.findFirst({
+      where: { email: email.toLowerCase(), status: "PENDENTE", expiresAt: { gt: new Date() } },
+      include,
+    });
+  }
+
   create(
     data: {
       churchId: string;

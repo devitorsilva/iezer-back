@@ -58,6 +58,11 @@ export class UserController {
     return this.handleNotFound(reply, () => this.service.endSessions(manageContext(request), id));
   };
 
+  resetTwoFactor = async (request: FastifyRequest, reply: FastifyReply) => {
+    const { id } = userParamsSchema.parse(request.params);
+    return this.handleNotFound(reply, () => this.service.resetTwoFactor(manageContext(request), id));
+  };
+
   changeEmail = async (request: FastifyRequest, reply: FastifyReply) => {
     const { id } = userParamsSchema.parse(request.params);
     const input = changeEmailSchema.parse(request.body);

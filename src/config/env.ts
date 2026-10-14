@@ -37,6 +37,10 @@ const envSchema = z.object({
   // Endereço do remetente; o nome exibido é "Nome da Igreja via iEzer".
   // onboarding@resend.dev só entrega para o e-mail da conta do Resend (sem domínio próprio).
   EMAIL_FROM: z.string().default("onboarding@resend.dev"),
+  // Login com Google (RF-LG02). Sem as duas, o botão do Google responde que não está disponível.
+  // Redirect autorizado no Google Cloud: BETTER_AUTH_URL + /api/auth/callback/google.
+  GOOGLE_CLIENT_ID: optionalNonEmptyString,
+  GOOGLE_CLIENT_SECRET: optionalNonEmptyString,
 });
 
 export const env = envSchema.parse(process.env);

@@ -5,7 +5,8 @@ import { runAudited, type AuditActor, type AuditWriter } from "../../lib/audit.j
 import { AppError } from "../../lib/errors.js";
 import { trySendMail, type MailMessage } from "../../lib/mailer.js";
 import { prisma } from "../../lib/prisma.js";
-import { getPermission, isPermissionKey, permissionCatalog, type PermissionKey } from "./permissoes/catalog/index.js";
+import { PROTECTED_PERMISSION_KEYS } from "../../lib/two-factor.js";
+import { getPermission, isPermissionKey, type PermissionKey } from "./permissoes/catalog/index.js";
 
 // Travas de segurança do Acesso (PRD Acesso › Travas de segurança, RT-AB07), usadas por
 // perfis, usuários e convites.
@@ -14,9 +15,7 @@ type Db = Prisma.TransactionClient;
 
 export const ADMIN_PERMISSION: PermissionKey = "acesso.perfis.gerenciar";
 
-const PROTECTED_KEYS: PermissionKey[] = permissionCatalog
-  .filter((permission) => permission.protected)
-  .map((permission) => permission.key);
+const PROTECTED_KEYS = PROTECTED_PERMISSION_KEYS;
 
 export interface AssignmentData {
   organizationId: string;

@@ -1,7 +1,7 @@
 import type { AccessibleOrganization, RequestContext } from "../../../lib/access.js";
 import { runAudited } from "../../../lib/audit.js";
 import { auth } from "../../../lib/auth.js";
-import { emailChangedNotice } from "../../../lib/emails.js";
+import { emailChangedNotice, twoFactorChangedNotice } from "../../../lib/emails.js";
 import { AppError } from "../../../lib/errors.js";
 import { trySendMail } from "../../../lib/mailer.js";
 import { prisma } from "../../../lib/prisma.js";
@@ -172,6 +172,49 @@ export class UserService {
 
       return { sessionsEnded: count };
     });
+  }
+
+  // Redefinir o 2FA de quem perdeu o aparelho (RF-RS05): apaga o segredo e os códigos de
+  // recuperação, encerra as sessões e avisa por e-mail. Com permissão protegida, o usuário
+  // configura de novo no próximo login. Se quem perdeu é o único admin, o caminho é o suporte.
+  async resetTwoFactor(context: UserManageContext, id: string) {
+    assertNotSelf(context, id);
+    const managed = managedIds(context);
+
+    const user = await runAudited(context.actor, async (tx, audit) => {
+      const user = await this.repository.findById(id, managed, tx);
+      if (!user) throw new UserNotFoundError();
+
+      const current = await this.repository.findChurchAssignments(id, context.churchId, tx);
+      if (current.some((item) => !managed.includes(item.organizationId))) throw outOfReachError();
+
+      if (!user.twoFactorEnabled) {
+        throw new AppError(400, "TWO_FACTOR_DISABLED", "Este usuário não usa a verificação em duas etapas.");
+      }
+
+      await tx.twoFactor.deleteMany({ where: { userId: id } });
+      await tx.user.update({ where: { id }, data: { twoFactorEnabled: false } });
+      await this.repository.deleteSessions(id, tx);
+
+      await audit({
+        organizationId: context.churchId,
+        module: "ACESSO",
+        action: "redefinir_2fa",
+        targetType: "User",
+        targetId: id,
+        before: { twoFactorEnabled: true },
+        after: { twoFactorEnabled: false },
+      });
+
+      return mapUser(await this.repository.reload(id, managed, tx));
+    });
+
+    const church = await prisma.organization.findUnique({ where: { id: context.churchId }, select: { name: true } });
+    await trySendMail(
+      twoFactorChangedNotice({ to: user.email, name: user.name, churchName: church?.name ?? null, change: "redefinida" }),
+    );
+
+    return user;
   }
 
   private async changeStatus(context: UserManageContext, id: string, status: "ATIVO" | "DESATIVADO") {

@@ -10,8 +10,10 @@ export class MeRepository {
         email: true,
         image: true,
         status: true,
+        twoFactorEnabled: true,
         termsVersion: true,
-        person: { select: { id: true, name: true } },
+        // O header mostra "Como prefere ser chamado" quando há (RF-MC01).
+        person: { select: { id: true, name: true, preferredName: true } },
       },
     });
   }

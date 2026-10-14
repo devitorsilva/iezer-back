@@ -6,6 +6,7 @@ import { authRoutes } from "./auth/routes.js";
 import { cadastroRoutes } from "./cadastro/routes.js";
 import { publicInviteRoutes } from "./convites/routes.js";
 import { financeiroRoutes } from "./financeiro/routes.js";
+import { publicEmailRoutes } from "./me/conta/routes.js";
 import { meRoutes } from "./me/routes.js";
 import { organizacaoRoutes } from "./organizacao/routes.js";
 import { pessoasRoutes } from "./pessoas/routes.js";
@@ -13,9 +14,10 @@ import { relatoriosRoutes } from "./relatorios/routes.js";
 import { placeholdersRoutes } from "./placeholders/routes.js";
 
 export const registerModuleRoutes: FastifyPluginAsync = async (app) => {
-  // Público: handler do Better Auth e página do convite.
+  // Público: handler do Better Auth, página do convite e confirmação da troca de e-mail.
   await app.register(authRoutes, { prefix: "/auth" });
   await app.register(publicInviteRoutes, { prefix: "/convites" });
+  await app.register(publicEmailRoutes, { prefix: "/email" });
 
   // Todo o resto exige sessão.
   await app.register(async (protectedApp) => {
