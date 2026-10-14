@@ -885,3 +885,23 @@ Conta de igreja: 403 `TEAM_ACCOUNT_REQUIRED` ("Esta conta não tem acesso ao bac
 
 - **Auditoria:** organização nula, módulo `BACKOFFICE`, `actorType: SUPORTE`. Ações: `convidar_equipe`, `reenviar_convite_equipe`, `cancelar_convite_equipe`, `aceitar_convite_equipe`, `aceitar_termo_equipe`, `alterar_papeis_equipe`, `desativar_equipe`, `reativar_equipe`, `redefinir_autenticador_equipe`, `promover_administrador_equipe` (script). Alvos `TeamMember` e `TeamInvite`.
 - **Bootstrap:** `npm run suporte:agente -- <email> "<nome>"` só roda sem Administrador iEzer ativo. Membro da equipe existente ganha o papel; e-mail novo recebe convite de Administrador (link no log).
+
+## Sprint 16 — App admin
+
+O app admin (`iezer-front`, pasta `admin/`, porta 5174 em dev) usa as rotas da Sprint 15 e o Minha conta de `/api/me/*`. A única rota nova é esta.
+
+### `POST /api/me/2fa/reconfigurar` (só sessão, limite por IP; RF-BO05)
+
+| Corpo | Resposta |
+| --- | --- |
+| `{ password }` | `{ reconfiguring: true, sessionsEnded }` |
+
+- Serve para trocar o app autenticador (ex.: celular novo). Confere a senha, apaga o app e os códigos de recuperação, desliga o 2FA e encerra as **outras** sessões. A atual fica.
+- Depois, o front segue como na primeira configuração: `POST /api/auth/two-factor/enable { password, method: "totp" }` e `verify-totp`. Se a pessoa parar no meio, quem tem o 2FA obrigatório recebe 403 `TWO_FACTOR_SETUP_REQUIRED` e volta à configuração.
+- Erros:
+  - 400 `INVALID_PASSWORD` (campo `password`);
+  - 400 `TOTP_NOT_ENABLED`: a conta não tem app autenticador;
+  - 400 `VALIDATION_ERROR`.
+- Log `reconfigurar_2fa` (autor `SUPORTE` para a equipe) e alerta por e-mail "Verificação em duas etapas reconfigurada". O `ativar_2fa` da nova configuração é gravado como sempre.
+- Vale para qualquer usuário com o app. Por enquanto, só o app admin usa.
+- `accountContext` de `/api/me/*` grava como `SUPORTE` quando a sessão é da equipe (antes, `USUARIO`).

@@ -63,6 +63,7 @@ export const ACTION_LABELS: Record<string, string> = {
   suspender_usuario: "Usuário suspenso",
   trocar_email_usuario: "E-mail do usuário trocado",
   redefinir_2fa: "Verificação em duas etapas redefinida",
+  reconfigurar_2fa: "App autenticador reconfigurado",
   atribuir_perfil: "Perfil atribuído",
   criar_perfil: "Perfil criado",
   editar_perfil: "Perfil editado",

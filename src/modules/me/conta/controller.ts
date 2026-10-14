@@ -1,13 +1,20 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
 import type { AccountContext, AccountService } from "./service.js";
-import { changeEmailSchema, changePasswordSchema, emailTokenParamsSchema, sessionParamsSchema } from "./schemas.js";
+import {
+  changeEmailSchema,
+  changePasswordSchema,
+  emailTokenParamsSchema,
+  reconfigureTwoFactorSchema,
+  sessionParamsSchema,
+} from "./schemas.js";
 
 function accountContext(request: FastifyRequest): AccountContext {
   return {
     userId: request.user.id,
     sessionId: request.session.id,
     actor: {
-      type: "USUARIO",
+      // Conta da equipe iEzer grava como Suporte iEzer (RT-BB12).
+      type: request.team ? "SUPORTE" : "USUARIO",
       userId: request.user.id,
       ip: request.ip ?? null,
       userAgent: request.headers["user-agent"] ?? null,
@@ -27,6 +34,11 @@ export class AccountController {
     // Trocar a senha encerra as outras sessões e renova a atual.
     if (cookies.length > 0) reply.header("set-cookie", cookies);
     return result;
+  };
+
+  reconfigureTwoFactor = async (request: FastifyRequest) => {
+    const input = reconfigureTwoFactorSchema.parse(request.body);
+    return this.service.reconfigureTwoFactor(accountContext(request), input);
   };
 
   listSessions = async (request: FastifyRequest) => ({

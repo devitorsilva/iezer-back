@@ -214,7 +214,7 @@ export function twoFactorChangedNotice(input: {
   to: string;
   name: string;
   churchName: string | null;
-  change: "ativada" | "desativada" | "redefinida";
+  change: "ativada" | "desativada" | "redefinida" | "reconfigurada";
 }): MailMessage {
   const body = {
     ativada: "A verificação em duas etapas foi ativada na sua conta do iEzer.",
@@ -222,6 +222,8 @@ export function twoFactorChangedNotice(input: {
     redefinida:
       "O administrador da sua igreja redefiniu a verificação em duas etapas da sua conta do iEzer, e as sessões abertas foram encerradas. " +
       "No próximo login, configure de novo o app autenticador ou o código por e-mail.",
+    reconfigurada:
+      "O app autenticador da sua conta do iEzer foi trocado. O anterior deixou de valer, e as outras sessões foram encerradas.",
   }[input.change];
 
   return {

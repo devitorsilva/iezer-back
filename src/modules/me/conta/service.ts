@@ -6,7 +6,13 @@ import { runAudited, type AuditActor } from "../../../lib/audit.js";
 import { auth } from "../../../lib/auth.js";
 import { findUserChurch } from "../../../lib/church.js";
 import { describeDevice } from "../../../lib/devices.js";
-import { EMAIL_CHANGE_TTL_MS, emailChangeConfirmEmail, emailChangedNotice, passwordChangedEmail } from "../../../lib/emails.js";
+import {
+  EMAIL_CHANGE_TTL_MS,
+  emailChangeConfirmEmail,
+  emailChangedNotice,
+  passwordChangedEmail,
+  twoFactorChangedNotice,
+} from "../../../lib/emails.js";
 import { AppError } from "../../../lib/errors.js";
 import { trySendMail } from "../../../lib/mailer.js";
 import { assertValidNewPassword } from "../../../lib/password-rules.js";
@@ -18,7 +24,7 @@ import { requiresTwoFactor } from "../../../lib/two-factor.js";
 import { summarizePermissions } from "../../acesso/permissoes/catalog/index.js";
 import { assertLoginEmailAvailable } from "../../acesso/convites/service.js";
 import type { AccountRepository } from "./repository.js";
-import type { ChangeEmailInput, ChangePasswordInput } from "./schemas.js";
+import type { ChangeEmailInput, ChangePasswordInput, ReconfigureTwoFactorInput } from "./schemas.js";
 
 export interface AccountContext {
   userId: string;
@@ -106,6 +112,42 @@ export class AccountService {
     });
 
     return { cookies, result: { hasPassword: true } };
+  }
+
+  // Reconfigurar o app autenticador (RF-BO05), por exemplo ao trocar de celular. Confere a senha,
+  // apaga o segredo e os códigos de recuperação e encerra as outras sessões. O front segue com
+  // two-factor/enable e verify-totp; se a pessoa parar no meio, a configuração obrigatória volta
+  // no próximo pedido (TWO_FACTOR_SETUP_REQUIRED).
+  async reconfigureTwoFactor(context: AccountContext, input: ReconfigureTwoFactorInput) {
+    const user = await this.findUserOrThrow(context.userId);
+    if (!user.twoFactors.some((item) => item.verified)) {
+      throw new AppError(400, "TOTP_NOT_ENABLED", "O app autenticador não está configurado nesta conta.");
+    }
+
+    try {
+      await auth.api.verifyPassword({ body: { password: input.password }, headers: fromNodeHeaders(context.headers) });
+    } catch (error) {
+      if (isAPIError(error) && error.body?.code === "INVALID_PASSWORD") {
+        throw new AppError(400, "INVALID_PASSWORD", "Senha incorreta.", { field: "password" });
+      }
+      throw error;
+    }
+
+    const sessionsEnded = await prisma.$transaction(async (tx) => {
+      await tx.twoFactor.deleteMany({ where: { userId: context.userId } });
+      await tx.user.update({ where: { id: context.userId }, data: { twoFactorEnabled: false } });
+      return this.repository.deleteOtherSessions(context.userId, context.sessionId, tx);
+    });
+
+    await recordAccountEvent({
+      actor: context.actor,
+      userId: context.userId,
+      action: "reconfigurar_2fa",
+      description: `${sessionsEnded} outra(s) sessão(ões) encerrada(s)`,
+      notice: (target) => twoFactorChangedNotice({ ...target, change: "reconfigurada" }),
+    });
+
+    return { reconfiguring: true, sessionsEnded };
   }
 
   // Sessões ativas (RF-MC04). O último uso acompanha a renovação da sessão (uma vez por dia).

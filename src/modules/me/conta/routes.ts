@@ -13,6 +13,11 @@ const controller = new AccountController(service);
 export const accountRoutes: FastifyPluginAsync = async (app) => {
   app.get("/seguranca", controller.security);
   app.post("/senha", { preHandler: rateLimitByIp("me-senha", 10, 15 * 60_000) }, controller.changePassword);
+  app.post(
+    "/2fa/reconfigurar",
+    { preHandler: rateLimitByIp("me-2fa-reconfigurar", 10, 15 * 60_000) },
+    controller.reconfigureTwoFactor,
+  );
   app.get("/sessoes", controller.listSessions);
   app.delete("/sessoes/:id", controller.endSession);
   app.post("/sessoes/encerrar-outras", controller.endOtherSessions);
