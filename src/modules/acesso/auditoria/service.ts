@@ -1,6 +1,7 @@
 import type { ModuleKey } from "@prisma/client";
 import type { RequestContext } from "../../../lib/access.js";
 import { runAudited } from "../../../lib/audit.js";
+import { screenLabel } from "../../../lib/support-log.js";
 import { AuditRepository, type AuditRow, type AuditScope } from "./repository.js";
 import {
   ACTOR_TYPE_LABELS,
@@ -15,6 +16,11 @@ import type { AuditFilters, AuditListQuery, PersonHistoryQuery } from "./schemas
 export const EXPORT_LIMIT = 10_000;
 
 export class PersonNotFoundError extends Error {}
+
+// Ações que registram leitura, não alteração (acesso do suporte; depois, leitura de notas pastorais).
+// A aba Histórico mostra quem alterou a pessoa; quem a acessou fica na Auditoria (RF-LP04), que
+// exige "Ver log de auditoria".
+export const READ_ACTIONS = ["suporte_ler"];
 
 function snapshotName(value: unknown) {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
@@ -40,6 +46,9 @@ function mapRow(row: AuditRow, targetLabels: Map<string, string>, personNames: M
     snapshotName(row.after) ??
     (row.targetType === "FollowUp" || row.targetType === "PersonConsent" ? (people[0]?.name ?? null) : null);
 
+  // Leitura do suporte: a pessoa aberta (quando há) e o nome da tela no lugar de "Tela ou registro".
+  const screen = row.targetType === "Rota" ? screenLabel(row.description) : null;
+
   return {
     id: row.id,
     createdAt: row.createdAt.toISOString(),
@@ -50,9 +59,9 @@ function mapRow(row: AuditRow, targetLabels: Map<string, string>, personNames: M
     action: row.action,
     actionLabel: actionLabel(row.action),
     targetType: row.targetType,
-    targetTypeLabel: targetTypeLabel(row.targetType),
+    targetTypeLabel: screen ? (people[0]?.name ? screen : "Tela") : targetTypeLabel(row.targetType),
     targetId: row.targetId,
-    targetLabel,
+    targetLabel: screen ? (people[0]?.name ?? screen) : targetLabel,
     people,
     changes: describeChanges(row.before, row.after),
     description: row.description,
@@ -138,7 +147,7 @@ export class AuditService {
 
     const organizations = await this.repository.churchOrganizations(context.churchId);
     return this.list(
-      { organizationIds: organizations.map((org) => org.id), module: "PESSOAS" },
+      { organizationIds: organizations.map((org) => org.id), module: "PESSOAS", excludeActions: READ_ACTIONS },
       { ...query, pessoa: personId },
     );
   }

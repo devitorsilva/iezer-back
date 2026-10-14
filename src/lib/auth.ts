@@ -217,6 +217,7 @@ export const auth = betterAuth({
       personId: { type: "string", required: false, input: false },
       lastLoginAt: { type: "date", required: false, input: false },
       termsVersion: { type: "string", required: false, input: false },
+      isSupportAgent: { type: "boolean", required: false, defaultValue: false, input: false },
     },
   },
   rateLimit: {

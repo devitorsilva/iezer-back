@@ -273,3 +273,133 @@ export function loginLockedNotice(input: { to: string; name: string; churchName:
       SIGNATURE,
   };
 }
+
+// Acesso do suporte (PRD Acesso › Acesso do suporte do iEzer).
+
+const supportDateTime = new Intl.DateTimeFormat("pt-BR", {
+  timeZone: "America/Sao_Paulo",
+  day: "2-digit",
+  month: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+// "dd/mm, hh:mm", como na faixa de Configurações (RF-SP04).
+export const formatSupportDeadline = (date: Date) => supportDateTime.format(date);
+
+const SUPPORT_SETTINGS_PATH = "Configurações › Acesso do suporte";
+
+export interface SupportGrantSummary {
+  reason: string;
+  ticket: string | null;
+  scopeNames: string[];
+  canWrite: boolean;
+  writeJustification: string | null;
+}
+
+function supportGrantLines(grant: SupportGrantSummary) {
+  return [
+    `Motivo: ${grant.reason}`,
+    grant.ticket ? `Chamado: ${grant.ticket}` : null,
+    `Módulos: ${grant.scopeNames.join(", ")}`,
+    grant.canWrite
+      ? `Pode alterar dados: sim (${grant.writeJustification ?? "sem justificativa"})`
+      : "Somente leitura. Notas pastorais nunca são acessadas.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+// Pedido do suporte pelo back-office: vai para quem pode autorizar (RF-SP01).
+export function supportRequestNotice(input: {
+  to: string;
+  name: string;
+  churchName: string;
+  agentName: string;
+  durationHours: number;
+  grant: SupportGrantSummary;
+}): MailMessage {
+  return {
+    to: input.to,
+    churchName: input.churchName,
+    subject: "O suporte do iEzer pediu acesso aos dados da sua igreja",
+    text:
+      `Olá, ${firstName(input.name)}!\n\n` +
+      `${input.agentName}, do suporte do iEzer, pediu acesso aos dados da ${input.churchName} por ${input.durationHours} horas.\n\n` +
+      `${supportGrantLines(input.grant)}\n\n` +
+      `Nada é visto antes de um administrador autorizar. Para aprovar ou recusar, abra ${SUPPORT_SETTINGS_PATH} no iEzer.` +
+      SIGNATURE,
+  };
+}
+
+// Autorização (pedido aprovado ou dada pelo admin): todos os admins são avisados (RF-SP03).
+export function supportAuthorizedNotice(input: {
+  to: string;
+  name: string;
+  churchName: string;
+  authorizedBy: string;
+  expiresAt: Date;
+  grant: SupportGrantSummary;
+}): MailMessage {
+  return {
+    to: input.to,
+    churchName: input.churchName,
+    subject: "Acesso do suporte do iEzer autorizado",
+    text:
+      `Olá, ${firstName(input.name)}!\n\n` +
+      `${input.authorizedBy} autorizou o suporte do iEzer a acessar os dados da ${input.churchName} ` +
+      `até ${formatSupportDeadline(input.expiresAt)}.\n\n` +
+      `${supportGrantLines(input.grant)}\n\n` +
+      `Tudo o que o suporte abrir ou alterar aparece em Configurações › Auditoria, no filtro "Suporte iEzer". ` +
+      `Para encerrar antes do prazo, use "Revogar" em ${SUPPORT_SETTINGS_PATH}.` +
+      SIGNATURE,
+  };
+}
+
+// Emergência com dupla aprovação interna: aviso imediato ao responsável pela conta e aos admins (RF-SP09).
+export function supportEmergencyNotice(input: {
+  to: string;
+  name: string;
+  churchName: string;
+  kindLabel: string;
+  approvers: string[];
+  expiresAt: Date;
+  grant: SupportGrantSummary;
+}): MailMessage {
+  return {
+    to: input.to,
+    churchName: input.churchName,
+    subject: "Acesso de emergência do suporte do iEzer",
+    text:
+      `Olá, ${firstName(input.name)}!\n\n` +
+      `O suporte do iEzer abriu um acesso de emergência aos dados da ${input.churchName} (${input.kindLabel}), ` +
+      `aprovado por ${input.approvers.join(" e ")}, até ${formatSupportDeadline(input.expiresAt)}.\n\n` +
+      `${supportGrantLines(input.grant)}\n\n` +
+      `Tudo o que o suporte abrir ou alterar aparece em Configurações › Auditoria, no filtro "Suporte iEzer". ` +
+      `Em caso de dúvida, fale com o iEzer.` +
+      SIGNATURE,
+  };
+}
+
+// Recuperação de admin (RF-SP10): a nomeação é avisada a todos os admins e ao responsável pela conta.
+export function adminRecoveryNotice(input: {
+  to: string;
+  name: string;
+  churchName: string;
+  adminName: string;
+  agentName: string;
+  viaInvite: boolean;
+}): MailMessage {
+  return {
+    to: input.to,
+    churchName: input.churchName,
+    subject: "Novo administrador nomeado pelo suporte do iEzer",
+    text:
+      `Olá, ${firstName(input.name)}!\n\n` +
+      `A pedido do responsável pela conta da ${input.churchName}, o suporte do iEzer (${input.agentName}) ` +
+      `nomeou ${input.adminName} como administrador(a), com o perfil Pastor na sede` +
+      (input.viaInvite ? `; o convite foi enviado para o e-mail informado.` : `.`) +
+      `\n\nSe você não reconhece esse pedido, fale com o iEzer imediatamente.` +
+      SIGNATURE,
+  };
+}

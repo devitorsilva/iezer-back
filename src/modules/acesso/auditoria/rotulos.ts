@@ -68,6 +68,18 @@ export const ACTION_LABELS: Record<string, string> = {
   restaurar_perfil: "Perfil restaurado",
   excluir_perfil: "Perfil excluído",
   exportar_auditoria: "Auditoria exportada",
+  // Acesso do suporte
+  suporte_pedir: "Suporte pediu acesso",
+  suporte_autorizar: "Acesso do suporte autorizado",
+  suporte_aprovar: "Pedido do suporte aprovado",
+  suporte_recusar: "Pedido do suporte recusado",
+  suporte_revogar: "Acesso do suporte revogado",
+  suporte_encerrar: "Acesso do suporte encerrado",
+  suporte_cancelar: "Pedido do suporte cancelado",
+  suporte_emergencia_pedir: "Emergência do suporte pedida",
+  suporte_emergencia_aprovar: "Emergência do suporte aprovada",
+  suporte_recuperar_admin: "Admin nomeado pelo suporte",
+  suporte_ler: "Suporte abriu tela ou registro",
   // Pessoas
   editar_pessoa: "Pessoa editada",
   apagar_registro: "Registro apagado",
@@ -116,6 +128,8 @@ export const TARGET_TYPE_LABELS: Record<string, string> = {
   Receivable: "Conta a receber",
   ChurchListItem: "Lista da igreja",
   AuditLog: "Auditoria",
+  SupportGrant: "Acesso do suporte",
+  Rota: "Tela ou registro",
 };
 
 const FIELD_LABELS: Record<string, string> = {
@@ -138,6 +152,16 @@ const FIELD_LABELS: Record<string, string> = {
   bond: "Vínculo",
   bondSince: "No vínculo desde",
   status: "Situação",
+  ticket: "Chamado",
+  scope: "Módulos",
+  canWrite: "Pode alterar dados",
+  writeJustification: "Justificativa da escrita",
+  durationHours: "Prazo (horas)",
+  closeReason: "Motivo do encerramento",
+  emergencyKind: "Tipo de emergência",
+  origin: "Origem",
+  viaInvite: "Por convite",
+  url: "Endereço",
   organizationName: "Organização",
   firstVisitDate: "Primeira visita",
   conversionDate: "Conversão",
@@ -270,6 +294,16 @@ const VALUE_LABELS: Record<string, string> = {
   CERTIDAO_NASCIMENTO: "Certidão de nascimento",
   INVALID_EMAIL_OR_PASSWORD: "E-mail ou senha incorretos",
   USER_INACTIVE: "Acesso desativado",
+  AGUARDANDO_SEGUNDA_APROVACAO: "Aguardando segunda aprovação",
+  RECUSADO: "Recusado",
+  REVOGADO: "Revogado",
+  ENCERRADO: "Encerrado",
+  PEDIDO_SUPORTE: "Pedido do suporte",
+  AUTORIZACAO_ADMIN: "Autorização do admin",
+  EMERGENCIA: "Emergência",
+  INCIDENTE: "Incidente",
+  ORDEM_JUDICIAL: "Ordem judicial",
+  IGREJA_SEM_ADMIN: "Igreja sem administrador",
 };
 
 // Campos técnicos ou derivados: não aparecem nas alterações.
@@ -292,6 +326,7 @@ const HIDDEN_FIELDS = new Set([
   "index",
   "kind",
   "authorName",
+  "grantId",
 ]);
 
 const CIVIL_DATE = /^\d{4}-\d{2}-\d{2}$/;

@@ -8,6 +8,13 @@ import {
 import type { AuditActor } from "./audit.js";
 import { AppError } from "./errors.js";
 import { prisma } from "./prisma.js";
+import {
+  loadSupportOrganizations,
+  SUPPORT_FORBIDDEN_CODE,
+  SUPPORT_READ_ONLY_CODE,
+  SUPPORT_WRITE_BLOCKED_PREFIXES,
+  type SupportGrantAccess,
+} from "./support.js";
 import { TERMS_VERSION } from "./terms.js";
 
 export interface AccessibleOrganization {
@@ -16,6 +23,8 @@ export interface AccessibleOrganization {
   type: OrganizationType;
   parentId: string | null;
   permissions: Set<PermissionKey>;
+  // Só para o atendente do suporte: o grant que libera esta organização.
+  support?: SupportGrantAccess;
 }
 
 export interface RequestAccess {
@@ -28,17 +37,29 @@ export interface RequestAccess {
   // null em "todas": criar exige escolher uma organização.
   writeOrganizationId: string | null;
   permissions: Set<PermissionKey>;
+  // Atendente do suporte na igreja (RT-AB11); null para usuário da igreja.
+  support: SupportGrantAccess | null;
 }
 
 declare module "fastify" {
   interface FastifyRequest {
     access: RequestAccess;
   }
+  interface FastifyContextConfig {
+    // Rota que o suporte nunca usa, mesmo autorizado (ex.: notas pastorais, RF-SP05).
+    denySupport?: boolean;
+  }
 }
 
 // Permissões efetivas por organização: as atribuições dali somadas às da sede,
-// que alcançam as congregações (PRD Acesso › Conceitos do domínio, RT-AB03).
-export async function loadAccessibleOrganizations(userId: string): Promise<AccessibleOrganization[]> {
+// que alcançam as congregações (PRD Acesso › Conceitos do domínio, RT-AB03). O atendente do
+// suporte não tem atribuições: alcança as igrejas com acesso do suporte ativo.
+export async function loadAccessibleOrganizations(
+  userId: string,
+  isSupportAgent = false,
+): Promise<AccessibleOrganization[]> {
+  if (isSupportAgent) return sortOrganizations(await loadSupportOrganizations());
+
   const assignments = await prisma.userAssignment.findMany({
     where: { userId, organization: { isActive: true } },
     select: {
@@ -75,9 +96,13 @@ export async function loadAccessibleOrganizations(userId: string): Promise<Acces
     reachable.set(child.id, { ...child, permissions: new Set([...own, ...inherited]) });
   }
 
+  return sortOrganizations([...reachable.values()]);
+}
+
+function sortOrganizations(organizations: AccessibleOrganization[]) {
   const collator = new Intl.Collator("pt-BR");
 
-  return [...reachable.values()].sort(
+  return organizations.sort(
     (a, b) =>
       Number(a.type === "CONGREGACAO") - Number(b.type === "CONGREGACAO") || collator.compare(a.name, b.name),
   );
@@ -100,9 +125,18 @@ export async function resolveOrganization(request: FastifyRequest, reply: Fastif
     });
   }
 
-  const organizations = await loadAccessibleOrganizations(request.user.id);
+  const isSupportAgent = request.user.isSupportAgent === true;
+  const organizations = await loadAccessibleOrganizations(request.user.id, isSupportAgent);
 
   if (organizations.length === 0) {
+    if (isSupportAgent) {
+      return reply.code(403).send({
+        statusCode: 403,
+        code: "SUPPORT_NO_GRANT",
+        message: "Não há acesso do suporte ativo para nenhuma igreja. Peça a autorização no back-office.",
+      });
+    }
+
     return reply.code(403).send({
       statusCode: 403,
       code: "NO_ORGANIZATION",
@@ -122,6 +156,12 @@ export async function resolveOrganization(request: FastifyRequest, reply: Fastif
     });
   }
 
+  const support = active.support ?? null;
+  if (support) {
+    const denied = supportDenial(request, support);
+    if (denied) return reply.code(403).send({ statusCode: 403, ...denied });
+  }
+
   request.access = {
     organizations,
     organizationId: active.id,
@@ -131,7 +171,31 @@ export async function resolveOrganization(request: FastifyRequest, reply: Fastif
       : [active.id],
     writeOrganizationId: allCongregations ? null : active.id,
     permissions: active.permissions,
+    support,
   };
+}
+
+const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+// Limites do suporte autorizado: rotas fechadas a ele, somente leitura por padrão e, mesmo com
+// escrita liberada, nada em acessos e organização (RF-SP02, RF-SP05).
+function supportDenial(request: FastifyRequest, support: SupportGrantAccess) {
+  if (request.routeOptions.config.denySupport) {
+    return { code: SUPPORT_FORBIDDEN_CODE, message: "O suporte do iEzer não tem acesso a este conteúdo." };
+  }
+
+  if (READ_METHODS.has(request.method)) return null;
+
+  if (!support.canWrite) {
+    return { code: SUPPORT_READ_ONLY_CODE, message: "O acesso do suporte é somente leitura." };
+  }
+
+  const url = request.routeOptions.url ?? request.url;
+  if (SUPPORT_WRITE_BLOCKED_PREFIXES.some((prefix) => url.startsWith(prefix))) {
+    return { code: SUPPORT_FORBIDDEN_CODE, message: "O suporte do iEzer não altera acessos nem a organização." };
+  }
+
+  return null;
 }
 
 // Igreja-cliente (sede) da organização ativa: dona dos perfis de acesso.
@@ -196,7 +260,8 @@ export function getRequestContext(request: FastifyRequest): RequestContext {
     writeOrganizationId: request.access.writeOrganizationId,
     permissions: request.access.permissions,
     actor: {
-      type: "USUARIO",
+      // Ação do atendente sai no log como "Suporte iEzer (nome)" (RF-SP07).
+      type: request.access.support ? "SUPORTE" : "USUARIO",
       userId: request.user.id,
       ip: request.ip ?? null,
       userAgent: request.headers["user-agent"] ?? null,

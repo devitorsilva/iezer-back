@@ -21,7 +21,8 @@ export const meRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const { person, termsVersion, ...userData } = user;
-    const organizations = await loadAccessibleOrganizations(user.id);
+    // Atendente: as igrejas com acesso do suporte ativo, com prazo e escrita em `support`.
+    const organizations = await loadAccessibleOrganizations(user.id, user.isSupportAgent);
 
     return {
       user: userData,

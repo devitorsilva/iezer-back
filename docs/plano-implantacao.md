@@ -42,6 +42,17 @@ Ambiente: Claude Code no Cursor, aberto no `iezer-back`.
 
 Depois do MVP: itens F2 dos dois PRDs, priorizados com a igreja piloto.
 
+**Painel administrativo do iEzer** (depois do MVP; RT-AB14, A10, A11, RF-OB01). Hoje existe só o back-office do suporte em `/app/suporte`, mais os scripts `igreja:criar` e `suporte:agente`. O painel deve cobrir:
+
+- igrejas: criação de igreja e congregações pela tela, no lugar do script;
+- troca do responsável pela conta e do encarregado de LGPD, mediante documento;
+- equipe iEzer: atendentes e papéis internos, inclusive quem aprova emergência;
+- saúde: igrejas sem admin, e-mails que falharam, logins bloqueados e uso por igreja;
+- auditoria interna da equipe;
+- na F2, cobrança e autosserviço.
+
+Decisão em aberto: o RT-AB14 pede autenticação própria da equipe, o que aponta para um app separado do da igreja. As rotas `/api/suporte/*` e o `SupportGrant` são reaproveitados.
+
 ---
 
 ## Sprint 1 — Base de dados `[x]`
@@ -176,7 +187,7 @@ Depois do MVP: itens F2 dos dois PRDs, priorizados com a igreja piloto.
 - **Pronto quando:** o Pastor de teste é obrigado a configurar o 2FA e o login com Google funciona.
 - **Gate de produção:** depois desta sprint, a base real da igreja piloto pode ser importada.
 
-## Sprint 13 — Acesso do suporte `[ ]`
+## Sprint 13 — Acesso do suporte `[x]`
 
 - `SupportGrant`, autorização pelo admin, faixa de acesso ativo, revogação, bloqueio de notas pastorais, emergência com dupla aprovação.
 - **IDs:** RF-SP01 a RF-SP12, RT-AB11.
@@ -262,3 +273,9 @@ Entradas curtas (até 8 linhas), mais recente por último.
   Decisões: o Google **não** dispensa o 2FA (PRD A3, RF-CV07 e "2FA, quem" revistos na cópia local; falta copiar para a Doc); código por e-mail não gera códigos de recuperação (o plugin só gera com o app), então quem usa só e-mail recupera pelo admin; sem "lembrar este dispositivo"; local da sessão pelos headers `x-vercel-ip-*` quando vierem; troca de e-mail própria muda o e-mail da pessoa só se era o mesmo; código do 2FA fora do assunto do e-mail (em produção sem Resend o assunto vai para o log).
   Testado por HTTP (`teste.sprint9@iezer.local` Pastor, `teste.sprint8b@iezer.local` Secretária; senhas trocadas, redefina com `npm run user:create`, que também renomeou os dois): configuração obrigatória e barreira, TOTP, código por e-mail e de recuperação no login, desligar bloqueado, bloqueio no 6º erro (com e sem usuário) e aviso, sessões e alerta de dispositivo novo, Meus acessos, trocar senha, trocar e-mail ida e volta, redefinir 2FA pelo admin, sessão pendente do Google simulada no banco, início do Google com credenciais falsas (`redirect_uri` e `callbackURL` de fora recusado). No fim, o 2FA do Pastor de teste foi apagado no banco, para a configuração obrigatória aparecer no navegador.
   Pendências: login com Google real não testado (credenciais só no `.env` do usuário; trocar a chave secreta exposta no chat); telas testadas só por typecheck/build; Resend com domínio é pré-requisito do Gate (sem ele, em produção não chegam código por e-mail, alertas nem confirmação de e-mail); no Render: `prisma migrate deploy` e `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`; copiar a revisão do A3/RF-CV07 para a Doc do PRD; os headers da Vercel chegam ao Render no rewrite (conferir no deploy).
+- 14/10/2026 · Sprint 13 · Sprint 12 commitada antes nos dois repos. Migração `20261014_suporte` (aditiva, `migrate deploy`): `User.isSupportAgent` e `SupportGrant`. O atendente é um usuário nominal sem atribuições, com 2FA obrigatório (`npm run suporte:agente`). `loadAccessibleOrganizations` dá a ele as igrejas com grant ativo (expira pelo `expiresAt`, sem job), com as permissões do escopo, menos notas pastorais e `acesso.suporte.autorizar`. Ator `SUPORTE` no `getRequestContext`. Cada GET grava `suporte_ler` antes da resposta (`lib/support-log.ts`).
+  Regras: somente leitura por padrão (403 `SUPPORT_READ_ONLY`); com escrita, ainda nada em `/acesso` e `/organizacao`; `config.denySupport` fica pronto para as notas pastorais (F2). Slice `acesso/suporte` (igreja) e back-office `/api/suporte/*`, com pedido, emergência com segundo atendente, cancelar/encerrar e recuperar admin (Pastor na sede ou convite).
+  Front (`sprint-13-suporte`): Configurações › Acesso do suporte, com faixa em Configurações (RF-SP04), e `/app/suporte` (back-office). O atendente tem uma faixa no shell e, sem grant, cai no back-office; o `query-client` recarrega o `/me` em `SUPPORT_NO_GRANT`/`ORGANIZATION_FORBIDDEN`.
+  Decisões: o grant é da equipe, não de um atendente; o escopo são módulos, valendo para a igreja inteira; um ativo por vez (409); a igreja não revoga a emergência, só o iEzer encerra; a recuperação de admin precisa de um atendente só, com a verificação anotada; ninguém é avisado na revogação.
+  Testado por HTTP, com `teste.sprint13@iezer.local` (Pastor) e os atendentes `suporte.um`/`suporte.dois`/`suporte.tres@iezer.local` (2FA por e-mail; para trocar a senha, `npm run user:create`). Coberto: guardas, pedido e aprovação com prazo encurtado, leituras no log e no Histórico, bloqueio de escrita, escrita liberada, revogação, expiração simulada, emergência com dupla aprovação, recusa, cancelamento, recuperação de admin e atendente sem 2FA. Ficaram no banco os grants de teste e a pessoa "Teste Treze Novo Admin", com convite pendente.
+  Pendências: telas testadas só por typecheck e build. Ajustes após teste no navegador: em acesso somente leitura, o front deixa o atendente só com as permissões de leitura (`SUPPORT_READ_ONLY_KEYS`), e as telas de gestão (Perfis, Organização) ainda mostram os botões. As leituras gravam o nome da tela (ex.: "Perfil da pessoa"), e o endereço só quando há busca ou filtro. O log de leitura virou INSERT direto (`recordAudit`, sem transação): com o banco em us-west-2 e pool de 5, as transações simultâneas de um perfil davam 500 (`Unable to start a transaction`). O `runAudited` ganhou `maxWait` de 10 s. Fornecedores: o back confere o dígito do CPF/CNPJ (inclusive alfanumérico, `isValidAnyCnpj`); os 5 fornecedores de teste têm documento inválido. A aba Histórico mostra só alterações (`READ_ACTIONS` fora); quem acessou a pessoa fica na Auditoria (RF-LP04), e o link da aba virou "Ver acessos e alterações na Auditoria". Ficaram 15 registros `teste_carga_sprint13` (Sistema) na auditoria. O GET recusado por permissão também vira `suporte_ler`. No Render: `migrate deploy` e marcar os atendentes reais; a equipe do suporte ainda não tem e-mail de aviso.

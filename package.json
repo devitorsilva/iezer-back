@@ -22,7 +22,8 @@
     "acesso:seed": "tsx scripts/seed-access.ts",
     "user:assign": "tsx scripts/assign-profile.ts",
     "pessoas:seed": "tsx scripts/seed-pessoas.ts",
-    "igreja:criar": "tsx scripts/create-church.ts"
+    "igreja:criar": "tsx scripts/create-church.ts",
+    "suporte:agente": "tsx scripts/support-agent.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.1.0",

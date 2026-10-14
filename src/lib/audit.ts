@@ -92,9 +92,37 @@ async function resolvePersonIds(tx: Prisma.TransactionClient, entry: AuditEntry)
 // Lote por INSERT: o Postgres aceita no máximo 65.535 parâmetros por consulta.
 const AUDIT_BATCH_SIZE = 1_000;
 
+// Monta e grava as linhas do log no cliente informado (transação ou não).
+async function writeEntries(db: Prisma.TransactionClient, actor: AuditActor, list: AuditEntry[]) {
+  if (list.length === 0) return;
+
+  const data: Prisma.AuditLogCreateManyInput[] = [];
+  for (const entry of list) {
+    data.push({
+      actorType: actor.type,
+      actorUserId: actor.userId,
+      ip: actor.ip,
+      userAgent: actor.userAgent,
+      organizationId: entry.organizationId,
+      module: entry.module,
+      action: entry.action,
+      description: entry.description,
+      targetType: entry.targetType,
+      targetId: entry.targetId ?? null,
+      ...changedOnly(toJson(entry.before), toJson(entry.after)),
+      personIds: await resolvePersonIds(db, entry),
+    });
+  }
+
+  for (let start = 0; start < data.length; start += AUDIT_BATCH_SIZE) {
+    await db.auditLog.createMany({ data: data.slice(start, start + AUDIT_BATCH_SIZE) });
+  }
+}
+
 // Helper único de auditoria (RT-AB10): a alteração e o AuditLog na mesma transação.
 // Se a gravação do log falhar, a alteração é desfeita. `timeout` maior só para escritas em
-// lote (importação); o padrão de 15 s vale para o resto.
+// lote (importação); o padrão de 15 s vale para o resto. `maxWait` de 10 s (o padrão do Prisma é 2 s):
+// com o banco longe e o pool de 5 conexões, requisições simultâneas esperavam mais que isso e davam 500.
 export function runAudited<T>(
   actor: AuditActor,
   fn: (tx: Prisma.TransactionClient, audit: AuditWriter) => Promise<T>,
@@ -102,35 +130,15 @@ export function runAudited<T>(
 ): Promise<T> {
   return prisma.$transaction(
     async (tx) => {
-      const audit: AuditWriter = async (entries) => {
-        const list = Array.isArray(entries) ? entries : [entries];
-        if (list.length === 0) return;
-
-        const data: Prisma.AuditLogCreateManyInput[] = [];
-        for (const entry of list) {
-          data.push({
-            actorType: actor.type,
-            actorUserId: actor.userId,
-            ip: actor.ip,
-            userAgent: actor.userAgent,
-            organizationId: entry.organizationId,
-            module: entry.module,
-            action: entry.action,
-            description: entry.description,
-            targetType: entry.targetType,
-            targetId: entry.targetId ?? null,
-            ...changedOnly(toJson(entry.before), toJson(entry.after)),
-            personIds: await resolvePersonIds(tx, entry),
-          });
-        }
-
-        for (let start = 0; start < data.length; start += AUDIT_BATCH_SIZE) {
-          await tx.auditLog.createMany({ data: data.slice(start, start + AUDIT_BATCH_SIZE) });
-        }
-      };
-
+      const audit: AuditWriter = (entries) => writeEntries(tx, actor, Array.isArray(entries) ? entries : [entries]);
       return fn(tx, audit);
     },
-    { timeout: options.timeout ?? 15_000 },
+    { timeout: options.timeout ?? 15_000, maxWait: 10_000 },
   );
+}
+
+// Registro sem alteração de dados (leitura do suporte): um INSERT direto, sem transação, que não
+// segura conexão do pool. Com `personIds` informado, não faz consulta extra.
+export function recordAudit(actor: AuditActor, entries: AuditEntry | AuditEntry[]) {
+  return writeEntries(prisma, actor, Array.isArray(entries) ? entries : [entries]);
 }

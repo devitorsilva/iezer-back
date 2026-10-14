@@ -1,6 +1,7 @@
 import { FastifyPluginAsync } from "fastify";
 import { resolveOrganization } from "../lib/access.js";
 import { requireSession } from "../lib/require-session.js";
+import { logSupportRead } from "../lib/support-log.js";
 import { acessoCatalogRoutes, acessoRoutes } from "./acesso/routes.js";
 import { authRoutes } from "./auth/routes.js";
 import { cadastroRoutes } from "./cadastro/routes.js";
@@ -11,6 +12,7 @@ import { meRoutes } from "./me/routes.js";
 import { organizacaoRoutes } from "./organizacao/routes.js";
 import { pessoasRoutes } from "./pessoas/routes.js";
 import { relatoriosRoutes } from "./relatorios/routes.js";
+import { backOfficeRoutes } from "./suporte/routes.js";
 import { placeholdersRoutes } from "./placeholders/routes.js";
 
 export const registerModuleRoutes: FastifyPluginAsync = async (app) => {
@@ -29,10 +31,14 @@ export const registerModuleRoutes: FastifyPluginAsync = async (app) => {
     await protectedApp.register(meRoutes, { prefix: "/me" });
     await protectedApp.register(acessoCatalogRoutes, { prefix: "/acesso" });
     await protectedApp.register(placeholdersRoutes, { prefix: "/modulos" });
+    // Back-office do suporte do iEzer (só atendentes).
+    await protectedApp.register(backOfficeRoutes, { prefix: "/suporte" });
 
     // Rotas de dados: organização ativa (X-Organization-Id) e permissões por rota.
     await protectedApp.register(async (organizationApp) => {
       organizationApp.addHook("onRequest", resolveOrganization);
+      // Leituras do suporte no log (RF-SP07); depois do parse, para ter os parâmetros da rota.
+      organizationApp.addHook("preHandler", logSupportRead);
 
       await organizationApp.register(acessoRoutes, { prefix: "/acesso" });
       await organizationApp.register(organizacaoRoutes, { prefix: "/organizacao" });

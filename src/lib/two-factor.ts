@@ -13,8 +13,12 @@ export const TWO_FACTOR_SETUP_REQUIRED_MESSAGE =
   "Você tem permissões protegidas: configure a verificação em duas etapas para continuar.";
 
 // 2FA obrigatório para quem tem permissão protegida numa organização ativa (RF-CV07). Desde a
-// Sprint 12, o login pelo Google não dispensa o 2FA do iEzer (A3 revisto).
+// Sprint 12, o login pelo Google não dispensa o 2FA do iEzer (A3 revisto). O atendente do
+// suporte sempre usa 2FA (RF-SP06).
 export async function requiresTwoFactor(userId: string, db: Prisma.TransactionClient = prisma) {
+  const user = await db.user.findUnique({ where: { id: userId }, select: { isSupportAgent: true } });
+  if (user?.isSupportAgent) return true;
+
   const assignment = await db.userAssignment.findFirst({
     where: {
       userId,

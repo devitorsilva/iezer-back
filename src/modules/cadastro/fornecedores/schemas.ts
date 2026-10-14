@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { isValidAnyCnpj } from "../../../lib/cnpj.js";
+import { isValidCpf } from "../../../lib/cpf.js";
 
 const optionalTrimmedString = z.preprocess(
   (value) => {
@@ -15,7 +17,12 @@ const optionalTrimmedString = z.preprocess(
 export const supplierPayloadSchema = z.object({
   name: z.string().trim().min(2, "Nome é obrigatório."),
   legalName: optionalTrimmedString,
-  cnpj: z.string().trim().min(14, "CNPJ é obrigatório."),
+  // CPF ou CNPJ (numérico ou alfanumérico), gravado como veio; o dígito verificador é conferido.
+  cnpj: z
+    .string()
+    .trim()
+    .min(1, "CPF ou CNPJ é obrigatório.")
+    .refine((value) => isValidCpf(value) || isValidAnyCnpj(value), "CPF ou CNPJ inválido."),
   email: optionalTrimmedString.pipe(z.email("Email inválido.").optional()),
   phone: optionalTrimmedString,
   pixKey: optionalTrimmedString,

@@ -11,6 +11,8 @@ export class MeRepository {
         image: true,
         status: true,
         twoFactorEnabled: true,
+        // Atendente do suporte: o front abre o back-office (/app/suporte).
+        isSupportAgent: true,
         termsVersion: true,
         // O header mostra "Como prefere ser chamado" quando há (RF-MC01).
         person: { select: { id: true, name: true, preferredName: true } },

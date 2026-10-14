@@ -173,6 +173,29 @@ enum ConsentMethod {
   DIGITAL
 }
 
+// Acesso do suporte (PRD Acesso › Acesso do suporte do iEzer).
+enum SupportGrantOrigin {
+  PEDIDO_SUPORTE
+  AUTORIZACAO_ADMIN
+  EMERGENCIA
+}
+
+enum SupportGrantStatus {
+  PENDENTE
+  AGUARDANDO_SEGUNDA_APROVACAO
+  ATIVO
+  RECUSADO
+  REVOGADO
+  ENCERRADO
+  CANCELADO
+}
+
+enum SupportEmergencyKind {
+  INCIDENTE
+  ORDEM_JUDICIAL
+  IGREJA_SEM_ADMIN
+}
+
 // User, Session, Account, Verification e TwoFactor seguem o schema do Better Auth
 // (core + plugin twoFactor). A senha fica em Account.password (providerId "credential").
 model User {
@@ -183,6 +206,8 @@ model User {
   image            String?
   twoFactorEnabled Boolean          @default(false)
   status           UserStatus       @default(ATIVO)
+  // Atendente do suporte do iEzer (RF-SP06): conta nominal, sem atribuições, 2FA obrigatório.
+  isSupportAgent   Boolean          @default(false)
   lastLoginAt      DateTime?
   // Versão dos termos de uso e de confidencialidade aceita (RF-CV06, RF-LP07).
   termsVersion     String?
@@ -201,6 +226,9 @@ model User {
   consentsRecorded PersonConsent[]
   invitesSent      Invite[]         @relation("InviteInvitedBy")
   invitesAccepted  Invite[]         @relation("InviteAcceptedUser")
+  supportRequested SupportGrant[]   @relation("SupportGrantRequestedBy")
+  supportApproved  SupportGrant[]   @relation("SupportGrantApprovedBy")
+  supportClosed    SupportGrant[]   @relation("SupportGrantClosedBy")
 }
 
 model Session {
@@ -309,6 +337,7 @@ model Organization {
   churchLists             ChurchListItem[]
   payables                Payable[]
   receivables             Receivable[]
+  supportGrants           SupportGrant[]
 
   @@index([parentId])
 }
@@ -754,4 +783,42 @@ model Receivable {
   @@index([status])
   @@index([recurrenceGroupId])
   @@index([settlementBankAccountId])
+}
+
+// Autorização de acesso do suporte a uma igreja (RF-SP01 a RF-SP09, RT-AB11). Vale para a equipe
+// do suporte, na sede e nas congregações; cada ação fica no log com o nome do atendente. Ativo =
+// status ATIVO e expiresAt no futuro: expirar não precisa de job.
+model SupportGrant {
+  id                 String                @id @default(cuid())
+  churchId           String
+  church             Organization          @relation(fields: [churchId], references: [id], onDelete: Restrict)
+  origin             SupportGrantOrigin
+  status             SupportGrantStatus
+  emergencyKind      SupportEmergencyKind?
+  ticket             String?
+  reason             String
+  // Módulos do catálogo de permissões liberados (pessoas, financeiro, acesso).
+  scope              String[]
+  canWrite           Boolean               @default(false)
+  writeJustification String?
+  durationHours      Int
+  requestedById      String?
+  requestedBy        User?                 @relation("SupportGrantRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
+  requestedAt        DateTime              @default(now())
+  // Admin da igreja que autorizou ou, na emergência, o segundo atendente.
+  approvedById       String?
+  approvedBy         User?                 @relation("SupportGrantApprovedBy", fields: [approvedById], references: [id], onDelete: Restrict)
+  approvedAt         DateTime?
+  startsAt           DateTime?
+  expiresAt          DateTime?
+  // Recusa, revogação, encerramento ou cancelamento.
+  closedById         String?
+  closedBy           User?                 @relation("SupportGrantClosedBy", fields: [closedById], references: [id], onDelete: Restrict)
+  closedAt           DateTime?
+  closeReason        String?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  @@index([churchId, status])
+  @@index([status, expiresAt])
 }

@@ -4,6 +4,7 @@ import { inviteRoutes } from "./convites/routes.js";
 import { onboardingRoutes } from "./onboarding/routes.js";
 import { accessProfileRoutes } from "./perfis/routes.js";
 import { permissionRoutes } from "./permissoes/routes.js";
+import { supportGrantRoutes } from "./suporte/routes.js";
 import { userRoutes } from "./usuarios/routes.js";
 
 // Só exige sessão: o catálogo não depende de organização.
@@ -18,4 +19,5 @@ export const acessoRoutes: FastifyPluginAsync = async (app) => {
   await app.register(userRoutes);
   await app.register(onboardingRoutes);
   await app.register(auditRoutes);
+  await app.register(supportGrantRoutes);
 };

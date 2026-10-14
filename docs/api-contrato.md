@@ -759,3 +759,80 @@ Acrescenta:
   - permissão protegida concedida (desde a Sprint 8).
 - **Ações novas no log:** `login_bloqueado`, `trocar_senha`, `definir_senha`, `ativar_2fa`, `desativar_2fa`, `redefinir_2fa`, `encerrar_sessao`, `encerrar_outras_sessoes`, `trocar_email`.
 - **Quando conta como login:** com 2FA, o `login` é gravado depois do código. A sessão recriada ao ligar o 2FA não conta.
+
+## Sprint 13 — Acesso do suporte
+
+O atendente do suporte é um `User` nominal com `isSupportAgent` (script `npm run suporte:agente -- <email> [remover]`), sem atribuições e com 2FA obrigatório (RF-SP06). Ele entra pelo mesmo login. Nas rotas de dados, alcança só as igrejas com um `SupportGrant` ativo, conferido a cada requisição (RT-AB11).
+
+### `SupportGrant`
+
+```json
+{
+  "id": "cuid", "churchId": "cuid", "churchName": "string",
+  "origin": "PEDIDO_SUPORTE | AUTORIZACAO_ADMIN | EMERGENCIA",
+  "status": "PENDENTE | AGUARDANDO_SEGUNDA_APROVACAO | ATIVO | EXPIRADO | RECUSADO | REVOGADO | ENCERRADO | CANCELADO",
+  "emergencyKind": "INCIDENTE | ORDEM_JUDICIAL | IGREJA_SEM_ADMIN | null",
+  "ticket": "string|null", "reason": "string",
+  "scope": ["pessoas", "financeiro", "acesso", "configuracoes"], "scopeNames": ["Pessoas"],
+  "canWrite": false, "writeJustification": "string|null", "durationHours": 72,
+  "requestedAt": "ISO", "requestedById": "cuid|null", "requestedByName": "Nome (Suporte iEzer)|null",
+  "approvedAt": "ISO|null", "approvedByName": "string|null",
+  "startsAt": "ISO|null", "expiresAt": "ISO|null",
+  "closedAt": "ISO|null", "closedByName": "string|null", "closeReason": "string|null"
+}
+```
+
+- **Status:**
+  - `EXPIRADO` é calculado: está `ATIVO` no banco, mas o prazo venceu (RF-SP08, sem job);
+  - nos nomes, quem é atendente aparece com o sufixo "(Suporte iEzer)".
+- **Corpo comum de pedido, autorização e emergência:** `{ ticket?, reason (5–500), scope: string[] (1+), canWrite = false, writeJustification?, durationHours }`. Com `canWrite`, `writeJustification` é obrigatória (RF-SP02).
+- **Prazos:** padrão de 72 h e máximo de 168 h; na emergência, até 24 h (padrão 24).
+
+### Atendente nas rotas de dados
+
+- **Permissões do atendente:** as chaves do catálogo nos módulos do `scope`, menos `pessoas.notas_pastorais.*` e `acesso.suporte.autorizar` (RF-SP05).
+- **`GET /me`:** `user.isSupportAgent`, e cada organização traz `support: { grantId, canWrite, expiresAt }`.
+- **Log das leituras:** cada GET do atendente grava `suporte_ler` antes da resposta, com o alvo `Rota` (RF-SP07). `description` traz o nome da tela (ex.: "Perfil da pessoa"; sem nome, `GET <url>`), e `after.url` só aparece quando há busca ou filtro. Na Auditoria, `targetLabel` mostra a pessoa aberta ou a tela. Elas não entram na aba Histórico (`GET /pessoas/:id/historico` exclui as ações de leitura, `READ_ACTIONS`): quem acessou a pessoa fica só na Auditoria, filtrada por pessoa (RF-LP04). As escritas saem com `actorType: SUPORTE` pelo `runAudited`.
+- **Rota fechada ao suporte:** use `{ config: { denySupport: true } }`. É para o endpoint de notas pastorais, quando existir (F2).
+
+| Status | `code` | Quando |
+| --- | --- | --- |
+| 403 | `SUPPORT_NO_GRANT` | Atendente sem nenhum acesso ativo (vencido, revogado ou nunca autorizado). O front recarrega o `/me` |
+| 403 | `SUPPORT_READ_ONLY` | Método diferente de GET num acesso somente leitura |
+| 403 | `SUPPORT_FORBIDDEN` | Escrita em `/acesso/*` ou `/organizacao/*`, mesmo com `canWrite`, ou rota com `denySupport` |
+
+### `/acesso/suporte` (Configurações › Acesso do suporte)
+
+Leitura: qualquer de `acesso.suporte.autorizar`, `acesso.perfis.gerenciar` ou `auditoria.ver`. Escrita: `acesso.suporte.autorizar` na sede.
+
+| Método | Rota | Corpo | Resposta |
+| --- | --- | --- | --- |
+| GET | `/acesso/suporte` | — | `{ active: SupportGrant\|null, pending: SupportGrant[], history: SupportGrant[] }`. Emergência aguardando a segunda aprovação não aparece |
+| POST | `/acesso/suporte` | corpo comum | 201 `SupportGrant` ativo na hora (RF-SP01, segundo caminho). 409 `SUPPORT_ALREADY_ACTIVE` |
+| POST | `/acesso/suporte/:id/aprovar` | `{ durationHours? }` | `SupportGrant`. O prazo começa agora e só pode ser encurtado. 409 `INVALID_SUPPORT_STATUS` ou `SUPPORT_ALREADY_ACTIVE` |
+| POST | `/acesso/suporte/:id/recusar` | `{ reason? }` | `SupportGrant` recusado |
+| POST | `/acesso/suporte/:id/revogar` | — | `SupportGrant` revogado, que vale na hora. 403 `SUPPORT_EMERGENCY`: a emergência só o iEzer encerra |
+
+- **Avisos por e-mail:** o pedido vai para quem tem `acesso.suporte.autorizar`. A autorização ou aprovação vai para todos os admins, isto é, quem tem `acesso.suporte.autorizar` ou `acesso.perfis.gerenciar` na sede (RF-SP03).
+
+### Back-office (`/api/suporte/*`, só atendente)
+
+Fora da organização ativa. Quem não é atendente recebe 403 `SUPPORT_AGENT_REQUIRED`. Tudo vai para o `AuditLog` com `actorType: SUPORTE`, na organização da igreja.
+
+| Método | Rota | Corpo | Resposta |
+| --- | --- | --- | --- |
+| GET | `/suporte/igrejas?busca=` | — | `{ items: [{ id, name, slug, cnpj, congregations, accountOwner: { name, email, phone }\|null, admins, activeGrant: { id, expiresAt, canWrite, origin }\|null }] }` (até 50) |
+| GET | `/suporte/acessos?igreja=` | — | `{ items: SupportGrant[] }` (até 200, mais recentes primeiro) |
+| POST | `/suporte/pedidos` | corpo comum + `churchId`, `ticket` obrigatório | 201 `SupportGrant` pendente + `notified` (quantos podem aprovar) (RF-SP01) |
+| POST | `/suporte/emergencias` | corpo comum + `churchId`, `kind` | 201 `SupportGrant` em `AGUARDANDO_SEGUNDA_APROVACAO` (RF-SP09) |
+| POST | `/suporte/emergencias/:id/aprovar` | — | `SupportGrant` ativo. 403 `SUPPORT_SAME_APPROVER` se for quem pediu. Avisa na hora o responsável pela conta e os admins |
+| POST | `/suporte/acessos/:id/cancelar` | `{ reason? }` | Pedido ou emergência ainda não decididos |
+| POST | `/suporte/acessos/:id/encerrar` | `{ reason? }` | Ativo, encerrado antes do prazo (inclusive a emergência) |
+| POST | `/suporte/igrejas/:churchId/recuperar-admin` | `{ name, email, mobilePhone?, verification (10+) }` | `{ adminName, viaInvite, link, emailSent }` (RF-SP10) |
+
+- **Recuperar admin:**
+  - usuário ativo da igreja com esse e-mail recebe o perfil Pastor na sede (409 `ALREADY_ADMIN` se já tem);
+  - sem usuário, a pessoa é achada pelo e-mail ou criada na sede (Membro, Ativo) e recebe o convite de Pastor, ou o pendente é reenviado;
+  - registra `suporte_recuperar_admin` com a verificação e avisa os admins atuais e o responsável pela conta;
+  - erros: 409 `USER_OTHER_CHURCH` (usuário de outra igreja ou atendente), 409 `USER_NOT_ACTIVE`, 409 `PASTOR_PROFILE_MISSING`.
+- **Ações novas no log:** `suporte_pedir`, `suporte_autorizar`, `suporte_aprovar`, `suporte_recusar`, `suporte_revogar`, `suporte_encerrar`, `suporte_cancelar`, `suporte_emergencia_pedir`, `suporte_emergencia_aprovar`, `suporte_recuperar_admin`, `suporte_ler` (alvos `SupportGrant`, `Rota`, `User` ou `Person`), e `marcar_atendente_suporte` / `desmarcar_atendente_suporte` (script, ator Sistema).

@@ -31,6 +31,8 @@ export interface AuditScope {
   organizationIds: string[];
   // Aba Histórico: só um módulo.
   module?: ModuleKey;
+  // Aba Histórico: sem as leituras, que ficam só na Auditoria.
+  excludeActions?: string[];
 }
 
 // Nome do registro alvo por tipo (o log minimizado nem sempre traz o nome).
@@ -84,7 +86,7 @@ export class AuditRepository {
     return {
       organizationId: { in: organizationIds },
       module: scope.module ?? filters.modulo,
-      action: filters.acao,
+      action: filters.acao ?? (scope.excludeActions?.length ? { notIn: scope.excludeActions } : undefined),
       actorUserId: filters.autor,
       actorType: filters.suporte ? "SUPORTE" : undefined,
       personIds: filters.pessoa ? { has: filters.pessoa } : undefined,
