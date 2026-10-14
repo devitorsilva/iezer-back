@@ -2,7 +2,9 @@ import cors from "@fastify/cors";
 import sensible from "@fastify/sensible";
 import { Prisma } from "@prisma/client";
 import Fastify from "fastify";
+import { ZodError } from "zod";
 import { env } from "./config/env.js";
+import { AppError } from "./lib/errors.js";
 import { registerModuleRoutes } from "./modules/index.js";
 import { healthRoutes } from "./modules/health/routes.js";
 
@@ -34,11 +36,16 @@ function isAllowedOrigin(origin: string | undefined) {
 export function buildApp() {
   const app = Fastify({
     logger: true,
+    // Atrás da Vercel e do Render: request.ip (gravado no AuditLog) vem do X-Forwarded-For.
+    trustProxy: true,
   });
 
   app.register(cors, {
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    // X-Organization-*: organização ativa do seletor (src/lib/access.ts).
+    allowedHeaders: ["Content-Type", "Authorization", "X-Organization-Id", "X-Organization-Scope"],
+    // Cookie de sessão do Better Auth.
+    credentials: true,
     origin: (origin, callback) => {
       if (isAllowedOrigin(origin)) {
         callback(null, true);
@@ -51,6 +58,25 @@ export function buildApp() {
   app.register(sensible);
 
   app.setErrorHandler((error, _request, reply) => {
+    if (error instanceof AppError) {
+      return reply.code(error.statusCode).send({
+        statusCode: error.statusCode,
+        code: error.code,
+        message: error.message,
+        ...error.details,
+      });
+    }
+
+    // Validação dos schemas: 400 com a primeira mensagem e a lista de campos.
+    if (error instanceof ZodError) {
+      return reply.code(400).send({
+        statusCode: 400,
+        code: "VALIDATION_ERROR",
+        message: error.issues[0]?.message ?? "Dados inválidos.",
+        issues: error.issues.map((issue) => ({ path: issue.path.join("."), message: issue.message })),
+      });
+    }
+
     if (
       error instanceof Error &&
       (error.message.includes("tenant/user") ||

@@ -4,7 +4,6 @@ const modules = [
   "mensageria",
   "compras",
   "controle-patrimonial",
-  "membros",
   "configuracoes",
   "portal-transparencia",
   "conteudo",

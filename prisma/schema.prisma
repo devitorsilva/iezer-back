@@ -3,8 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
 
@@ -20,6 +20,42 @@ enum ModuleKey {
   CONFIGURACOES
   PORTAL_TRANSPARENCIA
   CONTEUDO
+  ACESSO
+  PESSOAS
+}
+
+enum OrganizationType {
+  SEDE
+  CONGREGACAO
+}
+
+enum OrganizationContactRole {
+  RESPONSAVEL_CONTA
+  ENCARREGADO_LGPD
+}
+
+enum UserStatus {
+  ATIVO
+  DESATIVADO
+  SUSPENSO
+}
+
+enum AccessProfileFactoryKey {
+  PASTOR
+  TESOUREIRO
+  SECRETARIO
+}
+
+enum InviteStatus {
+  PENDENTE
+  ACEITO
+  CANCELADO
+}
+
+enum AuditActorType {
+  USUARIO
+  SUPORTE
+  SISTEMA
 }
 
 enum CategoryType {
@@ -54,132 +90,658 @@ enum RecurrenceFrequency {
   ANUAL
 }
 
-model User {
-  id           String   @id @default(cuid())
-  name         String
-  email        String   @unique
-  passwordHash String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+// Pessoas (PRD Pessoas › Conceitos do domínio). Vínculo e situação são independentes (D2).
+enum PersonBond {
+  VISITANTE
+  NOVO_CONVERTIDO
+  CONGREGADO
+  MEMBRO
+  MEMBRO_EM_FORMACAO
 }
 
+enum PersonStatus {
+  ATIVO
+  INATIVO
+  TRANSFERIDO
+  DESLIGADO
+  FALECIDO
+}
+
+enum Sex {
+  MASCULINO
+  FEMININO
+}
+
+enum MaritalStatus {
+  SOLTEIRO
+  CASADO
+  UNIAO_ESTAVEL
+  SEPARADO
+  DIVORCIADO
+  VIUVO
+}
+
+enum OtherDocumentType {
+  RG
+  PASSAPORTE
+  CERTIDAO_NASCIMENTO
+  OUTRO
+}
+
+enum FamilyRole {
+  RESPONSAVEL
+  CONJUGE
+  FILHO
+  OUTRO
+}
+
+// Eventos da linha do tempo (RF-V02): mudança de vínculo ou de situação, com data e autor.
+enum PersonEventType {
+  PROMOCAO
+  INATIVACAO
+  TRANSFERENCIA_INTERNA
+  TRANSFERENCIA
+  DESLIGAMENTO
+  FALECIMENTO
+  REATIVACAO
+}
+
+enum FollowUpType {
+  LIGACAO
+  VISITA
+  MENSAGEM
+  CONVERSA
+}
+
+enum ChurchListType {
+  FORMA_ADMISSAO
+  MOTIVO_INATIVACAO
+  MOTIVO_DESLIGAMENTO
+  CARGO_ECLESIASTICO
+  COMO_CONHECEU
+}
+
+enum ConsentPurpose {
+  CADASTRO
+  MENSAGERIA
+  IMAGEM
+}
+
+enum ConsentMethod {
+  PAPEL
+  PLANILHA
+  DIGITAL
+}
+
+// Acesso do suporte (PRD Acesso › Acesso do suporte do iEzer).
+enum SupportGrantOrigin {
+  PEDIDO_SUPORTE
+  AUTORIZACAO_ADMIN
+  EMERGENCIA
+}
+
+enum SupportGrantStatus {
+  PENDENTE
+  AGUARDANDO_SEGUNDA_APROVACAO
+  ATIVO
+  RECUSADO
+  REVOGADO
+  ENCERRADO
+  CANCELADO
+}
+
+enum SupportEmergencyKind {
+  INCIDENTE
+  ORDEM_JUDICIAL
+  IGREJA_SEM_ADMIN
+}
+
+// User, Session, Account, Verification e TwoFactor seguem o schema do Better Auth
+// (core + plugin twoFactor). A senha fica em Account.password (providerId "credential").
+model User {
+  id               String           @id @default(cuid())
+  name             String
+  email            String           @unique
+  emailVerified    Boolean          @default(false)
+  image            String?
+  twoFactorEnabled Boolean          @default(false)
+  status           UserStatus       @default(ATIVO)
+  // Atendente do suporte do iEzer (RF-SP06): conta nominal, sem atribuições, 2FA obrigatório.
+  isSupportAgent   Boolean          @default(false)
+  lastLoginAt      DateTime?
+  // Versão dos termos de uso e de confidencialidade aceita (RF-CV06, RF-LP07).
+  termsVersion     String?
+  termsAcceptedAt  DateTime?
+  personId         String?          @unique
+  person           Person?          @relation(fields: [personId], references: [id], onDelete: Restrict)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  sessions         Session[]
+  accounts         Account[]
+  twoFactors       TwoFactor[]
+  auditLogs        AuditLog[]
+  assignments      UserAssignment[]
+  followUps        FollowUp[]
+  personEvents     PersonEvent[]
+  consentsRecorded PersonConsent[]
+  invitesSent      Invite[]         @relation("InviteInvitedBy")
+  invitesAccepted  Invite[]         @relation("InviteAcceptedUser")
+  supportRequested SupportGrant[]   @relation("SupportGrantRequestedBy")
+  supportApproved  SupportGrant[]   @relation("SupportGrantApprovedBy")
+  supportClosed    SupportGrant[]   @relation("SupportGrantClosedBy")
+}
+
+model Session {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token            String   @unique
+  expiresAt        DateTime
+  ipAddress        String?
+  userAgent        String?
+  // Cidade aproximada pelo header de geolocalização da Vercel, quando vem (RF-MC04).
+  location         String?
+  // Sessão aberta pelo Google de quem tem 2FA: só vale depois do código (A3 revisto na Sprint 12).
+  twoFactorPending Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId             String
+  providerId            String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+}
+
+model TwoFactor {
+  id                      String    @id @default(cuid())
+  userId                  String
+  user                    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  secret                  String
+  backupCodes             String
+  verified                Boolean   @default(true)
+  // Bloqueio da conta após erros seguidos na verificação do 2FA (plugin twoFactor).
+  failedVerificationCount Int       @default(0)
+  lockedUntil             DateTime?
+
+  @@index([userId])
+}
+
+// Bloqueio do login por e-mail após 5 erros seguidos, progressivo (PRD Acesso, A6). Vale também
+// para e-mail sem usuário, para não revelar quem existe (RF-LG03).
+model LoginLock {
+  email       String    @id
+  failures    Int       @default(0)
+  lockedUntil DateTime?
+  updatedAt   DateTime  @updatedAt
+}
+
+// Sede (parentId nulo) ou congregação (parentId aponta para a sede). Dois níveis só.
 model Organization {
-  id        String   @id @default(cuid())
-  name      String
-  slug      String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                      String                @id @default(cuid())
+  name                    String
+  slug                    String                @unique
+  type                    OrganizationType      @default(SEDE)
+  parentId                String?
+  parent                  Organization?         @relation("OrganizationHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children                Organization[]        @relation("OrganizationHierarchy")
+  cnpj                    String?
+  isActive                Boolean               @default(true)
+  // Checklist de primeiro acesso (RF-OB03): admin conferiu as congregações. Só na sede.
+  congregationsReviewedAt DateTime?
+  // Prazos dos indicadores da jornada (RT-B13). Só na sede; sem valor, os padrões do código.
+  peopleSettings          Json?
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
+  contacts                OrganizationContact[]
+  invites                 Invite[]
+  inviteAssignments       InviteAssignment[]
+  auditLogs               AuditLog[]
+  accessProfiles          AccessProfile[]
+  assignments             UserAssignment[]
+  suppliers               Supplier[]
+  categories              Category[]
+  bankAccounts            BankAccount[]
+  costCenters             CostCenter[]
+  people                  Person[]
+  families                Family[]
+  followUps               FollowUp[]
+  personEvents            PersonEvent[]
+  consents                PersonConsent[]
+  churchLists             ChurchListItem[]
+  payables                Payable[]
+  receivables             Receivable[]
+  supportGrants           SupportGrant[]
+
+  @@index([parentId])
+}
+
+// Contatos da conta: não precisam ser usuários (PRD Acesso, A11).
+model OrganizationContact {
+  id             String                  @id @default(cuid())
+  organizationId String
+  organization   Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  role           OrganizationContactRole
+  name           String
+  jobTitle       String?
+  email          String
+  phone          String?
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+
+  @@unique([organizationId, role])
+}
+
+// Perfil de acesso da igreja-cliente (organizationId = sede), usável em qualquer
+// organização dela. factoryKey marca os perfis de fábrica, que podem ser restaurados.
+model AccessProfile {
+  id                String                    @id @default(cuid())
+  organizationId    String
+  organization      Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  name              String
+  description       String?
+  factoryKey        AccessProfileFactoryKey?
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+  permissions       AccessProfilePermission[]
+  assignments       UserAssignment[]
+  inviteAssignments InviteAssignment[]
+
+  @@unique([organizationId, name])
+  @@unique([organizationId, factoryKey])
+}
+
+// Chave do catálogo em código (src/modules/acesso/permissoes/catalog).
+model AccessProfilePermission {
+  profileId     String
+  profile       AccessProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  permissionKey String
+
+  @@id([profileId, permissionKey])
+}
+
+// Atribuição: perfil dado a um usuário numa organização. Na sede, alcança as congregações.
+model UserAssignment {
+  id             String        @id @default(cuid())
+  userId         String
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profileId      String
+  profile        AccessProfile @relation(fields: [profileId], references: [id], onDelete: Restrict)
+  organizationId String
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdAt      DateTime      @default(now())
+
+  @@unique([userId, profileId, organizationId])
+  @@index([organizationId])
+  @@index([profileId])
+}
+
+// Convite de acesso (RF-CV01 a RF-CV05, RT-AB08). Token só como hash; reenviar troca o hash.
+// "Expirado" é PENDENTE com expiresAt no passado.
+model Invite {
+  id              String             @id @default(cuid())
+  // Sede da igreja-cliente que convidou.
+  churchId        String
+  church          Organization       @relation(fields: [churchId], references: [id], onDelete: Restrict)
+  personId        String
+  person          Person             @relation(fields: [personId], references: [id], onDelete: Restrict)
+  email           String
+  tokenHash       String             @unique
+  status          InviteStatus       @default(PENDENTE)
+  expiresAt       DateTime
+  invitedByUserId String?
+  invitedBy       User?              @relation("InviteInvitedBy", fields: [invitedByUserId], references: [id], onDelete: SetNull)
+  acceptedUserId  String?
+  acceptedUser    User?              @relation("InviteAcceptedUser", fields: [acceptedUserId], references: [id], onDelete: SetNull)
+  acceptedAt      DateTime?
+  canceledAt      DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  assignments     InviteAssignment[]
+
+  @@index([churchId, status])
+  @@index([email, status])
+  @@index([personId])
+}
+
+model InviteAssignment {
+  id             String        @id @default(cuid())
+  inviteId       String
+  invite         Invite        @relation(fields: [inviteId], references: [id], onDelete: Cascade)
+  profileId      String
+  profile        AccessProfile @relation(fields: [profileId], references: [id], onDelete: Restrict)
+  organizationId String
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@unique([inviteId, profileId, organizationId])
+  @@index([profileId])
+  @@index([organizationId])
 }
 
 model AuditLog {
-  id          String    @id @default(cuid())
-  module      ModuleKey
-  action      String
-  description String?
-  createdAt   DateTime  @default(now())
+  id             String         @id @default(cuid())
+  createdAt      DateTime       @default(now())
+  actorType      AuditActorType
+  actorUserId    String?
+  actorUser      User?          @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+  organizationId String?
+  organization   Organization?  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  module         ModuleKey
+  action         String
+  description    String?
+  targetType     String?
+  targetId       String?
+  before         Json?
+  after          Json?
+  ip             String?
+  userAgent      String?
+  // Pessoas afetadas (RF-LP04, aba Histórico). Sem FK: o log sobrevive ao "apagar registro".
+  personIds      String[]       @default([])
+
+  @@index([organizationId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([targetType, targetId])
+  @@index([personIds], type: Gin)
 }
 
 model Supplier {
-  id          String   @id @default(cuid())
-  name        String
-  legalName   String?
-  cnpj        String   @unique
-  email       String?
-  phone       String?
-  pixKey      String?
-  notes       String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  payables    Payable[]
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  name           String
+  legalName      String?
+  cnpj           String
+  email          String?
+  phone          String?
+  pixKey         String?
+  notes          String?
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  payables       Payable[]
+
+  @@unique([organizationId, cnpj])
 }
 
 model Category {
-  id          String       @id @default(cuid())
-  name        String
-  type        CategoryType @default(AMBOS)
-  description String?
-  isActive    Boolean      @default(true)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  payables    Payable[]
-  receivables Receivable[]
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  name           String
+  type           CategoryType @default(AMBOS)
+  description    String?
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  payables       Payable[]
+  receivables    Receivable[]
 
-  @@unique([name, type])
+  @@unique([organizationId, name, type])
 }
 
 model BankAccount {
-  id            String          @id @default(cuid())
-  bankName      String
-  accountName   String
-  accountType   BankAccountType @default(CONTA_CORRENTE)
-  agency        String?
-  accountNumber String?
-  pixKey        String?
-  openingBalance Decimal        @default(0) @db.Decimal(14, 2)
-  notes         String?
-  isActive      Boolean         @default(true)
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-  settledPayables    Payable[]    @relation("PayableSettlementBankAccount")
-  settledReceivables Receivable[] @relation("ReceivableSettlementBankAccount")
+  id                 String          @id @default(cuid())
+  organizationId     String
+  organization       Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  bankName           String
+  accountName        String
+  accountType        BankAccountType @default(CONTA_CORRENTE)
+  agency             String?
+  accountNumber      String?
+  pixKey             String?
+  openingBalance     Decimal         @default(0) @db.Decimal(14, 2)
+  notes              String?
+  isActive           Boolean         @default(true)
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  settledPayables    Payable[]       @relation("PayableSettlementBankAccount")
+  settledReceivables Receivable[]    @relation("ReceivableSettlementBankAccount")
 
-  @@unique([bankName, accountName])
+  @@unique([organizationId, bankName, accountName])
 }
 
 model CostCenter {
-  id          String   @id @default(cuid())
-  name        String
-  code        String?  @unique
-  description String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  name           String
+  code           String?
+  description    String?
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
-  @@unique([name])
+  @@unique([organizationId, name])
+  @@unique([organizationId, code])
 }
 
-model Member {
-  id          String       @id @default(cuid())
-  name        String
-  document    String?      @unique
-  email       String?
-  phone       String?
-  cellName    String?
-  birthDate   DateTime?
-  notes       String?
-  isActive    Boolean      @default(true)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  receivables Receivable[]
+// Pessoa (D1): o cadastro único de gente da igreja. Datas civis em @db.Date (RT-B05);
+// telefones só com dígitos e DDI (RT-B06); CPF só com dígitos, único por organização (RT-B07).
+model Person {
+  id                    String             @id @default(cuid())
+  organizationId        String
+  organization          Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  // Nome completo civil; visitante pode ter só o primeiro nome.
+  name                  String
+  preferredName         String?
+  // name + preferredName em minúsculas e sem acento, para a busca.
+  searchName            String
+  sex                   Sex?
+  birthDate             DateTime?          @db.Date
+  maritalStatus         MaritalStatus?
+  cpf                   String?
+  otherDocumentType     OtherDocumentType?
+  otherDocumentNumber   String?
+  mobilePhone           String?
+  mobileIsWhatsapp      Boolean            @default(false)
+  secondaryPhone        String?
+  email                 String?
+  postalCode            String?
+  street                String?
+  number                String?
+  complement            String?
+  district              String?
+  city                  String?
+  state                 String?
+  bond                  PersonBond         @default(VISITANTE)
+  // Desde quando está no vínculo atual (indicadores do Painel).
+  bondSince             DateTime?          @db.Date
+  status                PersonStatus       @default(ATIVO)
+  firstVisitDate        DateTime?          @db.Date
+  conversionDate        DateTime?          @db.Date
+  presentationDate      DateTime?          @db.Date
+  isBaptized            Boolean            @default(false)
+  baptismDate           DateTime?          @db.Date
+  baptismChurch         String?
+  infantBaptism         Boolean            @default(false)
+  professionOfFaithDate DateTime?          @db.Date
+  admissionMethodId     String?
+  admissionMethod       ChurchListItem?    @relation(fields: [admissionMethodId], references: [id], onDelete: Restrict)
+  admissionDate         DateTime?          @db.Date
+  originChurch          String?
+  // Legado do cadastro de membros: só leitura até existir a entidade Célula.
+  cellName              String?
+  notes                 String?
+  // Última mudança de celular, telefone, email ou endereço (indicador de contato desatualizado).
+  contactUpdatedAt      DateTime           @default(now())
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+  receivables           Receivable[]
+  user                  User?
+  familyMember          FamilyMember?
+  followUps             FollowUp[]
+  events                PersonEvent[]
+  consents              PersonConsent[]    @relation("ConsentSubject")
+  consentsGiven         PersonConsent[]    @relation("ConsentGiver")
+  invites               Invite[]
 
-  @@index([name])
-  @@index([isActive])
+  @@unique([organizationId, cpf])
+  @@index([organizationId, name])
+  @@index([organizationId, status])
+  @@index([birthDate])
+}
+
+// Família = domicílio (RF-F01). Uma família por pessoa (FamilyMember.personId único).
+model Family {
+  id             String         @id @default(cuid())
+  organizationId String
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  name           String
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  members        FamilyMember[]
+
+  @@index([organizationId])
+}
+
+model FamilyMember {
+  id        String     @id @default(cuid())
+  familyId  String
+  family    Family     @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  personId  String     @unique
+  person    Person     @relation(fields: [personId], references: [id], onDelete: Restrict)
+  role      FamilyRole
+  createdAt DateTime   @default(now())
+
+  @@index([familyId])
+}
+
+// Acompanhamento (D15, RT-B12): contato de cuidado, não confidencial.
+model FollowUp {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  personId       String
+  person         Person       @relation(fields: [personId], references: [id], onDelete: Restrict)
+  date           DateTime     @db.Date
+  type           FollowUpType
+  authorUserId   String
+  author         User         @relation(fields: [authorUserId], references: [id], onDelete: Restrict)
+  note           String?
+  createdAt      DateTime     @default(now())
+
+  @@index([personId, date])
+  @@index([organizationId, date])
+}
+
+// Consentimento por finalidade (RF-P02, RF-P09). givenByPersonId = responsável que
+// consentiu pelo menor; nulo quando foi o próprio titular.
+model PersonEvent {
+  id             String          @id @default(cuid())
+  // Organização da pessoa quando o evento aconteceu (na transferência interna, a de origem).
+  organizationId String
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  personId       String
+  person         Person          @relation(fields: [personId], references: [id], onDelete: Restrict)
+  type           PersonEventType
+  date           DateTime        @db.Date
+  fromBond       PersonBond?
+  toBond         PersonBond?
+  fromStatus     PersonStatus?
+  toStatus       PersonStatus?
+  reasonId       String?
+  reason         ChurchListItem? @relation(fields: [reasonId], references: [id], onDelete: Restrict)
+  note           String?
+  // Transferência: organização de destino ou igreja de destino e carta emitida.
+  details        Json?
+  authorUserId   String
+  author         User            @relation(fields: [authorUserId], references: [id], onDelete: Restrict)
+  createdAt      DateTime        @default(now())
+
+  @@index([personId, date])
+  @@index([organizationId, type, date])
+}
+
+model PersonConsent {
+  id               String         @id @default(cuid())
+  organizationId   String
+  organization     Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  personId         String
+  person           Person         @relation("ConsentSubject", fields: [personId], references: [id], onDelete: Cascade)
+  purpose          ConsentPurpose
+  givenByPersonId  String?
+  givenBy          Person?        @relation("ConsentGiver", fields: [givenByPersonId], references: [id], onDelete: Restrict)
+  method           ConsentMethod
+  textVersion      String
+  givenAt          DateTime
+  revokedAt        DateTime?
+  recordedByUserId String?
+  recordedBy       User?          @relation(fields: [recordedByUserId], references: [id], onDelete: Restrict)
+  createdAt        DateTime       @default(now())
+
+  @@index([personId, purpose])
+  @@index([givenByPersonId])
+}
+
+// Listas da igreja (RF-S01): ficam na sede e valem para as congregações.
+model ChurchListItem {
+  id             String         @id @default(cuid())
+  organizationId String
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  type           ChurchListType
+  name           String
+  sortOrder      Int            @default(0)
+  isActive       Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  admittedPeople Person[]
+  personEvents   PersonEvent[]
+
+  @@unique([organizationId, type, name])
 }
 
 model Payable {
-  id          String        @id @default(cuid())
-  description String
-  supplierId  String?
-  supplier    Supplier?     @relation(fields: [supplierId], references: [id], onDelete: SetNull)
-  categoryId  String?
-  category    Category?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  dueDate     DateTime
-  amount      Decimal       @db.Decimal(14, 2)
-  status      PayableStatus @default(PENDENTE)
-  settledAmount Decimal?    @db.Decimal(14, 2)
-  settledAt   DateTime?
-  settlementMethod String?
+  id                      String               @id @default(cuid())
+  organizationId          String
+  organization            Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  description             String
+  supplierId              String?
+  supplier                Supplier?            @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  categoryId              String?
+  category                Category?            @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  dueDate                 DateTime
+  amount                  Decimal              @db.Decimal(14, 2)
+  status                  PayableStatus        @default(PENDENTE)
+  settledAmount           Decimal?             @db.Decimal(14, 2)
+  settledAt               DateTime?
+  settlementMethod        String?
   settlementBankAccountId String?
-  settlementBankAccount BankAccount? @relation("PayableSettlementBankAccount", fields: [settlementBankAccountId], references: [id], onDelete: SetNull)
-  isRecurring Boolean       @default(false)
-  recurrenceFrequency RecurrenceFrequency?
-  recurrenceCount Int?
-  recurrenceGroupId String?
-  notes       String?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  settlementBankAccount   BankAccount?         @relation("PayableSettlementBankAccount", fields: [settlementBankAccountId], references: [id], onDelete: SetNull)
+  isRecurring             Boolean              @default(false)
+  recurrenceFrequency     RecurrenceFrequency?
+  recurrenceCount         Int?
+  recurrenceGroupId       String?
+  notes                   String?
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
 
+  @@index([organizationId])
   @@index([supplierId])
   @@index([categoryId])
   @@index([dueDate])
@@ -189,33 +751,74 @@ model Payable {
 }
 
 model Receivable {
-  id          String           @id @default(cuid())
-  description String
-  source      String
-  memberId    String?
-  member      Member?          @relation(fields: [memberId], references: [id], onDelete: SetNull)
-  categoryId  String?
-  category    Category?        @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  dueDate     DateTime
-  amount      Decimal          @db.Decimal(14, 2)
-  status      ReceivableStatus @default(PENDENTE)
-  settledAmount Decimal?       @db.Decimal(14, 2)
-  settledAt   DateTime?
-  settlementMethod String?
+  id                      String               @id @default(cuid())
+  organizationId          String
+  organization            Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  description             String
+  source                  String
+  personId                String?
+  person                  Person?              @relation(fields: [personId], references: [id], onDelete: Restrict)
+  categoryId              String?
+  category                Category?            @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  dueDate                 DateTime
+  amount                  Decimal              @db.Decimal(14, 2)
+  status                  ReceivableStatus     @default(PENDENTE)
+  settledAmount           Decimal?             @db.Decimal(14, 2)
+  settledAt               DateTime?
+  settlementMethod        String?
   settlementBankAccountId String?
-  settlementBankAccount BankAccount? @relation("ReceivableSettlementBankAccount", fields: [settlementBankAccountId], references: [id], onDelete: SetNull)
-  isRecurring Boolean          @default(false)
-  recurrenceFrequency RecurrenceFrequency?
-  recurrenceCount Int?
-  recurrenceGroupId String?
-  notes       String?
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
+  settlementBankAccount   BankAccount?         @relation("ReceivableSettlementBankAccount", fields: [settlementBankAccountId], references: [id], onDelete: SetNull)
+  isRecurring             Boolean              @default(false)
+  recurrenceFrequency     RecurrenceFrequency?
+  recurrenceCount         Int?
+  recurrenceGroupId       String?
+  notes                   String?
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
 
-  @@index([memberId])
+  @@index([organizationId])
+  @@index([personId])
   @@index([categoryId])
   @@index([dueDate])
   @@index([status])
   @@index([recurrenceGroupId])
   @@index([settlementBankAccountId])
+}
+
+// Autorização de acesso do suporte a uma igreja (RF-SP01 a RF-SP09, RT-AB11). Vale para a equipe
+// do suporte, na sede e nas congregações; cada ação fica no log com o nome do atendente. Ativo =
+// status ATIVO e expiresAt no futuro: expirar não precisa de job.
+model SupportGrant {
+  id                 String                @id @default(cuid())
+  churchId           String
+  church             Organization          @relation(fields: [churchId], references: [id], onDelete: Restrict)
+  origin             SupportGrantOrigin
+  status             SupportGrantStatus
+  emergencyKind      SupportEmergencyKind?
+  ticket             String?
+  reason             String
+  // Módulos do catálogo de permissões liberados (pessoas, financeiro, acesso).
+  scope              String[]
+  canWrite           Boolean               @default(false)
+  writeJustification String?
+  durationHours      Int
+  requestedById      String?
+  requestedBy        User?                 @relation("SupportGrantRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
+  requestedAt        DateTime              @default(now())
+  // Admin da igreja que autorizou ou, na emergência, o segundo atendente.
+  approvedById       String?
+  approvedBy         User?                 @relation("SupportGrantApprovedBy", fields: [approvedById], references: [id], onDelete: Restrict)
+  approvedAt         DateTime?
+  startsAt           DateTime?
+  expiresAt          DateTime?
+  // Recusa, revogação, encerramento ou cancelamento.
+  closedById         String?
+  closedBy           User?                 @relation("SupportGrantClosedBy", fields: [closedById], references: [id], onDelete: Restrict)
+  closedAt           DateTime?
+  closeReason        String?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  @@index([churchId, status])
+  @@index([status, expiresAt])
 }

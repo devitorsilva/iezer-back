@@ -8,3 +8,6 @@ coverage/
 .logs/
 generated/
 
+backups/
+
+.DS_Store

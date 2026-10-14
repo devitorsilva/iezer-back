@@ -1,4 +1,6 @@
 import { Prisma, type Supplier } from "@prisma/client";
+import { requireWriteOrganization, type RequestContext } from "../../../lib/access.js";
+import { runAudited, type AuditEntry } from "../../../lib/audit.js";
 import { SupplierRepository } from "./repository.js";
 import type { SupplierPayload } from "./schemas.js";
 
@@ -22,68 +24,77 @@ function mapSupplier(supplier: Supplier) {
   };
 }
 
+type SupplierDto = ReturnType<typeof mapSupplier>;
+
+function auditEntry(
+  action: string,
+  organizationId: string,
+  targetId: string,
+  data: { before?: SupplierDto; after?: SupplierDto },
+): AuditEntry {
+  return { organizationId, module: "CADASTRO", action, targetType: "Supplier", targetId, ...data };
+}
+
 export class SupplierService {
   constructor(private readonly repository: SupplierRepository) {}
 
-  async list() {
-    const suppliers = await this.repository.findAll();
-    return suppliers.map(mapSupplier);
+  async list(context: RequestContext) {
+    const items = await this.repository.findAll(context.readOrganizationIds);
+    return items.map(mapSupplier);
   }
 
-  async getById(id: string) {
-    const supplier = await this.repository.findById(id);
-
-    if (!supplier) {
-      throw new SupplierNotFoundError();
-    }
-
+  async getById(context: RequestContext, id: string) {
+    const supplier = await this.repository.findById(id, context.readOrganizationIds);
+    if (!supplier) throw new SupplierNotFoundError();
     return mapSupplier(supplier);
   }
 
-  async create(payload: SupplierPayload) {
+  async create(context: RequestContext, payload: SupplierPayload) {
+    const organizationId = requireWriteOrganization(context);
+
     try {
-      const supplier = await this.repository.create(payload);
-      return mapSupplier(supplier);
+      return await runAudited(context.actor, async (tx, audit) => {
+        const created = mapSupplier(await this.repository.create(payload, organizationId, tx));
+        await audit(auditEntry("criar", organizationId, created.id, { after: created }));
+        return created;
+      });
     } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === "P2002"
-      ) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
         throw new SupplierCnpjConflictError();
       }
-
       throw error;
     }
   }
 
-  async update(id: string, payload: SupplierPayload) {
-    await this.assertExists(id);
-
+  async update(context: RequestContext, id: string, payload: SupplierPayload) {
     try {
-      const supplier = await this.repository.update(id, payload);
-      return mapSupplier(supplier);
+      return await runAudited(context.actor, async (tx, audit) => {
+        const existing = await this.assertExists(context, id, tx);
+        const updated = mapSupplier(await this.repository.update(id, payload, tx));
+        await audit(
+          auditEntry("editar", existing.organizationId, id, { before: mapSupplier(existing), after: updated }),
+        );
+        return updated;
+      });
     } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === "P2002"
-      ) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
         throw new SupplierCnpjConflictError();
       }
-
       throw error;
     }
   }
 
-  async remove(id: string) {
-    await this.assertExists(id);
-    await this.repository.delete(id);
+  async remove(context: RequestContext, id: string) {
+    await runAudited(context.actor, async (tx, audit) => {
+      const existing = await this.assertExists(context, id, tx);
+      await this.repository.delete(id, tx);
+      await audit(auditEntry("excluir", existing.organizationId, id, { before: mapSupplier(existing) }));
+    });
   }
 
-  private async assertExists(id: string) {
-    const supplier = await this.repository.findById(id);
-
-    if (!supplier) {
-      throw new SupplierNotFoundError();
-    }
+  private async assertExists(context: RequestContext, id: string, tx: Prisma.TransactionClient) {
+    const supplier = await this.repository.findById(id, context.readOrganizationIds, tx);
+    if (!supplier) throw new SupplierNotFoundError();
+    return supplier;
   }
 }

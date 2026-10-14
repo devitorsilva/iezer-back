@@ -1,4 +1,8 @@
+import type { Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
+import { requireWriteOrganization, type RequestContext } from "../../../lib/access.js";
+import { runAudited, type AuditEntry } from "../../../lib/audit.js";
+import { assertReferencesInOrganization } from "../../../lib/organization.js";
 import type { ReceivableCreatePayload, ReceivableWithCategory, ReceivableRepository } from "./repository.js";
 import type { ReceivablePayload, ReceivableQuery, ReceivableSettlementPayload } from "./schemas.js";
 
@@ -8,13 +12,15 @@ export class ReceivableNotFoundError extends Error {
   }
 }
 
-function mapReceivable(receivable: ReceivableWithCategory) {
+// O nome da pessoa só aparece para quem também tem "Ver pessoas" (PRD Acesso › Catálogo do Financeiro).
+function mapReceivable(receivable: ReceivableWithCategory, showPerson = true) {
   return {
     id: receivable.id,
     description: receivable.description,
     source: receivable.source,
-    memberId: receivable.memberId,
-    memberName: receivable.member?.name ?? null,
+    organizationId: receivable.organizationId,
+    personId: receivable.personId,
+    personName: showPerson ? (receivable.person?.name ?? null) : null,
     categoryId: receivable.categoryId,
     categoryName: receivable.category?.name ?? null,
     dueDate: receivable.dueDate.toISOString(),
@@ -90,54 +96,121 @@ function buildRecurringPayloads(payload: ReceivablePayload): ReceivableCreatePay
   }));
 }
 
+type ReceivableDto = ReturnType<typeof mapReceivable>;
+
+function auditEntry(
+  action: string,
+  organizationId: string,
+  targetId: string,
+  data: { before?: ReceivableDto; after?: ReceivableDto },
+): AuditEntry {
+  return { organizationId, module: "FINANCEIRO", action, targetType: "Receivable", targetId, ...data };
+}
+
 export class ReceivableService {
   constructor(private readonly repository: ReceivableRepository) {}
 
-  async list(query: ReceivableQuery) {
-    const items = await this.repository.findAll(query);
-    return items.map(mapReceivable);
+  async list(context: RequestContext, query: ReceivableQuery) {
+    const items = await this.repository.findAll(context.readOrganizationIds, query);
+    const showPerson = context.permissions.has("pessoas.ver");
+    return items.map((item) => mapReceivable(item, showPerson));
   }
 
-  async create(payload: ReceivablePayload) {
+  async create(context: RequestContext, payload: ReceivablePayload) {
+    const organizationId = requireWriteOrganization(context);
     const payloads = buildRecurringPayloads(payload);
-    if (payloads.length === 1) {
-      return { items: [mapReceivable(await this.repository.create(payloads[0]))] };
-    }
+    const showPerson = context.permissions.has("pessoas.ver");
 
-    const result = await this.repository.createMany(payloads);
-    return { items: [], count: result.count };
+    return runAudited(context.actor, async (tx, audit) => {
+      await assertReferencesInOrganization(tx, organizationId, {
+        personId: payload.personId,
+        categoryId: payload.categoryId,
+      });
+
+      if (payloads.length === 1) {
+        const created = await this.repository.create(payloads[0], organizationId, tx);
+        await audit(auditEntry("criar", organizationId, created.id, { after: mapReceivable(created) }));
+        return { items: [mapReceivable(created, showPerson)] };
+      }
+
+      const created = await this.repository.createMany(payloads, organizationId, tx);
+      await audit(created.map((item) => auditEntry("criar", organizationId, item.id, { after: mapReceivable(item) })));
+      return { items: [], count: created.length };
+    });
   }
 
-  async update(id: string, payload: ReceivablePayload) {
-    await this.assertExists(id);
-    return mapReceivable(await this.repository.update(id, payload));
+  async update(context: RequestContext, id: string, payload: ReceivablePayload) {
+    return runAudited(context.actor, async (tx, audit) => {
+      const existing = await this.assertExists(context, id, tx);
+      await assertReferencesInOrganization(tx, existing.organizationId, {
+        personId: payload.personId,
+        categoryId: payload.categoryId,
+      });
+
+      const updated = await this.repository.update(id, payload, tx);
+      await audit(
+        auditEntry("editar", existing.organizationId, id, {
+          before: mapReceivable(existing),
+          after: mapReceivable(updated),
+        }),
+      );
+      return mapReceivable(updated, context.permissions.has("pessoas.ver"));
+    });
   }
 
-  async settle(id: string, payload: ReceivableSettlementPayload = {}) {
-    const receivable = await this.assertExists(id);
-    return mapReceivable(
-      await this.repository.settle(id, {
-        settledAmount: payload.settledAmount ?? receivable.amount.toNumber(),
-        settledAt: payload.settledAt ?? new Date(),
-        settlementMethod: payload.settlementMethod,
-        settlementBankAccountId: payload.settlementBankAccountId,
-      }),
-    );
+  async settle(context: RequestContext, id: string, payload: ReceivableSettlementPayload = {}) {
+    return runAudited(context.actor, async (tx, audit) => {
+      const receivable = await this.assertExists(context, id, tx);
+      await assertReferencesInOrganization(tx, receivable.organizationId, {
+        bankAccountId: payload.settlementBankAccountId,
+      });
+
+      const settled = await this.repository.settle(
+        id,
+        {
+          settledAmount: payload.settledAmount ?? receivable.amount.toNumber(),
+          settledAt: payload.settledAt ?? new Date(),
+          settlementMethod: payload.settlementMethod,
+          settlementBankAccountId: payload.settlementBankAccountId,
+        },
+        tx,
+      );
+      await audit(
+        auditEntry("baixar", receivable.organizationId, id, {
+          before: mapReceivable(receivable),
+          after: mapReceivable(settled),
+        }),
+      );
+      return mapReceivable(settled, context.permissions.has("pessoas.ver"));
+    });
   }
 
-  async remove(id: string, scope: "single" | "series" = "single") {
-    const receivable = await this.assertExists(id);
+  async remove(context: RequestContext, id: string, scope: "single" | "series" = "single") {
+    await runAudited(context.actor, async (tx, audit) => {
+      const receivable = await this.assertExists(context, id, tx);
 
-    if (scope === "series" && receivable.recurrenceGroupId) {
-      await this.repository.deleteByRecurrenceGroupId(receivable.recurrenceGroupId);
-      return;
-    }
+      if (scope === "series" && receivable.recurrenceGroupId) {
+        const series = await this.repository.findByRecurrenceGroupId(
+          receivable.recurrenceGroupId,
+          receivable.organizationId,
+          tx,
+        );
+        await this.repository.deleteByRecurrenceGroupId(receivable.recurrenceGroupId, receivable.organizationId, tx);
+        await audit(
+          series.map((item) =>
+            auditEntry("excluir", item.organizationId, item.id, { before: mapReceivable(item) }),
+          ),
+        );
+        return;
+      }
 
-    await this.repository.delete(id);
+      await this.repository.delete(id, tx);
+      await audit(auditEntry("excluir", receivable.organizationId, id, { before: mapReceivable(receivable) }));
+    });
   }
 
-  private async assertExists(id: string) {
-    const receivable = await this.repository.findById(id);
+  private async assertExists(context: RequestContext, id: string, tx: Prisma.TransactionClient) {
+    const receivable = await this.repository.findById(id, context.readOrganizationIds, tx);
     if (!receivable) throw new ReceivableNotFoundError();
     return receivable;
   }

@@ -2,7 +2,7 @@ import { Prisma, type Receivable } from "@prisma/client";
 import { prisma } from "../../../lib/prisma.js";
 import type { ReceivablePayload, ReceivableQuery, ReceivableSettlementPayload } from "./schemas.js";
 
-const include = { category: true, member: true, settlementBankAccount: true } satisfies Prisma.ReceivableInclude;
+const include = { category: true, person: true, settlementBankAccount: true } satisfies Prisma.ReceivableInclude;
 
 export type ReceivableCreatePayload = ReceivablePayload & {
   recurrenceGroupId?: string;
@@ -11,15 +11,19 @@ export type ReceivableCreatePayload = ReceivablePayload & {
 function mapPayload(payload: ReceivableCreatePayload) {
   return {
     ...payload,
+    personId: payload.personId ?? null,
     amount: new Prisma.Decimal(payload.amount),
   };
 }
 
-function buildWhere(query: ReceivableQuery): Prisma.ReceivableWhereInput {
+type Db = Prisma.TransactionClient;
+
+function buildWhere(organizationIds: string[], query: ReceivableQuery): Prisma.ReceivableWhereInput {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
   return {
+    organizationId: { in: organizationIds },
     ...(query.overdue ? { status: { not: "RECEBIDO" }, dueDate: { lt: today } } : {}),
     ...(!query.overdue && query.status ? { status: query.status } : {}),
     ...(query.categoryId ? { categoryId: query.categoryId } : {}),
@@ -28,7 +32,7 @@ function buildWhere(query: ReceivableQuery): Prisma.ReceivableWhereInput {
           OR: [
             { description: { contains: query.q, mode: "insensitive" } },
             { source: { contains: query.q, mode: "insensitive" } },
-            { member: { name: { contains: query.q, mode: "insensitive" } } },
+            { person: { name: { contains: query.q, mode: "insensitive" } } },
           ],
         }
       : {}),
@@ -45,39 +49,54 @@ function buildWhere(query: ReceivableQuery): Prisma.ReceivableWhereInput {
 
 export type ReceivableWithCategory = Receivable & {
   category: { id: string; name: string } | null;
-  member: { id: string; name: string } | null;
+  person: { id: string; name: string } | null;
   settlementBankAccount: { id: string; accountName: string; bankName: string } | null;
 };
 
 export class ReceivableRepository {
-  findAll(query: ReceivableQuery): Promise<ReceivableWithCategory[]> {
+  findAll(organizationIds: string[], query: ReceivableQuery): Promise<ReceivableWithCategory[]> {
     return prisma.receivable.findMany({
-      where: buildWhere(query),
+      where: buildWhere(organizationIds, query),
       include,
       orderBy: [{ dueDate: "asc" }, { description: "asc" }],
     });
   }
 
-  findById(id: string): Promise<ReceivableWithCategory | null> {
-    return prisma.receivable.findUnique({ where: { id }, include });
+  findById(id: string, organizationIds: string[], db: Db = prisma): Promise<ReceivableWithCategory | null> {
+    return db.receivable.findFirst({ where: { id, organizationId: { in: organizationIds } }, include });
   }
 
-  create(payload: ReceivableCreatePayload): Promise<ReceivableWithCategory> {
-    return prisma.receivable.create({ data: mapPayload(payload), include });
+  findByRecurrenceGroupId(recurrenceGroupId: string, organizationId: string, db: Db = prisma) {
+    return db.receivable.findMany({ where: { recurrenceGroupId, organizationId }, include });
   }
 
-  createMany(payloads: ReceivableCreatePayload[]): Promise<Prisma.BatchPayload> {
-    return prisma.receivable.createMany({
-      data: payloads.map(mapPayload),
+  create(payload: ReceivableCreatePayload, organizationId: string, db: Db = prisma): Promise<ReceivableWithCategory> {
+    return db.receivable.create({ data: { ...mapPayload(payload), organizationId }, include });
+  }
+
+  async createMany(
+    payloads: ReceivableCreatePayload[],
+    organizationId: string,
+    db: Db = prisma,
+  ): Promise<ReceivableWithCategory[]> {
+    const created = await db.receivable.createManyAndReturn({
+      data: payloads.map((payload) => ({ ...mapPayload(payload), organizationId })),
+      select: { id: true },
+    });
+
+    return db.receivable.findMany({
+      where: { id: { in: created.map(({ id }) => id) } },
+      include,
+      orderBy: { dueDate: "asc" },
     });
   }
 
-  update(id: string, payload: ReceivablePayload): Promise<ReceivableWithCategory> {
-    return prisma.receivable.update({ where: { id }, data: mapPayload(payload), include });
+  update(id: string, payload: ReceivablePayload, db: Db = prisma): Promise<ReceivableWithCategory> {
+    return db.receivable.update({ where: { id }, data: mapPayload(payload), include });
   }
 
-  settle(id: string, payload: ReceivableSettlementPayload): Promise<ReceivableWithCategory> {
-    return prisma.receivable.update({
+  settle(id: string, payload: ReceivableSettlementPayload, db: Db = prisma): Promise<ReceivableWithCategory> {
+    return db.receivable.update({
       where: { id },
       data: {
         status: "RECEBIDO",
@@ -90,11 +109,11 @@ export class ReceivableRepository {
     });
   }
 
-  delete(id: string): Promise<Receivable> {
-    return prisma.receivable.delete({ where: { id } });
+  delete(id: string, db: Db = prisma): Promise<Receivable> {
+    return db.receivable.delete({ where: { id } });
   }
 
-  deleteByRecurrenceGroupId(recurrenceGroupId: string): Promise<Prisma.BatchPayload> {
-    return prisma.receivable.deleteMany({ where: { recurrenceGroupId } });
+  deleteByRecurrenceGroupId(recurrenceGroupId: string, organizationId: string, db: Db = prisma): Promise<Prisma.BatchPayload> {
+    return db.receivable.deleteMany({ where: { recurrenceGroupId, organizationId } });
   }
 }
