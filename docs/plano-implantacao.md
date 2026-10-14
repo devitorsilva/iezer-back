@@ -39,8 +39,17 @@ Ambiente: Claude Code no Cursor, aberto no `iezer-back`.
 | 11     | Pessoas: importação pela planilha modelo             | back + front              |                                             |
 | 12     | Google, 2FA, alertas e Minha conta                   | back + front              | **Gate de produção:** dados reais da piloto |
 | 13     | Acesso do suporte                                    | back + front              |                                             |
+| 14     | Homologação no navegador e correções                 | back + front              | Base real da piloto só depois do Go-live    |
 
 Depois do MVP: itens F2 dos dois PRDs, priorizados com a igreja piloto.
+
+**Go-live** (quando houver produção; antes de qualquer dado real da piloto):
+
+- Banco de produção novo, separado do de homologação, com backup diário e, se o provedor permitir, na região de São Paulo. Com banco novo as migrações rodam do zero, sem `migrate resolve` do baseline.
+- Domínio de e-mail no Resend com SPF e DKIM (RT-AB12).
+- Texto final dos termos de uso e de confidencialidade (`TERMS_VERSION`) e contrato com a igreja com as cláusulas de operador.
+- `docs/go-live.md`: variáveis do Render e da Vercel (com `BETTER_AUTH_SECRET` e segredo do Google próprios de produção), `migrate deploy`, seeds, `igreja:criar` com os dados reais, `suporte:agente`, conferências pós-deploy (IP, headers `x-vercel-ip-*`, `trustedOrigins`, cookie) e teste rápido.
+- Homologação repetida em produção, só com dados fictícios, antes de importar a base real.
 
 **Painel administrativo do iEzer** (depois do MVP; RT-AB14, A10, A11, RF-OB01). Hoje existe só o back-office do suporte em `/app/suporte`, mais os scripts `igreja:criar` e `suporte:agente`. O painel deve cobrir:
 
@@ -185,12 +194,22 @@ Decisão em aberto: o RT-AB14 pede autenticação própria da equipe, o que apon
 - Alertas por e-mail; Minha conta (senha, 2FA, sessões, meus acessos, trocar e-mail).
 - **IDs:** RF-LG02, RF-LG04, RF-CV07, RF-RS05, RF-MC01 a RF-MC06; Acesso › Segurança e sessão (2FA, Alertas, Encerramento imediato).
 - **Pronto quando:** o Pastor de teste é obrigado a configurar o 2FA e o login com Google funciona.
-- **Gate de produção:** depois desta sprint, a base real da igreja piloto pode ser importada.
+- Dados reais da piloto só entram depois do Go-live (ver "Go-live", depois do mapa).
 
 ## Sprint 13 — Acesso do suporte `[x]`
 
 - `SupportGrant`, autorização pelo admin, faixa de acesso ativo, revogação, bloqueio de notas pastorais, emergência com dupla aprovação.
 - **IDs:** RF-SP01 a RF-SP12, RT-AB11.
+
+## Sprint 14 — Homologação no navegador e correções `[ ]`
+
+**Objetivo:** validar no navegador, no ambiente de homologação atual, tudo o que até aqui foi testado só por typecheck e por HTTP.
+
+- **[usuário]** Seguir `docs/homologacao.md` no desktop e no celular, primeiro sozinho e depois com o pastor. Anotar os achados na tabela do fim do roteiro.
+- Enquanto o Resend não tiver domínio, os fluxos de e-mail (convite, código do 2FA, alertas, redefinição) são testados pelo log do back ou pelo "Copiar link".
+- Claude Code: corrigir os achados em janelas "Sprint 14 — correções", em lotes por tela, começando pelos que bloqueiam. Já conhecido: botões de gestão visíveis ao atendente em somente leitura (Perfis, Organização).
+- Usar só dados fictícios: o banco atual não tem backup e guarda registros de auditoria que não podem ser apagados.
+- **Pronto quando:** o roteiro passa sem achados que bloqueiam, e o pastor percorreu as jornadas dele.
 
 ---
 
