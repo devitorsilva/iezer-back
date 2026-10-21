@@ -6,7 +6,7 @@ type Db = Prisma.TransactionClient;
 const include = {
   church: { select: { id: true, name: true } },
   person: { select: { id: true, name: true, email: true, organizationId: true } },
-  invitedBy: { select: { id: true, name: true } },
+  invitedBy: { select: { id: true, name: true, teamMember: { select: { id: true } } } },
   assignments: {
     select: {
       organization: { select: { id: true, name: true, type: true } },

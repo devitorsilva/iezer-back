@@ -15,6 +15,10 @@ export class OrganizationRepository {
     return db.organization.findFirst({ where: { id: churchId, type: "SEDE" }, include: churchInclude });
   }
 
+  findChurchByCnpj(cnpj: string, db: Db = prisma) {
+    return db.organization.findFirst({ where: { cnpj, parentId: null }, select: { id: true, name: true } });
+  }
+
   findCongregation(id: string, churchId: string, db: Db = prisma) {
     return db.organization.findFirst({ where: { id, parentId: churchId } });
   }

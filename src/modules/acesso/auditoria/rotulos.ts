@@ -82,6 +82,7 @@ export const ACTION_LABELS: Record<string, string> = {
   suporte_emergencia_aprovar: "Emergência do suporte aprovada",
   suporte_recuperar_admin: "Admin nomeado pelo suporte",
   suporte_ler: "Suporte abriu tela ou registro",
+  suporte_reenviar_convite: "Convite de admin reenviado pelo suporte",
   // Equipe iEzer (back-office; só na auditoria interna)
   convidar_equipe: "Membro da equipe convidado",
   reenviar_convite_equipe: "Convite da equipe reenviado",
@@ -117,6 +118,7 @@ export const ACTION_LABELS: Record<string, string> = {
   desativar_congregacao: "Congregação desativada",
   reativar_congregacao: "Congregação reativada",
   editar_encarregado_lgpd: "Encarregado de LGPD editado",
+  editar_responsavel_conta: "Contato do responsável pela conta editado",
   remover_encarregado_lgpd: "Encarregado de LGPD removido",
   conferir_congregacoes: "Congregações conferidas",
 };

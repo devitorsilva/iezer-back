@@ -23,7 +23,9 @@ export function inviteEmail(input: {
   inviterName: string | null;
   token: string;
 }): MailMessage {
-  const who = input.inviterName ? `${input.inviterName} convidou você` : "Você foi convidado(a)";
+  const who = input.inviterName
+    ? `${input.inviterName === "Equipe iEzer" ? "A equipe iEzer" : input.inviterName} convidou você`
+    : "Você foi convidado(a)";
 
   return {
     to: input.to,
@@ -402,6 +404,33 @@ export function adminRecoveryNotice(input: {
       `nomeou ${input.adminName} como administrador(a), com o perfil Pastor na sede` +
       (input.viaInvite ? `; o convite foi enviado para o e-mail informado.` : `.`) +
       `\n\nSe você não reconhece esse pedido, fale com o iEzer imediatamente.` +
+      SIGNATURE,
+  };
+}
+
+// Ação da equipe sem acesso aos dados (B9, RF-BO32): o responsável pela conta é avisado, com o
+// motivo e o chamado. action completa a frase "o suporte do iEzer (nome) ...".
+export function teamActionNotice(input: {
+  to: string;
+  name: string;
+  churchName: string;
+  agentName: string;
+  action: string;
+  reason: string;
+  ticket: string | null;
+}): MailMessage {
+  return {
+    to: input.to,
+    churchName: input.churchName,
+    subject: "Ação do suporte do iEzer na conta da sua igreja",
+    text:
+      `Olá, ${firstName(input.name)}!\n\n` +
+      `Como responsável pela conta da ${input.churchName}, avisamos que o suporte do iEzer ` +
+      `(${input.agentName}) ${input.action}.\n\n` +
+      `Motivo: ${input.reason}` +
+      (input.ticket ? `\nChamado: ${input.ticket}` : "") +
+      `\n\nA ação está registrada na Auditoria da igreja, no filtro "Suporte iEzer". ` +
+      `Se você não reconhece esse pedido, fale com o iEzer imediatamente.` +
       SIGNATURE,
   };
 }

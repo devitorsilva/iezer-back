@@ -5,8 +5,8 @@ import { OrganizationRepository } from "./repository.js";
 import { OrganizationService } from "./service.js";
 
 const repository = new OrganizationRepository();
-const service = new OrganizationService(repository);
-const controller = new OrganizationController(service);
+export const organizationService = new OrganizationService(repository);
+const controller = new OrganizationController(organizationService);
 
 // Configurações › Organização: exige "Gerenciar organização" na sede.
 export const organizacaoRoutes: FastifyPluginAsync = async (app) => {

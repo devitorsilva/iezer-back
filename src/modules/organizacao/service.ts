@@ -5,6 +5,7 @@ import { AppError } from "../../lib/errors.js";
 import { slugify } from "../../lib/text.js";
 import type { ChurchWithRelations, OrganizationRepository } from "./repository.js";
 import type {
+  AccountOwnerContactInput,
   CreateCongregationInput,
   LgpdOfficerInput,
   UpdateChurchInput,
@@ -12,6 +13,9 @@ import type {
 } from "./schemas.js";
 
 type Db = Prisma.TransactionClient;
+
+// Igreja e autor: vem do app das igrejas (RequestContext) ou do back-office da equipe.
+export type OrganizationContext = Pick<RequestContext, "churchId" | "actor">;
 
 export class CongregationNotFoundError extends Error {
   constructor() {
@@ -51,6 +55,11 @@ function mapChurch(church: ChurchWithRelations) {
   };
 }
 
+// CNPJ é único entre as sedes (RF-BO14). churchId: a outra igreja, para o link do back-office.
+export function cnpjTakenError(churchId: string) {
+  return new AppError(409, "CHURCH_CNPJ_TAKEN", "Já existe uma igreja com este CNPJ.", { field: "cnpj", churchId });
+}
+
 // Configurações › Organização (RF-OR01, RF-OR03). Dois níveis: congregações só sob a sede (RF-OR02).
 // Congregação não é apagada, só desativada: dados e histórico continuam ligados a ela.
 export class OrganizationService {
@@ -60,12 +69,17 @@ export class OrganizationService {
     return mapChurch(await this.findChurchOrThrow(churchId));
   }
 
-  async updateChurch(context: RequestContext, input: UpdateChurchInput) {
+  async updateChurch(context: OrganizationContext, input: UpdateChurchInput) {
     return runAudited(context.actor, async (tx, audit) => {
       const church = await this.findChurchOrThrow(context.churchId, tx);
 
       if (input.name && (await this.repository.nameTaken(church.id, input.name, church.id, tx))) {
         throw this.nameTakenError();
+      }
+
+      if (input.cnpj && input.cnpj !== church.cnpj) {
+        const other = await this.repository.findChurchByCnpj(input.cnpj, tx);
+        if (other) throw cnpjTakenError(other.id);
       }
 
       await this.repository.updateOrganization(church.id, { name: input.name, cnpj: input.cnpj }, tx);
@@ -84,7 +98,7 @@ export class OrganizationService {
     });
   }
 
-  async createCongregation(context: RequestContext, input: CreateCongregationInput) {
+  async createCongregation(context: OrganizationContext, input: CreateCongregationInput) {
     return runAudited(context.actor, async (tx, audit) => {
       const church = await this.findChurchOrThrow(context.churchId, tx);
 
@@ -110,7 +124,7 @@ export class OrganizationService {
     });
   }
 
-  async updateCongregation(context: RequestContext, id: string, input: UpdateCongregationInput) {
+  async updateCongregation(context: OrganizationContext, id: string, input: UpdateCongregationInput) {
     return runAudited(context.actor, async (tx, audit) => {
       const current = await this.repository.findCongregation(id, context.churchId, tx);
       if (!current) throw new CongregationNotFoundError();
@@ -142,7 +156,7 @@ export class OrganizationService {
     });
   }
 
-  async setLgpdOfficer(context: RequestContext, input: LgpdOfficerInput) {
+  async setLgpdOfficer(context: OrganizationContext, input: LgpdOfficerInput) {
     return runAudited(context.actor, async (tx, audit) => {
       const church = await this.findChurchOrThrow(context.churchId, tx);
       const before = mapContact(church.contacts.find((contact) => contact.role === "ENCARREGADO_LGPD"));
@@ -168,7 +182,38 @@ export class OrganizationService {
     });
   }
 
-  async removeLgpdOfficer(context: RequestContext) {
+  // Dados de contato do responsável pela conta, pela equipe iEzer. O nome não muda aqui: trocar o
+  // responsável exige documento (RF-BO25).
+  async setAccountOwnerContact(context: OrganizationContext, input: AccountOwnerContactInput) {
+    return runAudited(context.actor, async (tx, audit) => {
+      const church = await this.findChurchOrThrow(context.churchId, tx);
+      const current = church.contacts.find((contact) => contact.role === "RESPONSAVEL_CONTA");
+      if (!current) {
+        throw new AppError(409, "ACCOUNT_OWNER_MISSING", "A igreja não tem responsável pela conta cadastrado.");
+      }
+
+      const contact = await this.repository.upsertContact(
+        church.id,
+        "RESPONSAVEL_CONTA",
+        { name: current.name, jobTitle: input.jobTitle ?? null, email: input.email, phone: input.phone ?? null },
+        tx,
+      );
+
+      await audit({
+        organizationId: church.id,
+        module: "CONFIGURACOES",
+        action: "editar_responsavel_conta",
+        targetType: "OrganizationContact",
+        targetId: contact.id,
+        before: mapContact(current),
+        after: mapContact(contact),
+      });
+
+      return mapContact(contact);
+    });
+  }
+
+  async removeLgpdOfficer(context: OrganizationContext) {
     await runAudited(context.actor, async (tx, audit) => {
       const church = await this.findChurchOrThrow(context.churchId, tx);
       const current = church.contacts.find((contact) => contact.role === "ENCARREGADO_LGPD");
@@ -187,7 +232,7 @@ export class OrganizationService {
   }
 
   // Item "conferir congregações" do checklist de primeiro acesso (RF-OB03).
-  async markCongregationsReviewed(context: RequestContext) {
+  async markCongregationsReviewed(context: OrganizationContext) {
     return runAudited(context.actor, async (tx, audit) => {
       const church = await this.findChurchOrThrow(context.churchId, tx);
       const reviewedAt = new Date();

@@ -28,3 +28,8 @@ export function isValidAnyCnpj(value: string) {
   if (!/^[0-9A-Z]{12}\d{2}$/.test(chars) || /^(\d)\1{13}$/.test(chars)) return false;
   return hasValidCheckDigits(chars);
 }
+
+// Forma gravada do CNPJ numérico ou alfanumérico: sem pontuação, maiúsculo.
+export function normalizeAnyCnpj(value: string) {
+  return value.replace(/[.\-/\s]/g, "").toUpperCase();
+}

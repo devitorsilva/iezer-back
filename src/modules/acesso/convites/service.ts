@@ -1,7 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { hashPassword } from "better-auth/crypto";
 import type { AccessibleOrganization } from "../../../lib/access.js";
-import { runAudited, type AuditActor } from "../../../lib/audit.js";
+import { runAudited, type AuditActor, type AuditWriter } from "../../../lib/audit.js";
 import { findUserChurch } from "../../../lib/church.js";
 import { INVITE_TTL_MS, inviteEmail, inviteUrl } from "../../../lib/emails.js";
 import { AppError } from "../../../lib/errors.js";
@@ -34,6 +34,11 @@ export interface InviteContext {
 
 const INVITE_INVALID_MESSAGE = "Este convite não é mais válido. Peça um novo ao administrador da sua igreja.";
 
+// Convite feito pela equipe iEzer (criação da igreja, recuperação de admin): a igreja vê a equipe,
+// não o nome de quem atendeu.
+const inviterName = (invite: Pick<InviteWithRelations, "invitedBy">) =>
+  invite.invitedBy?.teamMember ? "Equipe iEzer" : (invite.invitedBy?.name ?? null);
+
 function inviteStatus(invite: Pick<InviteWithRelations, "status" | "expiresAt">) {
   return invite.status === "PENDENTE" && invite.expiresAt <= new Date() ? "EXPIRADO" : invite.status;
 }
@@ -47,7 +52,7 @@ function mapInvite(invite: InviteWithRelations) {
     status: inviteStatus(invite),
     expiresAt: invite.expiresAt.toISOString(),
     createdAt: invite.createdAt.toISOString(),
-    invitedByName: invite.invitedBy?.name ?? null,
+    invitedByName: inviterName(invite),
     assignments: invite.assignments.map(({ organization, profile }) => ({
       organizationId: organization.id,
       organizationName: organization.name,
@@ -172,67 +177,84 @@ export class InviteService {
 
   // Dar acesso (RF-CV01 a RF-CV03, RF-CV08).
   async create(context: InviteContext, input: CreateInviteInput) {
-    const assignments = input.assignments.flatMap(({ organizationId, profileIds }) =>
-      [...new Set(profileIds)].map((profileId) => ({ organizationId, profileId })),
+    const { invite, token } = await runAudited(context.actor, (tx, audit) =>
+      this.createInTx(tx, audit, context, input),
     );
-    const { token, tokenHash } = generateToken();
-
-    const invite = await runAudited(context.actor, async (tx, audit) => {
-      const person = await tx.person.findFirst({
-        where: { id: input.personId, organization: { OR: [{ id: context.churchId }, { parentId: context.churchId }] } },
-        select: { id: true, name: true, email: true, user: { select: { id: true } } },
-      });
-
-      if (!person) throw new AppError(400, "INVALID_PERSON", "Pessoa não encontrada nesta igreja.");
-
-      if (person.user) {
-        throw new AppError(409, "PERSON_HAS_USER", `${person.name} já tem acesso ao iEzer. Gerencie os perfis em Usuários.`);
-      }
-
-      if (!person.email) {
-        throw new AppError(
-          400,
-          "PERSON_EMAIL_REQUIRED",
-          "Para dar acesso, a pessoa precisa ter e-mail. Cadastre o e-mail no perfil dela.",
-        );
-      }
-
-      const email = person.email.toLowerCase();
-      await assertCanChangeAssignments(tx, context.churchId, context.organizations, assignments);
-      const canceled = await assertLoginEmailAvailable(tx, email, context.churchId, { personId: person.id });
-
-      const created = await this.repository.create(
-        {
-          churchId: context.churchId,
-          personId: person.id,
-          email,
-          tokenHash,
-          expiresAt: new Date(Date.now() + INVITE_TTL_MS),
-          invitedByUserId: context.actor.userId,
-          assignments,
-        },
-        tx,
-      );
-
-      await audit({
-        organizationId: context.churchId,
-        module: "ACESSO",
-        action: "criar_convite",
-        targetType: "Invite",
-        targetId: created.id,
-        description: canceled.length ? `Substitui convite(s) expirado(s): ${canceled.join(", ")}` : undefined,
-        after: mapInvite(created),
-      });
-
-      return created;
-    });
 
     const emailSent = await this.sendInviteEmail(invite, token);
     return { invite: mapInvite(invite), link: inviteUrl(token), emailSent };
   }
 
+  // Convite dentro de uma transação maior (criação da igreja pelo back-office). Quem chama envia o
+  // e-mail depois do commit, com sendCreatedInvite.
+  async createInTx(tx: Db, audit: AuditWriter, context: InviteContext, input: CreateInviteInput) {
+    const assignments = input.assignments.flatMap(({ organizationId, profileIds }) =>
+      [...new Set(profileIds)].map((profileId) => ({ organizationId, profileId })),
+    );
+    const { token, tokenHash } = generateToken();
+
+    const person = await tx.person.findFirst({
+      where: { id: input.personId, organization: { OR: [{ id: context.churchId }, { parentId: context.churchId }] } },
+      select: { id: true, name: true, email: true, user: { select: { id: true } } },
+    });
+
+    if (!person) throw new AppError(400, "INVALID_PERSON", "Pessoa não encontrada nesta igreja.");
+
+    if (person.user) {
+      throw new AppError(409, "PERSON_HAS_USER", `${person.name} já tem acesso ao iEzer. Gerencie os perfis em Usuários.`);
+    }
+
+    if (!person.email) {
+      throw new AppError(
+        400,
+        "PERSON_EMAIL_REQUIRED",
+        "Para dar acesso, a pessoa precisa ter e-mail. Cadastre o e-mail no perfil dela.",
+      );
+    }
+
+    const email = person.email.toLowerCase();
+    await assertCanChangeAssignments(tx, context.churchId, context.organizations, assignments);
+    const canceled = await assertLoginEmailAvailable(tx, email, context.churchId, { personId: person.id });
+
+    const invite = await this.repository.create(
+      {
+        churchId: context.churchId,
+        personId: person.id,
+        email,
+        tokenHash,
+        expiresAt: new Date(Date.now() + INVITE_TTL_MS),
+        invitedByUserId: context.actor.userId,
+        assignments,
+      },
+      tx,
+    );
+
+    await audit({
+      organizationId: context.churchId,
+      module: "ACESSO",
+      action: "criar_convite",
+      targetType: "Invite",
+      targetId: invite.id,
+      description: canceled.length ? `Substitui convite(s) expirado(s): ${canceled.join(", ")}` : undefined,
+      after: mapInvite(invite),
+    });
+
+    return { invite, token };
+  }
+
+  async sendCreatedInvite(created: { invite: InviteWithRelations; token: string }) {
+    const emailSent = await this.sendInviteEmail(created.invite, created.token);
+    return { invite: mapInvite(created.invite), link: inviteUrl(created.token), emailSent };
+  }
+
   // Reenviar invalida o link anterior (RF-CV04); sem e-mail, só gera o link para copiar.
-  async resend(context: InviteContext, id: string, sendEmail: boolean) {
+  // options.action/description: o reenvio pelo back-office grava a própria ação, com motivo (RF-BO32).
+  async resend(
+    context: InviteContext,
+    id: string,
+    sendEmail: boolean,
+    options: { action?: string; description?: string } = {},
+  ) {
     const { token, tokenHash } = generateToken();
 
     const invite = await runAudited(context.actor, async (tx, audit) => {
@@ -246,9 +268,10 @@ export class InviteService {
       await audit({
         organizationId: context.churchId,
         module: "ACESSO",
-        action: sendEmail ? "reenviar_convite" : "gerar_link_convite",
+        action: options.action ?? (sendEmail ? "reenviar_convite" : "gerar_link_convite"),
         targetType: "Invite",
         targetId: id,
+        description: options.description,
         before: { expiresAt: current.expiresAt },
         after: { expiresAt: updated.expiresAt },
       });
@@ -335,7 +358,7 @@ export class InviteService {
 
     return {
       churchName: invite.church.name,
-      inviterName: invite.invitedBy?.name ?? null,
+      inviterName: inviterName(invite),
       personName: invite.person.name,
       email: invite.email,
       expiresAt: invite.expiresAt.toISOString(),
@@ -455,7 +478,7 @@ export class InviteService {
         to: invite.email,
         personName: invite.person.name,
         churchName: invite.church.name,
-        inviterName: invite.invitedBy?.name ?? null,
+        inviterName: inviterName(invite),
         token,
       }),
     );

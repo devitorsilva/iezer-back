@@ -347,15 +347,13 @@ Todas as rotas exigem `organizacoes.gerenciar` **na sede** (`requireChurchPermis
 | PUT | `/organizacao/encarregado-lgpd` | `{ name, jobTitle?, email, phone? }` | contato |
 | DELETE | `/organizacao/encarregado-lgpd` | — | 204 |
 
-- O responsável pela conta é só leitura (muda pelo script e pelo iEzer).
-- Erros: 409 `ORGANIZATION_NAME_TAKEN` (`field: "name"`, nome repetido na igreja), 404 para congregação inexistente.
+- O responsável pela conta é só leitura (muda pelo back-office do iEzer).
+- Erros: 409 `ORGANIZATION_NAME_TAKEN` (`field: "name"`, nome repetido na igreja), 409 `CHURCH_CNPJ_TAKEN` (`field: "cnpj"`, CNPJ de outra sede; desde a Sprint 17), 404 para congregação inexistente.
+- CNPJ numérico ou alfanumérico desde a Sprint 17, gravado sem pontuação e em maiúsculas.
 
-### Script de onboarding (RF-OB01, RF-OB02)
+### Onboarding (RF-OB01, RF-OB02)
 
-`npm run igreja:criar -- <arquivo.json>`: o formato está no cabeçalho de `scripts/create-church.ts`.
-- Cria a sede, ou completa uma existente com `sedeId`, além de congregações, contatos, perfis de fábrica, listas da igreja e a Pessoa do primeiro admin.
-- Convida o primeiro admin como Pastor na sede e imprime o link.
-- É idempotente.
+A igreja e o convite do primeiro admin são criados pelo back-office (`POST /api/admin/igrejas`, Sprint 17). O script `igreja:criar` foi removido.
 
 ### E-mail
 
@@ -905,3 +903,36 @@ O app admin (`iezer-front`, pasta `admin/`, porta 5174 em dev) usa as rotas da S
 - Log `reconfigurar_2fa` (autor `SUPORTE` para a equipe) e alerta por e-mail "Verificação em duas etapas reconfigurada". O `ativar_2fa` da nova configuração é gravado como sempre.
 - Vale para qualquer usuário com o app. Por enquanto, só o app admin usa.
 - `accountContext` de `/api/me/*` grava como `SUPORTE` quando a sessão é da equipe (antes, `USUARIO`).
+
+## Sprint 17 — Igrejas no back-office
+
+`Organization` ganhou `status` (`IMPLANTACAO`, `ATIVA`, `SUSPENSA`, `ENCERRADA`; só vale na sede), `statusChangedAt` e `statusReason` (RT-BB04). A igreja nova nasce em `IMPLANTACAO`; as anteriores viraram `ATIVA`. CNPJ único entre as sedes (índice parcial). Nenhuma rota abaixo devolve dados de pessoa além do que a B8 permite.
+
+### `/api/admin/igrejas` (só conta da equipe)
+
+Ver e reenviar convite: qualquer papel. Criar e editar: Administrador ou Implantação (403 `TEAM_ROLE_FORBIDDEN` para o Suporte). Igreja inexistente: 404 "Igreja não encontrada.".
+
+| Método | Rota | Corpo | Resposta |
+| --- | --- | --- | --- |
+| GET | `/admin/igrejas?busca=&situacao=` | — | `{ items: ChurchListItem[] }`, por nome. `busca` procura no nome e no CNPJ (com ou sem máscara) |
+| POST | `/admin/igrejas` | `CreateChurch` | 201 `{ church: { id, name, status }, invite: { email, expiresAt, emailSent } }` |
+| GET | `/admin/igrejas/:id` | — | `ChurchDetail` |
+| PATCH | `/admin/igrejas/:id` | `{ name?, cnpj? }` | igreja no formato de `GET /organizacao`. 409 `CHURCH_CNPJ_TAKEN`, `ORGANIZATION_NAME_TAKEN` |
+| POST | `/admin/igrejas/:id/congregacoes` | `{ name }` | 201 congregação |
+| PATCH | `/admin/igrejas/:id/congregacoes/:congregationId` | `{ name?, isActive? }` | congregação. Sem DELETE |
+| PUT | `/admin/igrejas/:id/contatos/responsavel` | `{ jobTitle?, email, phone? }` | contato. O nome não muda aqui: a troca do responsável exige documento (Sprint 18). 409 `ACCOUNT_OWNER_MISSING` |
+| PUT | `/admin/igrejas/:id/contatos/encarregado-lgpd` | `{ name, jobTitle?, email, phone? }` | contato |
+| DELETE | `/admin/igrejas/:id/contatos/encarregado-lgpd` | — | 204 |
+| GET | `/admin/igrejas/:id/usuarios` | — | `{ items: ChurchUserItem[] }`: convites pendentes (inclusive vencidos) e depois usuários, por nome |
+| POST | `/admin/igrejas/:id/convites/:inviteId/reenviar` | `{ reason, ticket? }` | `{ email, expiresAt, emailSent, ownerNotified }`. 409 `NOT_ADMIN_INVITE`, `INVITE_NOT_PENDING`; 404 "Convite não encontrado." |
+
+- `CreateChurch`: `{ name, cnpj, congregations?: string[], accountOwner: { name, jobTitle?, email, phone }, lgpdOfficer?: { name, jobTitle?, email, phone? }, admin: { name, email } }`. O CNPJ é obrigatório (numérico ou alfanumérico) e o telefone do responsável também.
+- A criação roda numa transação só (`createChurch` em `src/modules/admin/igrejas/criacao.ts`): sede em Implantação, congregações, contatos, perfis de fábrica, listas, a Pessoa do admin na sede e o convite com o perfil Pastor. O e-mail do convite sai depois do commit.
+- Erros da criação: 409 `CHURCH_CNPJ_TAKEN` (`field: "cnpj"`, `churchId` da outra igreja, para o link); 409 `EMAIL_IN_OTHER_CHURCH`, `USER_EXISTS`, `INVITE_PENDING`, `TEAM_EMAIL` (e-mail do admin); 400 `ORGANIZATION_NAME_TAKEN` (`field: "congregations"`, nome repetido entre sede e congregações); 400 `VALIDATION_ERROR` com `issues[].path` (ex.: `accountOwner.phone`).
+- **O link do convite não volta para a equipe** (B8): só o convidado entra. O link sai só no e-mail (em dev, no log do back).
+- O convite feito pela equipe aparece para a igreja (lista de convites, página pública e e-mail) como feito pela "Equipe iEzer", não pelo nome de quem atendeu.
+- `ChurchListItem`: `{ id, name, cnpj, status, statusChangedAt, congregations (ativas), accountOwner: { name, email } | null, activeUsers, lastUsedAt, createdAt }`. `lastUsedAt` é o último login entre os usuários da igreja.
+- `ChurchDetail`: `{ id, name, cnpj, status, statusChangedAt, statusReason, createdAt, accountOwner, lgpdOfficer, congregations: [{ id, name, isActive, createdAt }], counters: { people, activeUsers, lastUsedAt } }`.
+- `ChurchUserItem`: `{ kind: "USUARIO"|"CONVITE", id, name, email, status: "ATIVO"|"DESATIVADO"|"SUSPENSO"|"CONVIDADO"|"CONVITE_EXPIRADO", lastLoginAt, organizations: [{ organizationId, organizationName, profiles[] }], inviteExpiresAt, isAdminInvite }`. Sem id de Pessoa. Convite de admin = algum perfil com `acesso.perfis.gerenciar`.
+- **Reenviar convite de admin** (RF-BO29, RF-BO32): `reason` com 5 a 500 caracteres, `ticket` até 60. Gera um link novo (o anterior deixa de valer) e mais 72h, manda o e-mail ao convidado e avisa o responsável pela conta ("Ação do suporte do iEzer na conta da sua igreja", com motivo e chamado).
+- **Auditoria:** tudo na organização da igreja com `actorType: SUPORTE` ("Suporte iEzer" na Auditoria da igreja). Ações: `criar_igreja`, `criar_convite`, `editar_sede`, `criar_congregacao`, `editar_congregacao`, `desativar_congregacao`, `reativar_congregacao`, `editar_responsavel_conta` (nova), `editar_encarregado_lgpd`, `remover_encarregado_lgpd`, `suporte_reenviar_convite` (nova; `description` com motivo e chamado).

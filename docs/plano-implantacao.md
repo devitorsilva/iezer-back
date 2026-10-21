@@ -48,7 +48,7 @@ Depois do MVP: itens F2 dos dois PRDs, priorizados com a igreja piloto.
 - Banco de produção novo, separado do de homologação, com backup diário e, se o provedor permitir, na região de São Paulo. Com banco novo as migrações rodam do zero, sem `migrate resolve` do baseline.
 - Domínio de e-mail no Resend com SPF e DKIM (RT-AB12).
 - Texto final dos termos de uso e de confidencialidade (`TERMS_VERSION`) e contrato com a igreja com as cláusulas de operador.
-- `docs/go-live.md`: variáveis do Render e da Vercel (com `BETTER_AUTH_SECRET` e segredo do Google próprios de produção), `migrate deploy`, seeds, `igreja:criar` com os dados reais, `suporte:agente`, conferências pós-deploy (IP, headers `x-vercel-ip-*`, `trustedOrigins`, cookie) e teste rápido.
+- `docs/go-live.md`: variáveis do Render e da Vercel (com `BETTER_AUTH_SECRET` e segredo do Google próprios de produção), `migrate deploy`, seeds, `suporte:agente`, a igreja real criada pelo back-office, conferências pós-deploy (IP, headers `x-vercel-ip-*`, `trustedOrigins`, cookie) e teste rápido.
 - Homologação repetida em produção, só com dados fictícios, antes de importar a base real.
 
 **Painel administrativo do iEzer** (depois do MVP; RT-AB14, A10, A11, RF-OB01). Virou o back-office das Sprints 15 a 22 (PRD `docs/prd/backoffice.md`); o texto abaixo fica como histórico. Hoje existe só o back-office do suporte em `/app/suporte`, mais os scripts `igreja:criar` e `suporte:agente`. O painel deve cobrir:
@@ -243,7 +243,7 @@ A Sprint 14 (homologação no navegador) continua adiada; estas sprints vêm ant
 - **IDs:** RF-BO01, RF-BO03 a RF-BO10, RT-BF01 a RT-BF03, RT-BF06, RT-BF07.
 - **Pronto quando:** um membro convidado entra pela primeira vez, configura o TOTP e vê só o menu do seu papel; uma conta de igreja não entra no app admin.
 
-## Sprint 17 — Igrejas: lista, criação e detalhe (back + front) `[ ]`
+## Sprint 17 — Igrejas: lista, criação e detalhe (back + front) `[x]`
 
 **Objetivo:** criar e acompanhar igrejas sem terminal.
 
@@ -413,3 +413,9 @@ Entradas curtas (até 8 linhas), mais recente por último.
   Testado por HTTP (3399): configurar TOTP do `admin.um`, reconfigurar com senha errada/vazia/certa, outra sessão derrubada, barreira `TWO_FACTOR_SETUP_REQUIRED`, `TOTP_NOT_ENABLED`, segredo novo, log e alerta. Front: typecheck, `build` e `build:admin`; dev server do admin servindo. Telas não testadas no navegador.
   Para testar: `admin.um@iezer.local` ficou sem app (o login pede a configuração); para trocar a senha, `npm run user:create`. Convide um Suporte em Equipe, abra o link do log do back e confira o menu só com Minha conta.
   Pendências: criar o projeto na Vercel (mesmo repositório; Build `npm run build:admin`, Output `dist-admin`; o `vercel.json` serve aos dois) e pôr `ADMIN_WEB_ORIGIN` no Render com a URL; recuperação de senha da equipe (o link de redefinição aponta para o app das igrejas); Minha conta das igrejas ainda sem "Reconfigurar app".
+- 14/10/2026 · Sprint 17 · Sprint 16 commitada antes nos dois repos; branch `sprint-17-igrejas` nos dois. Migração `20261015_igreja_situacao` (`migrate deploy`): `Organization.status/statusChangedAt/statusReason` (a piloto virou Ativa) e CNPJ único entre as sedes (índice parcial). CNPJ alfanumérico no back (`normalizeAnyCnpj`) e nos dois apps.
+  Back: `/api/admin/igrejas` (lista, criar, detalhe, editar sede/congregações/contatos, usuários, reenviar convite de admin com motivo e chamado). `createChurch` (`admin/igrejas/criacao.ts`) numa transação só, com `InviteService.createInTx`; `igreja:criar` removido. `OrganizationService` aceita `{ churchId, actor }` e ganhou `setAccountOwnerContact`. E-mail `teamActionNotice` ao responsável pela conta (reaproveitável na Sprint 19).
+  Front: menu Igrejas (entrada do app), `/igrejas`, `/igrejas/nova`, `/igrejas/:id` (Visão geral, Congregações, Usuários). `SecaoCard`, `NomeDialog` e `ContatoDialog` foram para `src/components`.
+  Decisões: o link do convite não volta para a equipe (B8); responsável pela conta só tem cargo, e-mail e telefone editáveis (trocar a pessoa é a Sprint 18, com documento); CNPJ e telefone do responsável obrigatórios; convite feito pela equipe aparece à igreja como "Equipe iEzer"; o back-office só reenvia convite de admin (perfil com `acesso.perfis.gerenciar`).
+  Testado por HTTP (3399) com `implantacao.teste@iezer.local` e `suporte.teste@iezer.local` (senha `Sprint17-Teste-Equipe!`, TOTP com segredo só no scratchpad desta janela; criados direto no banco): papéis, criação, CNPJ repetido/inválido, nomes repetidos, e-mail de outra igreja e da equipe, lista/busca/filtro, detalhe, 404, edições, contatos, reenvio com e-mails no log e auditoria `SUPORTE` na igreja. Ficou a "Igreja Teste Dezessete Editada" (CNPJ `12.ABC.345/01DE-35`) em Implantação, com o convite de `admin.17@iezer.local`.
+  Pendências: telas testadas só por typecheck e build; marca de e-mail rejeitado na aba Usuários fica para a Sprint 20; no Render, `migrate deploy`.

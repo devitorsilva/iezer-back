@@ -31,6 +31,14 @@ enum OrganizationType {
   CONGREGACAO
 }
 
+// Situação da igreja-cliente (PRD Back-office, B5, RT-BB04). Vale só na sede.
+enum OrganizationStatus {
+  IMPLANTACAO
+  ATIVA
+  SUSPENSA
+  ENCERRADA
+}
+
 enum OrganizationContactRole {
   RESPONSAVEL_CONTA
   ENCARREGADO_LGPD
@@ -325,8 +333,13 @@ model Organization {
   parentId                String?
   parent                  Organization?         @relation("OrganizationHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
   children                Organization[]        @relation("OrganizationHierarchy")
+  // Sem pontuação, maiúsculo (aceita o CNPJ alfanumérico). Único entre as sedes (índice parcial em SQL).
   cnpj                    String?
   isActive                Boolean               @default(true)
+  // Situação da igreja (RT-BB04): só na sede; só a equipe iEzer muda.
+  status                  OrganizationStatus    @default(IMPLANTACAO)
+  statusChangedAt         DateTime              @default(now())
+  statusReason            String?
   // Checklist de primeiro acesso (RF-OB03): admin conferiu as congregações. Só na sede.
   congregationsReviewedAt DateTime?
   // Prazos dos indicadores da jornada (RT-B13). Só na sede; sem valor, os padrões do código.
