@@ -311,6 +311,39 @@ A Sprint 14 (homologação no navegador) continua adiada; estas sprints vêm ant
 - **IDs:** B6, B11, B14, RF-BO15, RF-BO22 a RF-BO24, RF-BO51, RF-BO52, RF-BO59 a RF-BO61, RT-BB07, RT-BB12, RT-BB14.
 - **Pronto quando:** a exportação de uma igreja de teste chega por link ao responsável (no log) sem a equipe conseguir baixá-la, e as ações feitas pela equipe nas sprints 15 a 22 aparecem na auditoria interna.
 
+## Pessoas: árvore da família (Sprints 23 e 24)
+
+Requisitos: `docs/prd/pessoas.md` (RF-F01 a RF-F05). Referência visual: o mapa de processos do projeto `mapeamento-processos-app` do usuário (`@xyflow/react` + `@dagrejs/dagre`). Os padrões que valem estão descritos nas sprints, para não depender do projeto. A Sprint 23 vem antes da 18; depois dela, o back-office segue da 18 em diante.
+
+Limite do modelo atual: `Family` é o domicílio. `FamilyMember.personId` é único (uma família por pessoa), e os papéis (Responsável, Cônjuge, Filho, Outro) não dizem de quem a pessoa é filha. A Sprint 23 desenha só o domicílio, sem mudar o back. A genealogia entre domicílios (avós, filho casado com família própria) é a Sprint 24 e depende de decisão no PRD.
+
+## Sprint 23 — Pessoas: árvore do domicílio (front) `[ ]`
+
+**Objetivo:** ver a família do perfil como diagrama, além da lista.
+
+- Sem mudança no back: a árvore sai de `pessoa.family.members` (papel, idade, vínculo, situação, `isGuardian`).
+- Dependências `@xyflow/react` e `@dagrejs/dagre`, carregadas só quando a árvore abre (`React.lazy`), sem pesar no perfil.
+- `features/pessoas/components/perfil/arvore-familia/`: `layout.ts` (função pura membros → nós e arestas, dagre `rankdir: "TB"`, tamanho fixo do nó, usada num `useMemo`), `nos.tsx` (nó de pessoa e nó de união) e `arvore-familia.tsx` (`ReactFlow`, `Controls`, legenda).
+- Layout: Responsável e Cônjuge no topo, ligados por um nó de união (losango pequeno; o dagre não entende casal). Os Filhos saem da união, ou do responsável quando não há casal. Outro fica numa faixa à parte, sem aresta. Arestas `smoothstep`, handles invisíveis, `nodesConnectable={false}`, sem arrastar.
+- Nó: iniciais, nome de exibição, papel e idade. Borda na cor do vínculo (mapa único derivado de `VINCULO_STYLE`, nada de hex repetido); tracejada e esmaecida para situação diferente de Ativo; `ShieldCheck` para responsável legal; `Baby` para menor; `ring-primary` na pessoa do perfil. A seleção vem por Context, não pelo `data` do nó, para não refazer o layout.
+- Legenda no rodapé (vínculos, situação não Ativa, responsável legal) e `fitView` ao abrir.
+- Clique no nó abre um Sheet com o resumo (vínculo, situação, idade, papel) e as ações da lista: abrir perfil, trocar papel, remover da família e cadastrar filho (RF-F04, só com `podeSerResponsavel`), cada uma pela permissão.
+- Alternância "Lista | Árvore" nas ações do `SecaoCard` da família, na URL (`?visao=arvore`). No mobile (`useIsMobile`) a lista é o padrão; a árvore abre com pan e zoom por toque. Família de uma pessoa só não mostra a alternância.
+- Não copiar do projeto de referência: nós copiados para o estado por `useEffect` (render duplo, posições perdidas no refetch), cores em hex fixo e tipo do nó pelo prefixo do id (usar `node.type`).
+- Documentar o padrão de diagrama no `CLAUDE.md` do front.
+- **IDs:** RF-F01, RF-F02, RF-F04, RT-F06.
+- **Pronto quando:** uma família com casal, dois filhos (um menor) e um Outro aparece como árvore no desktop e no celular, e o clique numa pessoa abre o Sheet só com as ações permitidas.
+
+## Sprint 24 — Pessoas: genealogia entre famílias e visão por família (back + front) `[ ]`
+
+**Objetivo:** ligar pais, filhos e cônjuges de domicílios diferentes, e ver a igreja por família.
+
+- **Antes de planejar:** decisão no PRD Pessoas. Proposta: `PersonRelation` (pessoa, parente, tipo PAI_MAE ou CONJUGE), separada do domicílio; regras (sem ciclo, no máximo dois pais, cônjuge recíproco, mesma igreja); auditoria com as duas pessoas em `personIds`; efeito do desligamento e do falecimento; o que aparece de um parente numa organização que o usuário não lê.
+- `GET /pessoas/:id/arvore?geracoes=N` (ancestrais e descendentes até N gerações, só nas organizações que o usuário lê) e `GET /pessoas/familias` paginada.
+- Árvore do perfil passa a ter várias gerações, com o mesmo `layout.ts` (casal → união → filhos). Visão por família (RF-F05): famílias como grupos coloridos em grade (nó `group` com `parentId` e `extent: "parent"`, dagre dentro de cada grupo) e filtro "ir para família" com `fitView` no grupo.
+- **IDs:** RF-F05 e as decisões novas do PRD.
+- **Pronto quando:** avós, pais e netos em domicílios diferentes aparecem ligados na árvore, e nenhum dado de pessoa fora do escopo do usuário vaza.
+
 ---
 
 ## Registro
@@ -419,3 +452,4 @@ Entradas curtas (até 8 linhas), mais recente por último.
   Decisões: o link do convite não volta para a equipe (B8); responsável pela conta só tem cargo, e-mail e telefone editáveis (trocar a pessoa é a Sprint 18, com documento); CNPJ e telefone do responsável obrigatórios; convite feito pela equipe aparece à igreja como "Equipe iEzer"; o back-office só reenvia convite de admin (perfil com `acesso.perfis.gerenciar`).
   Testado por HTTP (3399) com `implantacao.teste@iezer.local` e `suporte.teste@iezer.local` (senha `Sprint17-Teste-Equipe!`, TOTP com segredo só no scratchpad desta janela; criados direto no banco): papéis, criação, CNPJ repetido/inválido, nomes repetidos, e-mail de outra igreja e da equipe, lista/busca/filtro, detalhe, 404, edições, contatos, reenvio com e-mails no log e auditoria `SUPORTE` na igreja. Ficou a "Igreja Teste Dezessete Editada" (CNPJ `12.ABC.345/01DE-35`) em Implantação, com o convite de `admin.17@iezer.local`.
   Pendências: telas testadas só por typecheck e build; marca de e-mail rejeitado na aba Usuários fica para a Sprint 20; no Render, `migrate deploy`.
+- 27/10/2026 · Preparação da árvore da família · Sprints 23 (árvore do domicílio, só front, sem mudar o back) e 24 (genealogia entre famílias, depende de decisão no PRD) adicionadas, a partir do mapa de processos do projeto `mapeamento-processos-app`. A 23 vem antes da 18; o back-office volta depois dela.
