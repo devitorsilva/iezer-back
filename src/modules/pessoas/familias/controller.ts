@@ -4,6 +4,7 @@ import { FamilyMemberNotFoundError, FamilyNotFoundError, type FamilyService } fr
 import {
   familyAddressSchema,
   familyCreateSchema,
+  familyListQuerySchema,
   familyMemberParamsSchema,
   familyMemberSchema,
   familyMemberUpdateSchema,
@@ -14,6 +15,16 @@ import {
 
 export class FamilyController {
   constructor(private readonly service: FamilyService) {}
+
+  list = async (request: FastifyRequest) => {
+    const query = familyListQuerySchema.parse(request.query);
+    return this.service.list(getRequestContext(request), query);
+  };
+
+  getById = async (request: FastifyRequest, reply: FastifyReply) => {
+    const { id } = familyParamsSchema.parse(request.params);
+    return this.handleNotFound(reply, () => this.service.getById(getRequestContext(request), id));
+  };
 
   create = async (request: FastifyRequest, reply: FastifyReply) => {
     const payload = familyCreateSchema.parse(request.body);

@@ -15,10 +15,17 @@ import {
   type FamilyMemberRule,
 } from "../pessoas/rules.js";
 import type { PersonService } from "../pessoas/service.js";
-import type { FamilyCandidate, FamilyRepository, FamilyWithMembers, familyMemberPersonSelect } from "./repository.js";
+import type {
+  FamilyCandidate,
+  FamilyListRow,
+  FamilyRepository,
+  FamilyWithMembers,
+  familyMemberPersonSelect,
+} from "./repository.js";
 import type {
   FamilyAddressPayload,
   FamilyCreatePayload,
+  FamilyListQuery,
   FamilyMemberPayload,
   FamilyMemberUpdatePayload,
   FamilyPrimaryContactPayload,
@@ -106,6 +113,28 @@ function mapFamily(family: FamilyWithMembers, readOrganizationIds: string[]) {
   };
 }
 
+// Contato e endereço do contato principal só quando o usuário lê a organização dele.
+function mapListItem(family: FamilyListRow, readOrganizationIds: string[]) {
+  const primary = family.primaryContact;
+  const readable = primary !== null && readOrganizationIds.includes(primary.organizationId);
+  return {
+    id: family.id,
+    name: family.name,
+    organizationId: family.organizationId,
+    organizationName: family.organization.name,
+    memberCount: family._count.members,
+    primaryContact: primary
+      ? {
+          personId: primary.id,
+          name: primary.name,
+          preferredName: primary.preferredName,
+          mobilePhone: readable ? primary.mobilePhone : null,
+        }
+      : null,
+    address: readable ? familyAddressOf(primary) : null,
+  };
+}
+
 function toRule(member: { personId: string; role: FamilyRole; person: { birthDate: Date | null; bond: PersonBond } }) {
   return { personId: member.personId, role: member.role, birthDate: member.person.birthDate, bond: member.person.bond };
 }
@@ -139,6 +168,22 @@ export class FamilyService {
     private readonly repository: FamilyRepository,
     private readonly people: PersonService,
   ) {}
+
+  async list(context: RequestContext, query: FamilyListQuery) {
+    const { items, total } = await this.repository.list(context.readOrganizationIds, query);
+    return {
+      items: items.map((family) => mapListItem(family, context.readOrganizationIds)),
+      total,
+      page: query.page,
+      pageSize: query.pageSize,
+    };
+  }
+
+  async getById(context: RequestContext, id: string) {
+    const family = await this.repository.findById(id, context.readOrganizationIds);
+    if (!family) throw new FamilyNotFoundError();
+    return mapFamily(family, context.readOrganizationIds);
+  }
 
   async create(context: RequestContext, payload: FamilyCreatePayload) {
     return this.handleConflict(() =>

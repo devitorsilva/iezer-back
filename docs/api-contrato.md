@@ -944,6 +944,12 @@ Ver e reenviar convite: qualquer papel. Criar e editar: Administrador ou Implant
 - `Family` (rotas `/pessoas/familias`) e `family` do detalhe da pessoa ganham `primaryContactPersonId` (ou `null`) e `address`: `{ postalCode, street, number, complement, district, city, state, secondaryPhone }` ou `null`. O endereço do domicílio é o do contato principal (não há cópia própria); `null` sem contato principal, sem endereço nele, ou quando ele é de uma organização que o usuário não lê.
 - `FamilyMember` ganha `sex`, `joinedAt` (ISO, ordem de entrada), `isPrimaryContact`, `mobilePhone`, `email`, `incomplete` (falta o mínimo do vínculo, como no detalhe), `usesFamilyAddress` (endereço igual ao do domicílio, sem contar o telefone) e `readable` (o usuário lê a organização da pessoa). Sem `readable`, `mobilePhone`/`email` vêm `null` e `incomplete`/`usesFamilyAddress` `false`.
 
+### Lista e página da família (RF-F05, revisão de 28/10)
+
+- `GET /pessoas/familias?page=&pageSize=&q=` (`pessoas.ver`) → `{ items: FamilyListItem[], total, page, pageSize }` (20 por página, até 100), ordenada pelo nome. Só famílias de organizações que o usuário lê ou com alguém delas. `q` busca no nome da família (sem diferenciar caixa) e no nome/apelido de qualquer membro (sem acento, todas as palavras).
+- `FamilyListItem`: `{ id, name, organizationId, organizationName, memberCount, primaryContact: { personId, name, preferredName, mobilePhone } | null, address }`. `address` no formato do `Family`; `mobilePhone` e `address` vêm `null` quando o contato principal é de uma organização que o usuário não lê.
+- `GET /pessoas/familias/:id` (`pessoas.ver`) → `Family` (o mesmo das rotas de escrita). 404 fora do alcance.
+
 ### Contato principal (RF-F08)
 
 - É o primeiro a entrar: na família criada, o primeiro adulto da lista; na família criada pelo cadastro de filho, o responsável. Sem data de nascimento conta como adulto.

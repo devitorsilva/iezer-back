@@ -1,5 +1,7 @@
 import type { FamilyRole, Prisma } from "@prisma/client";
 import { prisma } from "../../../lib/prisma.js";
+import { normalizeSearchText } from "../../../lib/text.js";
+import type { FamilyListQuery } from "./schemas.js";
 
 type Db = Prisma.TransactionClient;
 
@@ -46,19 +48,70 @@ const personSelect = {
 
 export type FamilyCandidate = Prisma.PersonGetPayload<{ select: typeof personSelect }>;
 
+// Lista de famílias (RF-F05): contato principal com o endereço do domicílio, sem carregar os membros.
+const listInclude = {
+  organization: { select: { id: true, name: true } },
+  primaryContact: {
+    select: {
+      id: true,
+      name: true,
+      preferredName: true,
+      organizationId: true,
+      mobilePhone: true,
+      secondaryPhone: true,
+      postalCode: true,
+      street: true,
+      number: true,
+      complement: true,
+      district: true,
+      city: true,
+      state: true,
+    },
+  },
+  _count: { select: { members: true } },
+} satisfies Prisma.FamilyInclude;
+
+export type FamilyListRow = Prisma.FamilyGetPayload<{ include: typeof listInclude }>;
+
+// A família é visível se for de uma organização lida ou tiver alguém dela.
+function visibleTo(organizationIds: string[]): Prisma.FamilyWhereInput {
+  return {
+    OR: [
+      { organizationId: { in: organizationIds } },
+      { members: { some: { person: { organizationId: { in: organizationIds } } } } },
+    ],
+  };
+}
+
 export class FamilyRepository {
-  // A família é visível se for de uma organização lida ou tiver alguém dela.
-  findById(id: string, organizationIds: string[], db: Db = prisma): Promise<FamilyWithMembers | null> {
-    return db.family.findFirst({
-      where: {
-        id,
+  async list(organizationIds: string[], query: FamilyListQuery) {
+    const and: Prisma.FamilyWhereInput[] = [visibleTo(organizationIds)];
+    if (query.q) {
+      const words = normalizeSearchText(query.q).split(" ").filter(Boolean);
+      and.push({
         OR: [
-          { organizationId: { in: organizationIds } },
-          { members: { some: { person: { organizationId: { in: organizationIds } } } } },
+          { name: { contains: query.q.trim(), mode: "insensitive" } },
+          { members: { some: { person: { AND: words.map((word) => ({ searchName: { contains: word } })) } } } },
         ],
-      },
-      include,
-    });
+      });
+    }
+    const where = { AND: and };
+
+    const [items, total] = await Promise.all([
+      prisma.family.findMany({
+        where,
+        include: listInclude,
+        orderBy: [{ name: "asc" }, { id: "asc" }],
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
+      }),
+      prisma.family.count({ where }),
+    ]);
+    return { items, total };
+  }
+
+  findById(id: string, organizationIds: string[], db: Db = prisma): Promise<FamilyWithMembers | null> {
+    return db.family.findFirst({ where: { id, ...visibleTo(organizationIds) }, include });
   }
 
   findPeople(ids: string[], organizationIds: string[], db: Db): Promise<FamilyCandidate[]> {

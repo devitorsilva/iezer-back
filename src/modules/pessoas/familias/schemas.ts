@@ -42,6 +42,16 @@ export const familyAddressSchema = z.object({
 
 export const familyMemberUpdateSchema = z.object({ role });
 
+const optionalInt = (min: number, max: number) =>
+  z.preprocess((value) => (value === "" ? undefined : value), z.coerce.number().int().min(min).max(max).optional());
+
+// RF-F05: lista de famílias. `q` busca no nome da família e no de qualquer membro.
+export const familyListQuerySchema = z.object({
+  page: optionalInt(1, 100_000).default(1),
+  pageSize: optionalInt(1, 100).default(20),
+  q: z.preprocess((value) => (typeof value === "string" && value.trim() === "" ? undefined : value), z.string().max(100).optional()),
+});
+
 export const familyParamsSchema = z.object({
   id: z.string().cuid(),
 });
@@ -57,3 +67,4 @@ export type FamilyMemberPayload = z.infer<typeof familyMemberSchema>;
 export type FamilyPrimaryContactPayload = z.infer<typeof familyPrimaryContactSchema>;
 export type FamilyAddressPayload = z.infer<typeof familyAddressSchema>;
 export type FamilyMemberUpdatePayload = z.infer<typeof familyMemberUpdateSchema>;
+export type FamilyListQuery = z.infer<typeof familyListQuerySchema>;
