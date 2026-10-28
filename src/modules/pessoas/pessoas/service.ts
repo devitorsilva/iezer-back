@@ -1,4 +1,4 @@
-import { Prisma, type PersonBond, type Receivable } from "@prisma/client";
+import { Prisma, type FamilyRole, type PersonBond, type Receivable } from "@prisma/client";
 import { requireWriteOrganization, type RequestContext } from "../../../lib/access.js";
 import { runAudited, type AuditEntry, type AuditWriter } from "../../../lib/audit.js";
 import { ageOn, formatCivilDate, parseCivilDate, todayCivil } from "../../../lib/civil-date.js";
@@ -6,17 +6,22 @@ import { isValidCpf, normalizeCpf } from "../../../lib/cpf.js";
 import { AppError } from "../../../lib/errors.js";
 import { normalizePhone } from "../../../lib/phone.js";
 import { normalizeSearchText } from "../../../lib/text.js";
-import { mapFamilyMembers } from "../familias/service.js";
+import type { FamilyRepository } from "../familias/repository.js";
+import { mapFamilyAddress, mapFamilyMembers } from "../familias/service.js";
 import type { ChurchListRepository } from "../listas/repository.js";
 import { indicatorDays, JOURNEY_INDICATORS, loadJourneySettings } from "./jornada.js";
 import type { PersonDetail, PersonListItem, PersonRepository } from "./repository.js";
 import {
   describeMissing,
+  FAMILY_SHARED_FIELDS,
+  familyAddressOf,
   familyNameFor,
+  firstAdult,
   GUARDIAN_ROLES,
   isGuardianMember,
   isMinor,
   missingFields,
+  type FamilyAddress,
   type MissingField,
   type RequirementInput,
 } from "./rules.js";
@@ -52,18 +57,6 @@ const CIVIL_DATE_FIELDS = [
 ] as const;
 
 type CivilDateField = (typeof CIVIL_DATE_FIELDS)[number];
-
-// Endereço e telefone fixo são do domicílio (RF-F03).
-const FAMILY_SHARED_FIELDS = [
-  "postalCode",
-  "street",
-  "number",
-  "complement",
-  "district",
-  "city",
-  "state",
-  "secondaryPhone",
-] as const;
 
 // Mudou um destes, o contato conta como atualizado (indicador de contato desatualizado).
 const CONTACT_FIELDS = ["mobilePhone", "secondaryPhone", "email", ...FAMILY_SHARED_FIELDS] as const;
@@ -110,7 +103,8 @@ function promotionRequirements(person: PersonDetail) {
   ) as Partial<Record<PersonBond, MissingField[]>>;
 }
 
-export function mapDetail(person: PersonDetail) {
+// `readOrganizationIds`: contato e endereço dos membros da família só de quem o usuário lê.
+export function mapDetail(person: PersonDetail, readOrganizationIds: string[]) {
   const {
     organization,
     admissionMethod,
@@ -138,7 +132,9 @@ export function mapDetail(person: PersonDetail) {
           id: familyMember.family.id,
           name: familyMember.family.name,
           role: familyMember.role,
-          members: mapFamilyMembers(familyMember.family.members),
+          primaryContactPersonId: familyMember.family.primaryContactPersonId,
+          address: mapFamilyAddress(familyMember.family, readOrganizationIds),
+          members: mapFamilyMembers(familyMember.family, readOrganizationIds),
         }
       : null,
     consent: consent
@@ -256,6 +252,7 @@ export class PersonService {
   constructor(
     private readonly repository: PersonRepository,
     private readonly lists: ChurchListRepository,
+    private readonly families: FamilyRepository,
   ) {}
 
   async list(context: RequestContext, query: PersonListQuery) {
@@ -280,7 +277,7 @@ export class PersonService {
   async getById(context: RequestContext, id: string) {
     const person = await this.repository.findById(id, context.readOrganizationIds);
     if (!person) throw new PersonNotFoundError();
-    return mapDetail(person);
+    return mapDetail(person, context.readOrganizationIds);
   }
 
   // Contribuições (RT-B04): endpoint separado do detalhe, com permissão própria.
@@ -343,16 +340,31 @@ export class PersonService {
     return { items };
   }
 
-  // Cadastro rápido (RF-C01, RF-C04).
+  // Cadastro rápido (RF-C01, RF-C04). Entra num domicílio pelo responsável (RF-F04, como filho) ou
+  // direto pela família (RF-F07, com o papel escolhido); o responsável do menor sai da família.
   async create(context: RequestContext, payload: PersonCreatePayload) {
-    const { guardian, consent, organizationId: requestedOrganizationId, bond, ...fields } = payload;
+    const {
+      guardian,
+      consent,
+      family: familyRef,
+      useFamilyAddress,
+      organizationId: requestedOrganizationId,
+      bond,
+      ...fields
+    } = payload;
     const organizationId = this.resolveCreateOrganization(context, requestedOrganizationId);
     const minor = isMinor(fields.birthDate);
+    const needsGuardian = minor || bond === "MEMBRO_EM_FORMACAO";
 
-    if ((minor || bond === "MEMBRO_EM_FORMACAO") && !guardian) throw requirementsError(["guardian"]);
+    if (needsGuardian && !guardian && !familyRef) throw requirementsError(["guardian"]);
     if (minor && !consent) throw requirementsError(["consent"]);
 
-    const missing = missingFields({ ...fields, bond, hasGuardian: Boolean(guardian), hasConsent: Boolean(consent) });
+    const missing = missingFields({
+      ...fields,
+      bond,
+      hasGuardian: Boolean(guardian || familyRef),
+      hasConsent: Boolean(consent),
+    });
     if (missing.length > 0) throw requirementsError(missing);
 
     try {
@@ -363,25 +375,31 @@ export class PersonService {
         const guardianPerson = guardian
           ? await this.resolveGuardian(context, guardian, organizationId, tx, audit)
           : null;
+        const family = familyRef ? await this.families.findById(familyRef.id, context.readOrganizationIds, tx) : null;
+        if (familyRef && !family) throw invalidReference("Família não encontrada.");
 
-        // Criança sem endereço herda o do responsável (endereço compartilhado da família).
-        const address =
-          guardianPerson && !fields.postalCode && !fields.street
-            ? {
-                postalCode: guardianPerson.postalCode,
-                street: guardianPerson.street,
-                number: guardianPerson.number,
-                complement: guardianPerson.complement,
-                district: guardianPerson.district,
-                city: guardianPerson.city,
-                state: guardianPerson.state,
-              }
-            : {};
+        const familyGuardian = family?.members.find((member) =>
+          isGuardianMember({ role: member.role, birthDate: member.person.birthDate }),
+        );
+        if (family && needsGuardian && !familyGuardian) throw requirementsError(["guardian"]);
+
+        // "Usar o endereço do domicílio" (RF-F03): o do contato principal; responsável ainda sem
+        // família vira o contato principal da nova, então vale o dele.
+        const guardianFamily = guardianPerson?.familyMember?.family;
+        const address = !useFamilyAddress
+          ? null
+          : family
+            ? mapFamilyAddress(family)
+            : guardianFamily
+              ? mapFamilyAddress(guardianFamily)
+              : guardianPerson
+                ? familyAddressOf(guardianPerson)
+                : null;
 
         const created = await this.repository.create(
           {
             ...fields,
-            ...address,
+            ...(address ?? {}),
             name: fields.name,
             bond,
             bondSince: initialBondSince(bond, fields),
@@ -391,15 +409,17 @@ export class PersonService {
           tx,
         );
 
-        if (guardianPerson) await this.linkToGuardianFamily(created.id, guardianPerson, tx, audit);
+        if (guardianPerson) await this.linkToGuardianFamily(created, guardianPerson, tx, audit);
+        if (family) await this.joinFamily(family, created, familyRef!.role, tx, audit);
 
         if (consent) {
+          const givenBy = guardianPerson?.id ?? familyGuardian?.personId ?? null;
           const record = await this.repository.createConsent(
             {
               organizationId,
               personId: created.id,
               purpose: "CADASTRO",
-              givenByPersonId: minor && guardianPerson ? guardianPerson.id : null,
+              givenByPersonId: minor ? givenBy : null,
               method: consent.method,
               textVersion: CONSENT_TEXT_VERSION,
               givenAt: consent.givenAt ?? parseCivilDate(todayCivil()),
@@ -410,7 +430,10 @@ export class PersonService {
           await audit(auditEntry("registrar_consentimento", organizationId, "PersonConsent", record.id, { after: record }));
         }
 
-        const person = mapDetail((await this.repository.findById(created.id, [organizationId], tx))!);
+        const person = mapDetail(
+          (await this.repository.findById(created.id, [organizationId], tx))!,
+          context.readOrganizationIds,
+        );
         await audit(auditEntry("criar", organizationId, "Person", person.id, { after: person }));
         return person;
       });
@@ -423,7 +446,7 @@ export class PersonService {
   // Edição dos dados cadastrais. A obrigatoriedade por vínculo vale para novas edições:
   // não dá para tirar um dado exigido, mas cadastro migrado incompleto continua editável.
   async update(context: RequestContext, id: string, payload: PersonUpdatePayload) {
-    const { applyToFamily, ...fields } = payload;
+    const fields = payload;
     try {
       return await runAudited(context.actor, async (tx, audit) => {
         const existing = await this.assertExists(context, id, tx);
@@ -456,11 +479,14 @@ export class PersonService {
             },
             tx,
           ),
+          context.readOrganizationIds,
         );
         await audit(
-          auditEntry("editar", existing.organizationId, "Person", id, { before: mapDetail(existing), after: updated }),
+          auditEntry("editar", existing.organizationId, "Person", id, {
+            before: mapDetail(existing, context.readOrganizationIds),
+            after: updated,
+          }),
         );
-        if (applyToFamily) await this.applyToFamily(context, existing, changes, tx, audit);
         return updated;
       });
     } catch (error) {
@@ -488,40 +514,39 @@ export class PersonService {
       }
 
       await this.repository.delete(id, tx);
-      await audit(auditEntry("apagar_registro", existing.organizationId, "Person", id, { before: mapDetail(existing) }));
+      await audit(
+        auditEntry("apagar_registro", existing.organizationId, "Person", id, {
+          before: mapDetail(existing, context.readOrganizationIds),
+        }),
+      );
     });
   }
 
-  // RF-F03: copia endereço e telefone fixo para os outros membros da família que o usuário enxerga,
-  // com a mesma regra do "não piorar" do vínculo.
-  private async applyToFamily(
+  // RF-F03: grava o endereço e o telefone fixo do domicílio nas pessoas marcadas que o usuário
+  // enxerga, com a mesma regra do "não piorar" do vínculo. Usado pela família ("Atualizar endereço",
+  // "Usar o endereço do domicílio").
+  async applyFamilyAddress(
     context: RequestContext,
-    person: PersonDetail,
-    changes: PersonUpdateFields,
+    personIds: string[],
+    address: FamilyAddress,
     db: Db,
     audit: AuditWriter,
   ) {
-    const shared: Partial<Record<(typeof FAMILY_SHARED_FIELDS)[number], string | null>> = {};
-    for (const field of FAMILY_SHARED_FIELDS) {
-      if (changes[field] !== undefined) shared[field] = changes[field];
-    }
-    if (Object.keys(shared).length === 0) return;
+    const people = await this.repository.findManyByIds(personIds, context.readOrganizationIds, db);
+    if (people.length !== personIds.length) throw invalidReference("Pessoa não encontrada.");
 
-    const otherIds = (person.familyMember?.family.members ?? [])
-      .map((member) => member.personId)
-      .filter((personId) => personId !== person.id);
-    const others = await this.repository.findManyByIds(otherIds, context.readOrganizationIds, db);
-    if (others.length === 0) return;
+    const changed = people.filter((person) => FAMILY_SHARED_FIELDS.some((field) => person[field] !== address[field]));
+    if (changed.length === 0) return;
 
-    for (const existing of others) {
+    for (const existing of changed) {
       const current = requirementInput(existing);
       const before = new Set(missingFields(current));
-      const worse = missingFields({ ...current, ...shared }).filter((field) => !before.has(field));
+      const worse = missingFields({ ...current, ...address }).filter((field) => !before.has(field));
       if (worse.length > 0) {
         throw new AppError(
           400,
           "BOND_REQUIREMENTS",
-          `${existing.name} ficaria sem ${describeMissing(worse)}. Salve sem aplicar à família.`,
+          `${existing.name} ficaria sem ${describeMissing(worse)}. Desmarque essa pessoa ou informe o telefone.`,
           { missingFields: worse, target: "family", personId: existing.id },
         );
       }
@@ -530,15 +555,15 @@ export class PersonService {
     // Uma escrita só (a transação roda no pooler; muitas idas ao banco estouram o tempo dela).
     const contactUpdatedAt = new Date();
     await this.repository.updateMany(
-      others.map((existing) => existing.id),
-      { ...shared, contactUpdatedAt },
+      changed.map((existing) => existing.id),
+      { ...address, contactUpdatedAt },
       db,
     );
     await audit(
-      others.map((existing) =>
+      changed.map((existing) =>
         auditEntry("editar", existing.organizationId, "Person", existing.id, {
-          before: mapDetail(existing),
-          after: mapDetail({ ...existing, ...shared, contactUpdatedAt }),
+          before: mapDetail(existing, context.readOrganizationIds),
+          after: mapDetail({ ...existing, ...address, contactUpdatedAt }, context.readOrganizationIds),
         }),
       ),
     );
@@ -614,29 +639,63 @@ export class PersonService {
       },
       db,
     );
-    await audit(auditEntry("criar", organizationId, "Person", created.id, { after: mapDetail(created) }));
+    await audit(
+      auditEntry("criar", organizationId, "Person", created.id, {
+        after: mapDetail(created, context.readOrganizationIds),
+      }),
+    );
     return created;
   }
 
-  // Família do responsável (criada se ele ainda não tiver), com a criança como filho.
-  private async linkToGuardianFamily(childId: string, guardian: PersonDetail, db: Db, audit: AuditWriter) {
-    let familyId = guardian.familyMember?.familyId;
+  // Família do responsável (criada se ele ainda não tiver, com ele de contato principal), com a criança
+  // como filho.
+  private async linkToGuardianFamily(
+    child: { id: string; birthDate: Date | null },
+    guardian: PersonDetail,
+    db: Db,
+    audit: AuditWriter,
+  ) {
+    let family = guardian.familyMember?.family;
 
-    if (!familyId) {
-      const family = await this.repository.createFamily(guardian.organizationId, familyNameFor(guardian.name), db);
-      await this.repository.addFamilyMember(family.id, guardian.id, "RESPONSAVEL", db);
-      familyId = family.id;
+    if (!family) {
+      const name = familyNameFor(guardian.name);
+      family = await this.families.create(
+        {
+          organizationId: guardian.organizationId,
+          name,
+          primaryContactPersonId: guardian.id,
+          members: [{ personId: guardian.id, role: "RESPONSAVEL" }],
+        },
+        db,
+      );
       await audit(
         auditEntry("criar", guardian.organizationId, "Family", family.id, {
-          after: { ...family, members: [{ personId: guardian.id, role: "RESPONSAVEL" }] },
+          after: {
+            name,
+            primaryContactPersonId: guardian.id,
+            members: [{ personId: guardian.id, role: "RESPONSAVEL" }],
+          },
         }),
       );
     }
 
-    await this.repository.addFamilyMember(familyId, childId, "FILHO", db);
+    await this.joinFamily(family, child, "FILHO", db, audit);
+  }
+
+  // Entra no domicílio. Sem contato principal, o primeiro adulto que entra passa a ser (RF-F08).
+  private async joinFamily(
+    family: { id: string; organizationId: string; primaryContactPersonId: string | null },
+    person: { id: string; birthDate: Date | null },
+    role: FamilyRole,
+    db: Db,
+    audit: AuditWriter,
+  ) {
+    await this.families.addMember(family.id, person.id, role, db);
+    const primary = !family.primaryContactPersonId && firstAdult([{ personId: person.id, birthDate: person.birthDate }]);
+    if (primary) await this.families.setPrimaryContact(family.id, primary, db);
     await audit(
-      auditEntry("adicionar_membro", guardian.organizationId, "Family", familyId, {
-        after: { personId: childId, role: "FILHO" },
+      auditEntry("adicionar_membro", family.organizationId, "Family", family.id, {
+        after: { personId: person.id, role, ...(primary ? { primaryContactPersonId: primary } : {}) },
       }),
     );
   }

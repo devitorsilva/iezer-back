@@ -7,10 +7,26 @@ export const familyMemberPersonSelect = {
   id: true,
   name: true,
   preferredName: true,
+  sex: true,
   birthDate: true,
   bond: true,
   status: true,
   organizationId: true,
+  // Contato, endereço do domicílio e "cadastro incompleto" na lista da família (RF-F06).
+  mobilePhone: true,
+  email: true,
+  secondaryPhone: true,
+  postalCode: true,
+  street: true,
+  number: true,
+  complement: true,
+  district: true,
+  city: true,
+  state: true,
+  conversionDate: true,
+  admissionMethodId: true,
+  admissionDate: true,
+  consents: { where: { purpose: "CADASTRO", revokedAt: null }, select: { id: true }, take: 1 },
 } satisfies Prisma.PersonSelect;
 
 const include = {
@@ -53,7 +69,12 @@ export class FamilyRepository {
   }
 
   create(
-    data: { organizationId: string; name: string; members: { personId: string; role: FamilyRole }[] },
+    data: {
+      organizationId: string;
+      name: string;
+      primaryContactPersonId: string | null;
+      members: { personId: string; role: FamilyRole }[];
+    },
     db: Db,
   ): Promise<FamilyWithMembers> {
     const { members, ...family } = data;
@@ -62,6 +83,10 @@ export class FamilyRepository {
 
   update(id: string, data: { name: string }, db: Db): Promise<FamilyWithMembers> {
     return db.family.update({ where: { id }, data, include });
+  }
+
+  setPrimaryContact(id: string, personId: string | null, db: Db) {
+    return db.family.update({ where: { id }, data: { primaryContactPersonId: personId } });
   }
 
   addMember(familyId: string, personId: string, role: FamilyRole, db: Db) {

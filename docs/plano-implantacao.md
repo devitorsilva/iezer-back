@@ -311,38 +311,48 @@ A Sprint 14 (homologação no navegador) continua adiada; estas sprints vêm ant
 - **IDs:** B6, B11, B14, RF-BO15, RF-BO22 a RF-BO24, RF-BO51, RF-BO52, RF-BO59 a RF-BO61, RT-BB07, RT-BB12, RT-BB14.
 - **Pronto quando:** a exportação de uma igreja de teste chega por link ao responsável (no log) sem a equipe conseguir baixá-la, e as ações feitas pela equipe nas sprints 15 a 22 aparecem na auditoria interna.
 
-## Pessoas: árvore da família (Sprints 23 e 24)
+## Pessoas: domicílio e família (Sprints 23 e 24)
 
-Requisitos: `docs/prd/pessoas.md` (RF-F01 a RF-F05). Referência visual: o mapa de processos do projeto `mapeamento-processos-app` do usuário (`@xyflow/react` + `@dagrejs/dagre`). Os padrões que valem estão descritos nas sprints, para não depender do projeto. A Sprint 23 vem antes da 18; depois dela, o back-office segue da 18 em diante.
+Requisitos: `docs/prd/pessoas.md` (RF-F01 a RF-F09). Sem visão em árvore (RF-F06): domicílio e parentes aparecem em lista e em texto. A Sprint 23 vem antes da 18; depois dela, o back-office segue da 18 em diante.
 
-Limite do modelo atual: `Family` é o domicílio. `FamilyMember.personId` é único (uma família por pessoa), e os papéis (Responsável, Cônjuge, Filho, Outro) não dizem de quem a pessoa é filha. A Sprint 23 desenha só o domicílio, sem mudar o back. A genealogia entre domicílios (avós, filho casado com família própria) é a Sprint 24 e depende de decisão no PRD.
+Limite do modelo atual: `Family` é o domicílio. `FamilyMember.personId` é único (uma família por pessoa), e os papéis (Responsável, Cônjuge, Filho, Outro) não dizem de quem a pessoa é filha. O parentesco entre domicílios (avós, filho casado com família própria) é a Sprint 24 e depende de decisão no PRD.
 
-## Sprint 23 — Pessoas: árvore do domicílio (front) `[ ]`
+## Sprint 23 — Pessoas: famílias, contato principal e endereço sugerido (back + front) `[ ]`
 
-**Objetivo:** ver a família do perfil como diagrama, além da lista.
+**Objetivo:** o domicílio ganha uma página própria (e a lista de famílias), mostra com clareza quem procurar, e o endereço do domicílio deixa de sobrescrever o de cada pessoa.
 
-- Sem mudança no back: a árvore sai de `pessoa.family.members` (papel, idade, vínculo, situação, `isGuardian`).
-- Dependências `@xyflow/react` e `@dagrejs/dagre`, carregadas só quando a árvore abre (`React.lazy`), sem pesar no perfil.
-- `features/pessoas/components/perfil/arvore-familia/`: `layout.ts` (função pura membros → nós e arestas, dagre `rankdir: "TB"`, tamanho fixo do nó, usada num `useMemo`), `nos.tsx` (nó de pessoa e nó de união) e `arvore-familia.tsx` (`ReactFlow`, `Controls`, legenda).
-- Layout: Responsável e Cônjuge no topo, ligados por um nó de união (losango pequeno; o dagre não entende casal). Os Filhos saem da união, ou do responsável quando não há casal. Outro fica numa faixa à parte, sem aresta. Arestas `smoothstep`, handles invisíveis, `nodesConnectable={false}`, sem arrastar.
-- Nó: iniciais, nome de exibição, papel e idade. Borda na cor do vínculo (mapa único derivado de `VINCULO_STYLE`, nada de hex repetido); tracejada e esmaecida para situação diferente de Ativo; `ShieldCheck` para responsável legal; `Baby` para menor; `ring-primary` na pessoa do perfil. A seleção vem por Context, não pelo `data` do nó, para não refazer o layout.
-- Legenda no rodapé (vínculos, situação não Ativa, responsável legal) e `fitView` ao abrir.
-- Clique no nó abre um Sheet com o resumo (vínculo, situação, idade, papel) e as ações da lista: abrir perfil, trocar papel, remover da família e cadastrar filho (RF-F04, só com `podeSerResponsavel`), cada uma pela permissão.
-- Alternância "Lista | Árvore" nas ações do `SecaoCard` da família, na URL (`?visao=arvore`). No mobile (`useIsMobile`) a lista é o padrão; a árvore abre com pan e zoom por toque. Família de uma pessoa só não mostra a alternância.
-- Não copiar do projeto de referência: nós copiados para o estado por `useEffect` (render duplo, posições perdidas no refetch), cores em hex fixo e tipo do nó pelo prefixo do id (usar `node.type`).
-- Documentar o padrão de diagrama no `CLAUDE.md` do front.
-- **IDs:** RF-F01, RF-F02, RF-F04, RT-F06.
-- **Pronto quando:** uma família com casal, dois filhos (um menor) e um Outro aparece como árvore no desktop e no celular, e o clique numa pessoa abre o Sheet só com as ações permitidas.
+- **Revisão de 28/10/2026 (a fazer):** a gestão do domicílio sai da ficha da pessoa (mexer em outras pessoas a partir da ficha de uma confunde). O que já foi feito (itens abaixo) muda de lugar, sem refazer:
+  - Back: `GET /pessoas/familias` (`pessoas.ver`; paginada, busca pelo nome da família ou de um membro, só famílias de organizações lidas ou com alguém delas; item com nome, organização, quantidade de pessoas, contato principal e endereço em uma linha) e `GET /pessoas/familias/:id` (`pessoas.ver`, o mesmo `Family`). As rotas de escrita já existem.
+  - Front, lista (RF-F05, vinda da Sprint 24): `/app/pessoas/familias`, entrada no menu de Pessoas, tabela no desktop e cards no mobile, busca, paginação, skeleton.
+  - Front, página da família: `/app/pessoas/familias/:id` com o cabeçalho (nome, "N pessoas", endereço; "Adicionar pessoa", "Atualizar endereço", "Renomear"), a lista com o menu ⋯ (papel, contato principal, remover) e o aviso sem contato principal. Ver: `pessoas.ver`; ações: `pessoas.editar`.
+  - Aba Família do perfil: a mesma lista, só leitura (sem ⋯ nem diálogos de gestão), com "Abrir família". Ficam as ações da própria pessoa: "Cadastrar filho" (RF-F04) e, sem família, "Criar família" e "Adicionar a uma família" (busca de família pelo `GET /pessoas/familias`, papel e "Usar o endereço do domicílio").
+  - Reaproveitar `familia-tab.tsx`: tabela/cards num componente de lista com as ações opcionais; diálogos e handlers na página da família.
 
-## Sprint 24 — Pessoas: genealogia entre famílias e visão por família (back + front) `[ ]`
+- Ordem de entrada: `FamilyMember.createdAt` (já existe; trocar o papel não recria a linha), exposta como `joinedAt`.
+- Contato principal (RF-F08): migração com `Family.primaryContactPersonId` (opcional), backfill com o primeiro a entrar. Quando ele sai do domicílio, o papel passa ao próximo adulto (18+) pela ordem de entrada; sem adulto, fica vazio. A secretaria define em `PATCH /pessoas/familias/:id/contato-principal`, inclusive um menor (pode ser o único da família na igreja). Auditado.
+- Endereço do domicílio (RF-F03 alterado): é o endereço e o telefone fixo do contato principal (sem coluna nova, para não haver uma segunda cópia que se desencontra). `PATCH /pessoas/familias/:id/endereco` com o endereço e `aplicarA` (ids de membros) grava só as pessoas marcadas, com a regra do "não piorar" do vínculo. Sai o `applyToFamily` do `PATCH` da pessoa (o endereço da pessoa é só dela) e, no front, a pergunta "aplicar a toda a família?". Sem contato principal, não há endereço do domicílio.
+- Incluir no domicílio: `POST /familias/:id/membros` e o cadastro (filho e pessoa nova) aceitam `useFamilyAddress`; o cadastro de filho deixa de copiar o endereço do responsável sozinho (a opção vem marcada). O cadastro rápido aceita `family: { id, role }` para criar a pessoa já no domicílio (RF-F07).
+- `family` ganha `primaryContactPersonId` e o endereço do domicílio; `family.members` ganha `joinedAt`, `isPrimaryContact`, `mobilePhone`, `email`, `incomplete` e `usesFamilyAddress` (endereço igual ao do contato principal; marca quem recebe o "Atualizar endereço").
+- Sem data de nascimento conta como adulto (mesma regra de `isMinor`). Domicílio sem contato principal: o primeiro adulto que entrar passa a ser.
+- Front, lista (RF-F06): cabeçalho com nome, "N pessoas", "Adicionar pessoa", "Renomear" e "Atualizar endereço". Tabela com pessoa (avatar, nome, estrela no contato principal), papel, idade, vínculo (selo) e contato; linha da ficha atual destacada ("Ficha atual"); pendência como texto ("Cadastro incompleto"), nunca cor de borda. Relações em texto, a partir do Responsável e do Cônjuge do domicílio: "cônjuge de Daniela", "filho de Daniela e Paulo" (sem ano: o modelo não tem data de casamento). Menu ⋯ com papel, definir contato principal e remover. Mobile: cards que abrem a ficha. Skeleton na estrutura nova. Aviso quando falta contato principal, com a ação para quem pode editar.
+- "Adicionar pessoa" (RF-F07): uma busca (`PersonPicker`); sem a pessoa, "Cadastrar nova pessoa" abre o `CadastroRapidoDialog` com o nome digitado e o papel.
+- "Atualizar endereço" (RF-F03): dialog com o endereço (`CepInput`) e os membros, já marcados os que tinham o endereço antigo.
+- Filho de outra relação (RF-F09): papel Filho, sem campo novo; por isso "filho de" pode citar padrasto ou madrasta.
+- Fora: pessoa em mais de um domicílio (não decidido; `FamilyMember.personId` segue único).
+- Atualizar `docs/api-contrato.md` e o `CLAUDE.md` do front (aba Família).
+- **IDs:** RF-F01 a RF-F04, RF-F06 a RF-F09, RT-F06, RT-F09.
+- **IDs (revisão):** + RF-F05.
+- **Pronto quando:** num domicílio com casal, dois filhos (um menor) e um Outro, a página da família mostra o contato principal; removê-lo passa a estrela ao próximo adulto; com só o menor, aparece o aviso; "Atualizar endereço" muda só quem foi marcado; a ficha da pessoa mostra a família sem ações de gestão; a lista de famílias acha a família pelo nome de um membro.
 
-**Objetivo:** ligar pais, filhos e cônjuges de domicílios diferentes, e ver a igreja por família.
+## Sprint 24 — Pessoas: parentesco entre domicílios (back + front) `[ ]`
 
-- **Antes de planejar:** decisão no PRD Pessoas. Proposta: `PersonRelation` (pessoa, parente, tipo PAI_MAE ou CONJUGE), separada do domicílio; regras (sem ciclo, no máximo dois pais, cônjuge recíproco, mesma igreja); auditoria com as duas pessoas em `personIds`; efeito do desligamento e do falecimento; o que aparece de um parente numa organização que o usuário não lê.
-- `GET /pessoas/:id/arvore?geracoes=N` (ancestrais e descendentes até N gerações, só nas organizações que o usuário lê) e `GET /pessoas/familias` paginada.
-- Árvore do perfil passa a ter várias gerações, com o mesmo `layout.ts` (casal → união → filhos). Visão por família (RF-F05): famílias como grupos coloridos em grade (nó `group` com `parentId` e `extent: "parent"`, dagre dentro de cada grupo) e filtro "ir para família" com `fitView` no grupo.
-- **IDs:** RF-F05 e as decisões novas do PRD.
-- **Pronto quando:** avós, pais e netos em domicílios diferentes aparecem ligados na árvore, e nenhum dado de pessoa fora do escopo do usuário vaza.
+**Objetivo:** ligar pais, filhos e cônjuges de domicílios diferentes.
+
+- **Antes de planejar:** decisão no PRD Pessoas. Proposta: `PersonRelation` (pessoa, parente, tipo PAI_MAE ou CONJUGE), separada do domicílio; regras (sem ciclo, no máximo dois pais, cônjuge recíproco, mesma igreja); auditoria com as duas pessoas em `personIds`; efeito do desligamento e do falecimento; o que aparece de um parente numa organização que o usuário não lê. Decidir também se uma pessoa pode estar em mais de um domicílio (pais separados).
+- Parentes na ficha em lista e texto ("pai de…", "filho de…", com link para a ficha), sem diagrama.
+- A lista de famílias (RF-F05) foi para a Sprint 23; aqui fica a visão por família nos relatórios, se o PRD mantiver.
+- **IDs:** as decisões novas do PRD.
+- **Pronto quando:** avós, pais e netos em domicílios diferentes aparecem ligados na ficha, e nenhum dado de pessoa fora do escopo do usuário vaza.
 
 ---
 
@@ -453,3 +463,10 @@ Entradas curtas (até 8 linhas), mais recente por último.
   Testado por HTTP (3399) com `implantacao.teste@iezer.local` e `suporte.teste@iezer.local` (senha `Sprint17-Teste-Equipe!`, TOTP com segredo só no scratchpad desta janela; criados direto no banco): papéis, criação, CNPJ repetido/inválido, nomes repetidos, e-mail de outra igreja e da equipe, lista/busca/filtro, detalhe, 404, edições, contatos, reenvio com e-mails no log e auditoria `SUPORTE` na igreja. Ficou a "Igreja Teste Dezessete Editada" (CNPJ `12.ABC.345/01DE-35`) em Implantação, com o convite de `admin.17@iezer.local`.
   Pendências: telas testadas só por typecheck e build; marca de e-mail rejeitado na aba Usuários fica para a Sprint 20; no Render, `migrate deploy`.
 - 27/10/2026 · Preparação da árvore da família · Sprints 23 (árvore do domicílio, só front, sem mudar o back) e 24 (genealogia entre famílias, depende de decisão no PRD) adicionadas, a partir do mapa de processos do projeto `mapeamento-processos-app`. A 23 vem antes da 18; o back-office volta depois dela.
+- 27/10/2026 · Mudança de decisão na aba Família · Sem visão em árvore (RF-F06): a árvore feita no front (React Flow + dagre, branch `sprint-23-arvore-familia`) saiu antes do commit, com as dependências. PRD Pessoas atualizado (RF-F03 alterado, RF-F06 a RF-F09; a cópia do repo manteve as transcrições dos diagramas) e Sprints 23 e 24 reescritas: lista do domicílio, contato principal, endereço do domicílio só como sugestão; parentesco e visão por família em lista.
+  Decisões: sem data de casamento (relação sem ano); sai o "aplicar a toda a família?" da edição da pessoa; a secretaria pode definir um menor como contato principal.
+- 28/10/2026 · Sprint 23 (primeira parte) · Lista do domicílio, contato principal e endereço sugerido (branch `sprint-23-familia-lista` nos dois repos; a revisão do mesmo dia leva a gestão para a página da família, ainda a fazer). Migração `20261027_familia_contato_principal` (`migrate deploy`): `Family.primaryContactPersonId`, backfill com o primeiro a entrar.
+  Back: `firstAdult` e campos do domicílio em `pessoas/rules.ts`; contato principal na criação, na entrada (sem contato, o primeiro adulto), na saída (próximo adulto pela ordem) e na importação; `PATCH /familias/:id/contato-principal` e `/endereco` (`applyFamilyAddress` no `PersonService`, com o "não piorar"); `POST /pessoas` com `family` e `useFamilyAddress`; sai o `applyToFamily`. Membro ganha `sex`, `joinedAt`, `isPrimaryContact`, `readable`, contato, `incomplete`, `usesFamilyAddress`; contato e endereço de quem é de organização não lida ficam de fora (`mapDetail(person, readOrganizationIds)`).
+  Front: aba Família em tabela/cards, relações em texto, aviso sem contato principal, `AtualizarEnderecoDialog`, `endereco-campos.tsx` (compartilhado com a seção Endereço), "Cadastrar nova pessoa" no `PersonPicker` (`onCriar`) → `CadastroRapidoDialog` com `familiaFixa`/`nomeInicial`/`enderecoSugerido`; `PerfilSkeleton` da aba Família.
+  Decisões: endereço do domicílio = o do contato principal (sem coluna nova); "filha/filho de" pelo `sex`; sem data de casamento, "cônjuge de" sem ano.
+  Testado: script nos serviços (15 casos: criação, menor pela família com consentimento, entrada com endereço, passagem do contato, só marcados, menor como contato, cadastro de filho com/sem endereço, "não piorar", adulto sem nascimento, `guardian`+`family` recusado), dados apagados no fim (o log fica); rotas 401/404 com o servidor na 3399; typecheck dos dois, `build` e `build:admin`. Daqui o banco leva ~1 s por consulta (o teste precisou de timeout maior; no Render é perto). Pendente: teste visual; membro de outra organização não testado (só a sede no banco); importação não define contato quando um adulto entra numa família já existente sem contato.

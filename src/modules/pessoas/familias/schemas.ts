@@ -1,6 +1,7 @@
 import { z } from "zod";
+import { addressFields } from "../pessoas/schemas.js";
 
-const FAMILY_ROLES = ["RESPONSAVEL", "CONJUGE", "FILHO", "OUTRO"] as const;
+export const FAMILY_ROLES = ["RESPONSAVEL", "CONJUGE", "FILHO", "OUTRO"] as const;
 
 const role = z.enum(FAMILY_ROLES, "Papel inválido.");
 const personId = z.string().cuid("Pessoa inválida.");
@@ -23,7 +24,21 @@ export const familyCreateSchema = z.object({
 
 export const familyUpdateSchema = z.object({ name });
 
-export const familyMemberSchema = member;
+// `useFamilyAddress`: copia o endereço do domicílio (o do contato principal) para quem entra (RF-F03).
+export const familyMemberSchema = member.extend({ useFamilyAddress: z.boolean().optional() });
+
+// RF-F08: qualquer membro, inclusive menor (pode ser o único da família na igreja).
+export const familyPrimaryContactSchema = z.object({ personId });
+
+// RF-F03: "Atualizar endereço". Grava o endereço só em quem foi marcado; campo ausente limpa.
+export const familyAddressSchema = z.object({
+  ...addressFields,
+  aplicarA: z
+    .array(personId)
+    .min(1, "Marque ao menos uma pessoa.")
+    .max(30, "Use no máximo 30 pessoas.")
+    .refine((ids) => new Set(ids).size === ids.length, "A mesma pessoa aparece duas vezes."),
+});
 
 export const familyMemberUpdateSchema = z.object({ role });
 
@@ -39,4 +54,6 @@ export const familyMemberParamsSchema = z.object({
 export type FamilyCreatePayload = z.infer<typeof familyCreateSchema>;
 export type FamilyUpdatePayload = z.infer<typeof familyUpdateSchema>;
 export type FamilyMemberPayload = z.infer<typeof familyMemberSchema>;
+export type FamilyPrimaryContactPayload = z.infer<typeof familyPrimaryContactSchema>;
+export type FamilyAddressPayload = z.infer<typeof familyAddressSchema>;
 export type FamilyMemberUpdatePayload = z.infer<typeof familyMemberUpdateSchema>;

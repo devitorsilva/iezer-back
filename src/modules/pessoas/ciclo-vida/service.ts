@@ -175,10 +175,10 @@ export class LifecycleService {
         tx,
       );
 
-      const person = mapDetail(updated);
+      const person = mapDetail(updated, context.readOrganizationIds);
       await audit(
         auditEntry("promover_vinculo", existing.organizationId, "Person", id, {
-          before: mapDetail(existing),
+          before: mapDetail(existing, context.readOrganizationIds),
           after: person,
         }),
       );
@@ -288,9 +288,12 @@ export class LifecycleService {
           tx,
         );
 
-        const person = mapDetail(updated);
+        const person = mapDetail(updated, context.readOrganizationIds);
         await audit(
-          auditEntry("transferir", existing.organizationId, "Person", id, { before: mapDetail(existing), after: person }),
+          auditEntry("transferir", existing.organizationId, "Person", id, {
+            before: mapDetail(existing, context.readOrganizationIds),
+            after: person,
+          }),
         );
         return { person, event: mapEvent(event), accessChange: null as AccessChange };
       });
@@ -351,10 +354,10 @@ export class LifecycleService {
         tx,
       );
 
-      const person = mapDetail(updated);
+      const person = mapDetail(updated, context.readOrganizationIds);
       await audit(
         auditEntry(change.action, existing.organizationId, "Person", id, {
-          before: mapDetail(existing),
+          before: mapDetail(existing, context.readOrganizationIds),
           after: person,
         }),
       );

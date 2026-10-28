@@ -660,6 +660,7 @@ model Person {
   receivables           Receivable[]
   user                  User?
   familyMember          FamilyMember?
+  primaryContactOf      Family[]           @relation("FamilyPrimaryContact")
   followUps             FollowUp[]
   events                PersonEvent[]
   consents              PersonConsent[]    @relation("ConsentSubject")
@@ -674,13 +675,17 @@ model Person {
 
 // Família = domicílio (RF-F01). Uma família por pessoa (FamilyMember.personId único).
 model Family {
-  id             String         @id @default(cuid())
-  organizationId String
-  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  name           String
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
-  members        FamilyMember[]
+  id                     String         @id @default(cuid())
+  organizationId         String
+  organization           Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  name                   String
+  // Contato principal (RF-F08): o primeiro a entrar; quando ele sai, o próximo adulto pela ordem de
+  // entrada (FamilyMember.createdAt). Vazio quando não há adulto. O endereço dele é o do domicílio (RF-F03).
+  primaryContactPersonId String?
+  primaryContact         Person?        @relation("FamilyPrimaryContact", fields: [primaryContactPersonId], references: [id], onDelete: SetNull)
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+  members                FamilyMember[]
 
   @@index([organizationId])
 }

@@ -272,6 +272,8 @@ export class ImportService {
         id: familyId,
         organizationId: ref.kind === "base" ? ref.person.organizationId : organizationId,
         name: familyNameFor(guardianName),
+        // RF-F08: o responsável é o primeiro a entrar.
+        primaryContactPersonId: guardianId,
       });
       membersData.push({ familyId, personId: guardianId, role: "RESPONSAVEL" });
       newFamilyMembers.set(familyId, [{ personId: guardianId, role: "RESPONSAVEL" }]);

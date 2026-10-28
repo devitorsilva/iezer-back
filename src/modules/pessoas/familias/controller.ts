@@ -2,11 +2,13 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import { getRequestContext } from "../../../lib/access.js";
 import { FamilyMemberNotFoundError, FamilyNotFoundError, type FamilyService } from "./service.js";
 import {
+  familyAddressSchema,
   familyCreateSchema,
   familyMemberParamsSchema,
   familyMemberSchema,
   familyMemberUpdateSchema,
   familyParamsSchema,
+  familyPrimaryContactSchema,
   familyUpdateSchema,
 } from "./schemas.js";
 
@@ -43,6 +45,18 @@ export class FamilyController {
     return this.handleNotFound(reply, async () => ({
       family: await this.service.removeMember(getRequestContext(request), id, personId),
     }));
+  };
+
+  setPrimaryContact = async (request: FastifyRequest, reply: FastifyReply) => {
+    const { id } = familyParamsSchema.parse(request.params);
+    const payload = familyPrimaryContactSchema.parse(request.body);
+    return this.handleNotFound(reply, () => this.service.setPrimaryContact(getRequestContext(request), id, payload));
+  };
+
+  updateAddress = async (request: FastifyRequest, reply: FastifyReply) => {
+    const { id } = familyParamsSchema.parse(request.params);
+    const payload = familyAddressSchema.parse(request.body);
+    return this.handleNotFound(reply, () => this.service.updateAddress(getRequestContext(request), id, payload));
   };
 
   private async handleNotFound<T>(reply: FastifyReply, fn: () => Promise<T>) {

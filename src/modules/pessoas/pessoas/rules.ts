@@ -107,6 +107,29 @@ export function isGuardianMember(member: Pick<FamilyMemberRule, "role" | "birthD
   return GUARDIAN_ROLES.includes(member.role) && !isMinor(member.birthDate);
 }
 
+// Contato principal (RF-F08): o primeiro adulto pela ordem de entrada (quem chama passa os membros
+// nessa ordem). Sem data de nascimento conta como adulto, como em `isMinor`.
+export function firstAdult<T extends { personId: string; birthDate: Date | null }>(members: T[]) {
+  return members.find((member) => !isMinor(member.birthDate))?.personId ?? null;
+}
+
+// Endereço e telefone fixo do domicílio (RF-F03): os do contato principal, copiados para quem a
+// secretaria marcar. `FAMILY_ADDRESS_FIELDS` decide quem "tem o mesmo endereço" (sem o telefone).
+export const FAMILY_ADDRESS_FIELDS = ["postalCode", "street", "number", "complement", "district", "city", "state"] as const;
+export const FAMILY_SHARED_FIELDS = [...FAMILY_ADDRESS_FIELDS, "secondaryPhone"] as const;
+
+export type FamilySharedField = (typeof FAMILY_SHARED_FIELDS)[number];
+export type FamilyAddress = Record<FamilySharedField, string | null>;
+
+export function familyAddressOf(person: FamilyAddress): FamilyAddress | null {
+  if (FAMILY_ADDRESS_FIELDS.every((field) => !person[field])) return null;
+  return Object.fromEntries(FAMILY_SHARED_FIELDS.map((field) => [field, person[field]])) as FamilyAddress;
+}
+
+export function sameAddress(person: FamilyAddress, address: FamilyAddress) {
+  return FAMILY_ADDRESS_FIELDS.every((field) => (person[field] ?? null) === (address[field] ?? null));
+}
+
 // Quem precisa de responsável (menor de 18 ou Membro em formação) e não tem um na família.
 export function membersWithoutGuardian(members: FamilyMemberRule[]) {
   return members

@@ -936,3 +936,27 @@ Ver e reenviar convite: qualquer papel. Criar e editar: Administrador ou Implant
 - `ChurchUserItem`: `{ kind: "USUARIO"|"CONVITE", id, name, email, status: "ATIVO"|"DESATIVADO"|"SUSPENSO"|"CONVIDADO"|"CONVITE_EXPIRADO", lastLoginAt, organizations: [{ organizationId, organizationName, profiles[] }], inviteExpiresAt, isAdminInvite }`. Sem id de Pessoa. Convite de admin = algum perfil com `acesso.perfis.gerenciar`.
 - **Reenviar convite de admin** (RF-BO29, RF-BO32): `reason` com 5 a 500 caracteres, `ticket` até 60. Gera um link novo (o anterior deixa de valer) e mais 72h, manda o e-mail ao convidado e avisa o responsável pela conta ("Ação do suporte do iEzer na conta da sua igreja", com motivo e chamado).
 - **Auditoria:** tudo na organização da igreja com `actorType: SUPORTE` ("Suporte iEzer" na Auditoria da igreja). Ações: `criar_igreja`, `criar_convite`, `editar_sede`, `criar_congregacao`, `editar_congregacao`, `desativar_congregacao`, `reativar_congregacao`, `editar_responsavel_conta` (nova), `editar_encarregado_lgpd`, `remover_encarregado_lgpd`, `suporte_reenviar_convite` (nova; `description` com motivo e chamado).
+
+## Sprint 23 — Domicílio: contato principal e endereço sugerido
+
+### `Family` e `GET /pessoas/:id` (alterados)
+
+- `Family` (rotas `/pessoas/familias`) e `family` do detalhe da pessoa ganham `primaryContactPersonId` (ou `null`) e `address`: `{ postalCode, street, number, complement, district, city, state, secondaryPhone }` ou `null`. O endereço do domicílio é o do contato principal (não há cópia própria); `null` sem contato principal, sem endereço nele, ou quando ele é de uma organização que o usuário não lê.
+- `FamilyMember` ganha `sex`, `joinedAt` (ISO, ordem de entrada), `isPrimaryContact`, `mobilePhone`, `email`, `incomplete` (falta o mínimo do vínculo, como no detalhe), `usesFamilyAddress` (endereço igual ao do domicílio, sem contar o telefone) e `readable` (o usuário lê a organização da pessoa). Sem `readable`, `mobilePhone`/`email` vêm `null` e `incomplete`/`usesFamilyAddress` `false`.
+
+### Contato principal (RF-F08)
+
+- É o primeiro a entrar: na família criada, o primeiro adulto da lista; na família criada pelo cadastro de filho, o responsável. Sem data de nascimento conta como adulto.
+- Domicílio sem contato principal: o primeiro adulto que entrar passa a ser. Saiu o contato principal: passa ao próximo adulto pela ordem de entrada; sem adulto, fica `null` (o front mostra o aviso).
+- `PATCH /pessoas/familias/:id/contato-principal` (`pessoas.editar`) `{ personId }` → `Family`. Qualquer membro que o usuário enxerga, inclusive menor; 404 para quem não é membro. Log `definir_contato_principal` (`before`/`after` com `primaryContactPersonId`). `adicionar_membro` e `remover_membro` registram `primaryContactPersonId` quando ele muda.
+
+### Endereço do domicílio (RF-F03, alterado)
+
+- **`PATCH /pessoas/:id` não aceita mais `applyToFamily`:** o endereço da pessoa é só dela.
+- `PATCH /pessoas/familias/:id/endereco` (`pessoas.editar`) `{ postalCode, street, number, complement, district, city, state, secondaryPhone, aplicarA: personId[] }` → `Family`. Grava o endereço inteiro (campo ausente limpa) em quem está em `aplicarA` (1 a 30, membros que o usuário enxerga; senão 404), com um `editar` por pessoa alterada. Regra do "não piorar": 400 `BOND_REQUIREMENTS` com `target: "family"`, `personId` e `missingFields` (ex.: o telefone era o único contato).
+- `POST /pessoas/familias/:id/membros` aceita `useFamilyAddress: true`: copia o endereço do domicílio para quem entra (mesma regra).
+
+### `POST /pessoas` (alterado, RF-F04, RF-F07)
+
+- `family: { id, role }`: cria a pessoa já no domicílio, com o papel. Menor ou Membro em formação precisa de um Responsável/Cônjuge adulto na família (400 `GUARDIAN_REQUIRED`); o consentimento do menor fica registrado como dado por ele. Família fora do alcance: 400 `INVALID_REFERENCE`. Não combina com `guardian` (400 `VALIDATION_ERROR`).
+- `useFamilyAddress: true`: copia o endereço do domicílio (o da família informada, o da família do responsável ou, se o responsável ainda não tem família, o dele). **O cadastro com `guardian` não copia mais o endereço sozinho.**

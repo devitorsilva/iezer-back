@@ -61,6 +61,18 @@ const state = nullable(
 
 const id = nullable(z.string().cuid("Identificador inválido."));
 
+// Endereço e telefone fixo: os campos que o domicílio sugere (RF-F03).
+export const addressFields = {
+  secondaryPhone: phone,
+  postalCode,
+  street: text(200),
+  number: text(20),
+  complement: text(100),
+  district: text(100),
+  city: text(100),
+  state,
+};
+
 // Campos cadastrais (PRD Pessoas › Campos por seção, fase MVP). Vínculo, situação e
 // congregação mudam só por ações próprias (Sprint 9).
 const personFields = {
@@ -73,15 +85,8 @@ const personFields = {
   otherDocumentNumber: text(40),
   mobilePhone: phone,
   mobileIsWhatsapp: z.boolean().optional(),
-  secondaryPhone: phone,
   email,
-  postalCode,
-  street: text(200),
-  number: text(20),
-  complement: text(100),
-  district: text(100),
-  city: text(100),
-  state,
+  ...addressFields,
   firstVisitDate: civilDate,
   conversionDate: civilDate,
   presentationDate: civilDate,
@@ -125,13 +130,23 @@ export const personCreateSchema = z.object({
   ...personFields,
   guardian: guardianSchema.optional(),
   consent: consentSchema.optional(),
+  // RF-F07: entra direto num domicílio, com o papel escolhido (o responsável do menor vem dele).
+  family: z
+    .object({
+      id: z.string().cuid("Família inválida."),
+      role: z.enum(["RESPONSAVEL", "CONJUGE", "FILHO", "OUTRO"], "Papel inválido."),
+    })
+    .optional(),
+  // RF-F03: copia o endereço do domicílio (o do contato principal, ou o do responsável sem família).
+  useFamilyAddress: z.boolean().optional(),
+}).refine((value) => !(value.guardian && value.family), {
+  message: "Informe o responsável ou a família, não os dois.",
+  path: ["family"],
 });
 
 export const personUpdateSchema = z.object({
   name: name.optional(),
   ...personFields,
-  // RF-F03: endereço e telefone secundário enviados valem também para o resto da família.
-  applyToFamily: z.boolean().optional(),
 });
 
 export const personParamsSchema = z.object({
@@ -188,7 +203,7 @@ export const duplicateQuerySchema = z.object({
 
 export type PersonCreatePayload = z.infer<typeof personCreateSchema>;
 export type PersonUpdatePayload = z.infer<typeof personUpdateSchema>;
-export type PersonUpdateFields = Omit<PersonUpdatePayload, "applyToFamily">;
+export type PersonUpdateFields = PersonUpdatePayload;
 export type GuardianPayload = z.infer<typeof guardianSchema>;
 export type ConsentPayload = z.infer<typeof consentSchema>;
 export type PersonListQuery = z.infer<typeof personListQuerySchema>;
