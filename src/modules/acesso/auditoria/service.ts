@@ -80,7 +80,7 @@ function csvCell(value: string | null | undefined) {
   return /[;"\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
-const CSV_HEADER = [
+export const AUDIT_EXPORT_HEADER = [
   "Data e hora",
   "Autor",
   "Tipo de autor",
@@ -96,7 +96,9 @@ const CSV_HEADER = [
   "Dispositivo",
 ];
 
-function toCsvLine(entry: AuditEntryDto) {
+// Colunas de uma linha do log, na ordem de AUDIT_EXPORT_HEADER (CSV da Auditoria e planilha da
+// exportação de fim de contrato).
+export function auditEntryValues(entry: AuditEntryDto) {
   const changes = entry.changes
     .map((change) =>
       change.before === null
@@ -121,10 +123,10 @@ function toCsvLine(entry: AuditEntryDto) {
     entry.description,
     entry.ip,
     entry.userAgent,
-  ]
-    .map(csvCell)
-    .join(";");
+  ];
 }
+
+const toCsvLine = (entry: AuditEntryDto) => auditEntryValues(entry).map(csvCell).join(";");
 
 export class AuditService {
   constructor(private readonly repository: AuditRepository) {}
@@ -200,11 +202,11 @@ export class AuditService {
       }),
     );
 
-    const csv = `﻿${[CSV_HEADER.join(";"), ...entries.map(toCsvLine)].join("\r\n")}\r\n`;
+    const csv = `﻿${[AUDIT_EXPORT_HEADER.join(";"), ...entries.map(toCsvLine)].join("\r\n")}\r\n`;
     return { csv, truncated, rows: entries.length };
   }
 
-  private async mapRows(rows: AuditRow[]) {
+  async mapRows(rows: AuditRow[]) {
     const [targetLabels, personNames] = await Promise.all([
       this.repository.targetLabels(rows),
       this.repository.personNames([...new Set(rows.flatMap((row) => row.personIds))]),

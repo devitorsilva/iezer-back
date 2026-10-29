@@ -23,6 +23,11 @@ export function detectDocumentType(buffer: Buffer): DetectedFile | null {
   return null;
 }
 
+// Confere a chave antes de aceitar um pedido que só sobe o arquivo depois (exportação).
+export function assertStorageAvailable() {
+  storageKey();
+}
+
 function storageKey() {
   if (!env.SUPABASE_SERVICE_ROLE_KEY) {
     throw new AppError(
@@ -51,24 +56,32 @@ export async function uploadObject(path: string, body: Buffer, mimeType: string)
   const key = storageKey();
   const response = await fetch(objectUrl(path), {
     method: "POST",
-    headers: headers(key, { "Content-Type": mimeType, "x-upsert": "false" }),
+    // Sem cache (o padrão do Storage é 1 hora): arquivo apagado não pode continuar saindo por um
+    // link assinado antes.
+    headers: headers(key, { "Content-Type": mimeType, "x-upsert": "false", "cache-control": "max-age=0" }),
     body: new Uint8Array(body),
   });
   if (!response.ok) await failure(response, "upload");
 }
 
-// Remoção de melhor esforço (arquivo de uma gravação desfeita): só registra a falha.
+// Remoção de melhor esforço (arquivo de uma gravação desfeita): só registra a falha. Diz se o
+// arquivo saiu (ou já não existia), para a rotina de limpeza tentar de novo depois.
 export async function removeObject(path: string) {
   try {
     const response = await fetch(objectUrl(path), { method: "DELETE", headers: headers(storageKey()) });
-    if (!response.ok) console.error(`[storage] remoção de ${path} falhou: ${response.status}`);
+    if (response.ok) return true;
+    // Arquivo que já não existe (apagado à mão, pelo roteiro) vem como 400 com NoSuchKey no corpo.
+    const detail = await response.text().catch(() => "");
+    if (response.status === 404 || detail.includes("NoSuchKey")) return true;
+    console.error(`[storage] remoção de ${path} falhou: ${response.status} ${detail}`);
   } catch (error) {
     console.error(`[storage] remoção de ${path} falhou`, error);
   }
+  return false;
 }
 
-// Link assinado de 5 minutos (RF-BO27, RF-BO57).
-export async function createSignedUrl(path: string) {
+// Link assinado de 5 minutos (RF-BO27, RF-BO57). Com `download`, o navegador salva com esse nome.
+export async function createSignedUrl(path: string, options: { download?: string } = {}) {
   const key = storageKey();
   const signPath = objectUrl(path).replace("/storage/v1/object/", "/storage/v1/object/sign/");
   const response = await fetch(signPath, {
@@ -79,8 +92,9 @@ export async function createSignedUrl(path: string) {
   if (!response.ok) await failure(response, "link assinado");
 
   const { signedURL } = (await response.json()) as { signedURL: string };
+  const download = options.download ? `&download=${encodeURIComponent(options.download)}` : "";
   return {
-    url: `${env.SUPABASE_URL}/storage/v1${signedURL}`,
+    url: `${env.SUPABASE_URL}/storage/v1${signedURL}${download}`,
     expiresAt: new Date(Date.now() + SIGNED_URL_TTL_SECONDS * 1000).toISOString(),
   };
 }

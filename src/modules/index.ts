@@ -7,6 +7,7 @@ import { adminRoutes, publicTeamInviteRoutes } from "./admin/routes.js";
 import { authRoutes } from "./auth/routes.js";
 import { cadastroRoutes } from "./cadastro/routes.js";
 import { publicInviteRoutes } from "./convites/routes.js";
+import { publicExportRoutes } from "./exportacoes/routes.js";
 import { financeiroRoutes } from "./financeiro/routes.js";
 import { publicEmailRoutes } from "./me/conta/routes.js";
 import { meRoutes } from "./me/routes.js";
@@ -17,11 +18,13 @@ import { placeholdersRoutes } from "./placeholders/routes.js";
 import { webhookRoutes } from "./webhooks/routes.js";
 
 export const registerModuleRoutes: FastifyPluginAsync = async (app) => {
-  // Público: handler do Better Auth, páginas dos convites (igreja e equipe), confirmação da troca de e-mail e webhooks.
+  // Público: handler do Better Auth, páginas dos convites (igreja e equipe), confirmação da troca de e-mail,
+  // link da exportação de fim de contrato e webhooks.
   await app.register(authRoutes, { prefix: "/auth" });
   await app.register(publicInviteRoutes, { prefix: "/convites" });
   await app.register(publicEmailRoutes, { prefix: "/email" });
   await app.register(publicTeamInviteRoutes, { prefix: "/admin/convites" });
+  await app.register(publicExportRoutes, { prefix: "/exportacoes" });
   // Webhooks (Resend), conferidos pela assinatura.
   await app.register(webhookRoutes, { prefix: "/webhooks" });
 

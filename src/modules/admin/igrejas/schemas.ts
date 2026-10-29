@@ -85,6 +85,24 @@ const documentContent = z
   .refine((buffer) => buffer.length > 0, "Anexe o documento.")
   .refine((buffer) => buffer.length <= MAX_DOCUMENT_BYTES, "O arquivo passa de 10 MB.");
 
+const pastCivilDate = (required: string, future: string) =>
+  z
+    .string(required)
+    .refine(isCivilDate, "Data inválida (use AAAA-MM-DD).")
+    .refine((value) => value <= todayCivil(), future);
+
+// Documento da conta com anexo (RF-BO25): tipo, data, número da ata e o arquivo.
+const accountDocument = z.object({
+  type: z.enum(AccountDocumentType, "Escolha o tipo do documento."),
+  date: pastCivilDate("Informe a data do documento.", "A data do documento não pode ser futura."),
+  minutesNumber: z.preprocess(blankToNull, z.string().max(60, "Use no máximo 60 caracteres.").nullable().optional()),
+});
+
+const documentFile = z.object({
+  name: z.string("Anexe o documento.").trim().min(1, "Anexe o documento.").max(200),
+  content: documentContent,
+});
+
 // Troca do responsável pela conta (RF-BO25): novo responsável, documento e anexo.
 export const changeAccountOwnerSchema = z.object({
   newOwner: z.object({
@@ -93,18 +111,18 @@ export const changeAccountOwnerSchema = z.object({
     email: contactEmail,
     phone: z.preprocess(blankToNull, phoneValue),
   }),
-  document: z.object({
-    type: z.enum(AccountDocumentType, "Escolha o tipo do documento."),
-    date: z
-      .string("Informe a data do documento.")
-      .refine(isCivilDate, "Data inválida (use AAAA-MM-DD).")
-      .refine((value) => value <= todayCivil(), "A data do documento não pode ser futura."),
-    minutesNumber: z.preprocess(blankToNull, z.string().max(60, "Use no máximo 60 caracteres.").nullable().optional()),
-  }),
-  file: z.object({
-    name: z.string("Anexe o documento.").trim().min(1, "Anexe o documento.").max(200),
-    content: documentContent,
-  }),
+  document: accountDocument,
+  file: documentFile,
+});
+
+// Registro da eliminação definitiva (RF-BO24): quando foi feita, quem conferiu (dupla checagem do
+// roteiro) e o documento.
+export const recordErasureSchema = z.object({
+  erasedAt: pastCivilDate("Informe a data da eliminação.", "A data da eliminação não pode ser futura."),
+  checkedByName: personName,
+  notes: z.preprocess(blankToNull, z.string().trim().max(1000, "Use no máximo 1.000 caracteres.").nullable().optional()),
+  document: accountDocument,
+  file: documentFile,
 });
 
 export type ListChurchesQuery = z.infer<typeof listChurchesQuerySchema>;
@@ -113,3 +131,4 @@ export type TeamActionInput = z.infer<typeof teamActionSchema>;
 export type ResetTwoFactorInput = z.infer<typeof resetTwoFactorSchema>;
 export type RecoverAdminInput = z.infer<typeof recoverAdminSchema>;
 export type ChangeAccountOwnerInput = z.infer<typeof changeAccountOwnerSchema>;
+export type RecordErasureInput = z.infer<typeof recordErasureSchema>;

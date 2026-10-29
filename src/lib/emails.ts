@@ -537,3 +537,57 @@ export function announcementEmail(input: {
       `\n\n—\nEquipe iEzer\nVocê recebe este e-mail como admin ou responsável pela conta da igreja.`,
   };
 }
+
+export const exportDownloadUrl = (token: string) => `${env.WEB_ORIGIN}/exportacao/${token}`;
+
+// Exportação de fim de contrato pronta (B14, RF-BO23): só ao responsável pela conta, com o link de
+// uso único. A equipe não recebe cópia.
+export function churchExportReadyEmail(input: {
+  to: string;
+  name: string;
+  churchName: string;
+  token: string;
+  expiresAt: Date;
+}): MailMessage {
+  return {
+    to: input.to,
+    subject: `Dados da ${input.churchName} prontos para baixar`,
+    text:
+      `Olá, ${firstName(input.name)}!\n\n` +
+      `Como responsável pela conta da ${input.churchName} no iEzer, você recebe a exportação completa dos dados ` +
+      `da igreja: planilhas de pessoas, famílias, ciclo de vida e acompanhamentos, contribuições, contas a pagar e a ` +
+      `receber, cadastros financeiros, usuários e perfis e a Auditoria, num arquivo .zip.\n\n` +
+      `Para baixar, abra o link abaixo. Ele só pode ser usado uma vez e vale até ` +
+      `${announcementDateTime.format(input.expiresAt)} (horário de Brasília); depois disso o arquivo é apagado:\n` +
+      `${exportDownloadUrl(input.token)}\n\n` +
+      `Guarde o arquivo em lugar seguro: ele traz dados pessoais dos membros. A equipe iEzer não tem acesso a ele, ` +
+      `e o download fica registrado na Auditoria da igreja.` +
+      SIGNATURE,
+  };
+}
+
+// Comprovante da eliminação definitiva (RF-BO24, RF-BO60), ao responsável pela conta.
+export function churchErasureNotice(input: {
+  to: string;
+  name: string;
+  churchName: string;
+  erasedAt: string;
+  document: string;
+  backupRetentionDays: number;
+}): MailMessage {
+  return {
+    to: input.to,
+    subject: `Comprovante de eliminação dos dados da ${input.churchName}`,
+    text:
+      `Olá, ${firstName(input.name)}!\n\n` +
+      `Encerramos a conta da ${input.churchName} no iEzer. Em ${input.erasedAt}, os dados da igreja foram eliminados ` +
+      `de forma definitiva: pessoas, famílias, acompanhamentos, lançamentos financeiros, cadastros, usuários e o ` +
+      `histórico de alterações.\n\n` +
+      `Documento de referência: ${input.document}.\n\n` +
+      `Ficam guardados só o cadastro da igreja (nome, CNPJ e contatos da conta), os documentos do contrato pelo prazo ` +
+      `legal de 5 anos e o registro do que a equipe iEzer fez na conta, sem dados de pessoas. As cópias de segurança ` +
+      `automáticas do banco de dados expiram sozinhas em até ${input.backupRetentionDays} dias.\n\n` +
+      `Este e-mail é o comprovante da eliminação. Em caso de dúvida, fale com o iEzer.` +
+      SIGNATURE,
+  };
+}

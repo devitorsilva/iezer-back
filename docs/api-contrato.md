@@ -1133,3 +1133,54 @@ Ver: Suporte e Administrador iEzer. Criar, editar, publicar, encerrar e apagar: 
 
 - Só os avisos no ar com a igreja do usuário no público (Implantação ou Ativa); em `ADMINS`, só para admin ativo (permissão `acesso.perfis.gerenciar`, regra das travas). Sem os dispensados. Ordem: importante, manutenção, informativo; depois o início mais recente.
 - Conta da equipe (inclusive em modo suporte): lista vazia e 404 nos POSTs.
+
+## Sprint 22 — Fim de contrato e auditoria interna
+
+### Exportação de fim de contrato (`/api/admin/igrejas/:id/exportacoes`; B14, RF-BO22, RF-BO23, RT-BB07)
+
+| Método | Rota | Papel | Resposta |
+| --- | --- | --- | --- |
+| GET | `/admin/igrejas/:id/exportacoes` | todos | `{ items: ChurchExport[] }` (mais nova primeiro) |
+| POST | `/admin/igrejas/:id/exportacoes` | Administrador | 202 `ChurchExport` (`state: "PROCESSANDO"`) |
+
+- `ChurchExport`: `{ id, state, requestedAt, requestedByName, readyAt, expiresAt, downloadedAt, deletedAt, recipientName, recipientEmail, sizeBytes, datasets: { "<aba>": linhas } | null }`. Nunca traz token, caminho nem link.
+- `state`: `PROCESSANDO`, `DISPONIVEL` (link enviado, no prazo), `BAIXADA`, `VENCIDA` (prazo acabou sem download), `FALHOU`, `SUBSTITUIDA` (outra foi gerada antes do download).
+- Só igreja `SUSPENSA` (409 `CHURCH_STATUS_INVALID`), com responsável pela conta (409 `ACCOUNT_OWNER_MISSING`) e Storage configurado (503 `STORAGE_UNAVAILABLE`). Outra em andamento: 409 `EXPORT_IN_PROGRESS`. Já baixada: 409 `EXPORT_ALREADY_DOWNLOADED`. Uma pronta e não baixada é substituída (o arquivo sai do Storage).
+- Geração no próprio processo, depois da resposta: um `.xlsx` por conjunto (organização, pessoas, famílias, ciclo de vida e acompanhamentos, contribuições e contas a receber, contas a pagar, cadastros financeiros, usuários e perfis, auditoria) e um `LEIA-ME.txt` num `.zip`, em `<sede>/exportacoes/<id>.zip`. Pronta: e-mail `churchExportReadyEmail` só ao responsável pela conta, com `WEB_ORIGIN/exportacao/<token>` (token aleatório, só o SHA-256 no banco, uso único, 7 dias).
+- Rotina ao subir e a cada hora (`startChurchExportCleanup`): apaga do Storage os vencidos (`deletedAt`) e passa a `FALHOU` o que ficou em `PROCESSANDO` por mais de 30 minutos.
+- Auditoria da igreja: `gerar_exportacao` (Suporte iEzer); `exportacao_pronta`, `exportacao_falhou`, `baixar_exportacao` (com IP e navegador de quem baixou) e `apagar_exportacao` (Sistema).
+
+### Link público da exportação (`/api/exportacoes/:token`; RF-BO23, RF-BO59)
+
+| Método | Rota | Resposta |
+| --- | --- | --- |
+| GET | `/exportacoes/:token` | `{ churchName, state: DISPONIVEL\|BAIXADA\|VENCIDA\|SUBSTITUIDA, expiresAt, downloadedAt, sizeBytes }`. Não gasta o link |
+| POST | `/exportacoes/:token/baixar` | `{ url, expiresAt, fileName }`: link assinado de 5 minutos, com `download=` |
+
+- Limite por IP: 30/min no GET, 10 a cada 15 min no POST (429 `RATE_LIMITED`). Token desconhecido: 404 `EXPORT_NOT_FOUND`.
+- POST: 410 `EXPORT_ALREADY_DOWNLOADED`, `EXPORT_REPLACED` ou `EXPORT_EXPIRED`. O link é assinado antes de consumir o token: falha do Storage não gasta o uso único.
+
+### Eliminação definitiva (`/api/admin/igrejas/:id/eliminacao`; RF-BO24, RF-BO60)
+
+| Método | Rota | Papel | Resposta |
+| --- | --- | --- | --- |
+| GET | `/admin/igrejas/:id/eliminacao` | todos | `{ erasure: ChurchErasure \| null, remaining: [{ label, count }], hasAvailableExport }` (`remaining` só com a igreja suspensa e sem registro) |
+| POST | `/admin/igrejas/:id/eliminacao` | Administrador | 201 `ChurchErasure & { emailSent, backupsExpireOn }` |
+
+- Corpo: `{ erasedAt: "YYYY-MM-DD" (não futura), checkedByName, notes?, document: { type: ATA\|PROCURACAO\|OUTRO, date, minutesNumber? }, file: { name, content (base64) } }` (PDF, JPG ou PNG até 10 MB, tipo pelo conteúdo).
+- `ChurchErasure`: `{ id, erasedAt, checkedByName, notes, recordedByName, createdAt, document: { id, type, date, minutesNumber, fileName, mimeType, sizeBytes, discardAt } }`. O anexo abre por `GET /admin/igrejas/:id/documentos/:documentId/link`.
+- Recusas: 409 `CHURCH_STATUS_INVALID` (não suspensa), 409 `CHURCH_ALREADY_ERASED`, 409 `EXPORT_STILL_AVAILABLE` (exportação em andamento ou à espera do download), 409 `CHURCH_DATA_REMAINING` com `remaining`, 400 `INVALID_FILE_TYPE`.
+- Numa transação: documento, registro, igreja `ENCERRADA` (motivo "Eliminação definitiva registrada"), `discardAt` = eliminação + 5 anos em todos os documentos da conta, `registrar_eliminacao` na Auditoria. Depois, o comprovante `churchErasureNotice` ao responsável pela conta.
+- Os dados saem antes, pelo `docs/roteiro-eliminacao.md`.
+
+### Auditoria interna (`/api/admin/auditoria`; B11, RF-BO51, RF-BO52, RT-BB12)
+
+| Método | Rota | Papel | Resposta |
+| --- | --- | --- | --- |
+| GET | `/admin/auditoria?membro=&igreja=&acao=&de=&ate=&page=&pageSize=` | Administrador | `{ items: InternalAuditEntry[], total, page, pageSize }` |
+| GET | `/admin/auditoria/filtros` | Administrador | `{ members: [{ id, name, email, status }], churches: [{ id, name, status }], actions: [{ value, label }] }` |
+| GET | `/admin/igrejas/:id/historico?membro=&acao=&de=&ate=&page=&pageSize=` | todos | igual à lista, só da igreja |
+
+- Interna: linhas com autor Suporte iEzer (logins, equipe, ações nas igrejas e no modo suporte) e as do back-office sem igreja (módulo `BACKOFFICE`). Histórico da igreja: autor Suporte iEzer ou Sistema nas organizações dela.
+- `InternalAuditEntry` = a linha da Auditoria da igreja (`AuditEntry`) + `{ peopleCount, redacted }`. Nos módulos de dados (Pessoas, Financeiro, Cadastro, Membros) e nas leituras do suporte (`suporte_ler`), `redacted: true`: sem pessoas, alterações nem nome do registro (a leitura traz só o nome da tela), por B8.
+- `de`/`ate` em dias civis (Brasília), os dois inclusive; `pageSize` até 100 (padrão 25).

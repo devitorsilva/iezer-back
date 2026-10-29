@@ -6,7 +6,13 @@ import type { AuditFilters } from "./schemas.js";
 const dayStart = (date: string) => new Date(`${date}T00:00:00.000-03:00`);
 const nextDayStart = (date: string) => new Date(dayStart(date).getTime() + 24 * 60 * 60 * 1000);
 
-const select = {
+// Período "de/até" em dias civis, os dois inclusive.
+export function periodWhere(from?: string, to?: string): Prisma.DateTimeFilter | undefined {
+  if (!from && !to) return undefined;
+  return { gte: from ? dayStart(from) : undefined, lt: to ? nextDayStart(to) : undefined };
+}
+
+export const auditRowSelect = {
   id: true,
   createdAt: true,
   actorType: true,
@@ -25,7 +31,7 @@ const select = {
   personIds: true,
 } satisfies Prisma.AuditLogSelect;
 
-export type AuditRow = Prisma.AuditLogGetPayload<{ select: typeof select }>;
+export type AuditRow = Prisma.AuditLogGetPayload<{ select: typeof auditRowSelect }>;
 
 export interface AuditScope {
   organizationIds: string[];
@@ -90,13 +96,7 @@ export class AuditRepository {
       actorUserId: filters.autor,
       actorType: filters.suporte ? "SUPORTE" : undefined,
       personIds: filters.pessoa ? { has: filters.pessoa } : undefined,
-      createdAt:
-        filters.de || filters.ate
-          ? {
-              gte: filters.de ? dayStart(filters.de) : undefined,
-              lt: filters.ate ? nextDayStart(filters.ate) : undefined,
-            }
-          : undefined,
+      createdAt: periodWhere(filters.de, filters.ate),
     };
   }
 
@@ -105,7 +105,7 @@ export class AuditRepository {
     const [items, total] = await Promise.all([
       prisma.auditLog.findMany({
         where,
-        select,
+        select: auditRowSelect,
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         skip: (page - 1) * pageSize,
         take: pageSize,
@@ -119,7 +119,7 @@ export class AuditRepository {
   findForExport(scope: AuditScope, filters: AuditFilters, limit: number) {
     return prisma.auditLog.findMany({
       where: this.where(scope, filters),
-      select,
+      select: auditRowSelect,
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: limit + 1,
     });

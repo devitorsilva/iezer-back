@@ -253,6 +253,15 @@ enum AnnouncementRecipients {
   ADMINS
 }
 
+// Exportação de fim de contrato (RT-BB07). Baixada, vencida e apagada saem das datas.
+enum ChurchExportStatus {
+  PROCESSANDO
+  PRONTA
+  FALHOU
+  // Outra exportação foi gerada antes de esta ser baixada: o link parou de valer.
+  SUBSTITUIDA
+}
+
 // User, Session, Account, Verification e TwoFactor seguem o schema do Better Auth
 // (core + plugin twoFactor). A senha fica em Account.password (providerId "credential").
 model User {
@@ -295,6 +304,8 @@ model User {
   announcementsCreated      Announcement[]       @relation("AnnouncementCreatedBy")
   announcementsPublished    Announcement[]       @relation("AnnouncementPublishedBy")
   announcementViews         AnnouncementView[]
+  churchExportsRequested    ChurchExport[]
+  churchErasuresRecorded    ChurchErasure[]
 }
 
 model Session {
@@ -416,8 +427,57 @@ model Organization {
   accountOwnerChanges     AccountOwnerChange[]
   emailEvents             EmailEvent[]
   announcements           AnnouncementChurch[]
+  exports                 ChurchExport[]
+  erasure                 ChurchErasure?
 
   @@index([parentId])
+}
+
+// Exportação de fim de contrato (B14, RF-BO22, RF-BO23, RT-BB07), na sede. O `.zip` fica no Storage;
+// o link vai só ao responsável pela conta, com o token guardado como hash, uso único e 7 dias.
+model ChurchExport {
+  id                String             @id @default(cuid())
+  organizationId    String
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  status            ChurchExportStatus @default(PROCESSANDO)
+  requestedById     String?
+  requestedBy       User?              @relation(fields: [requestedById], references: [id], onDelete: SetNull)
+  requestedAt       DateTime           @default(now())
+  // Responsável pela conta quando a exportação ficou pronta (quem recebeu o link).
+  recipientName     String?
+  recipientEmail    String?
+  storagePath       String?            @unique
+  sizeBytes         Int?
+  // Linhas por conjunto, para a tela e o LEIA-ME.
+  datasets          Json?
+  tokenHash         String?            @unique
+  readyAt           DateTime?
+  expiresAt         DateTime?
+  downloadedAt      DateTime?
+  downloadIp        String?
+  downloadUserAgent String?
+  // Arquivo apagado do Storage (vencido ou substituído).
+  deletedAt         DateTime?
+  createdAt         DateTime           @default(now())
+
+  @@index([organizationId, requestedAt])
+  @@index([status, expiresAt])
+}
+
+// Eliminação definitiva registrada (RF-BO24, RF-BO60). A eliminação é feita fora da tela, pelo
+// docs/roteiro-eliminacao.md; aqui ficam quando, quem conferiu e o documento. Um registro por igreja.
+model ChurchErasure {
+  id             String          @id @default(cuid())
+  organizationId String          @unique
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  erasedAt       DateTime        @db.Date
+  checkedByName  String
+  documentId     String          @unique
+  document       AccountDocument @relation(fields: [documentId], references: [id], onDelete: Restrict)
+  notes          String?
+  recordedById   String?
+  recordedBy     User?           @relation(fields: [recordedById], references: [id], onDelete: SetNull)
+  createdAt      DateTime        @default(now())
 }
 
 // Documento da conta (B7, RT-BB06), na sede. O arquivo fica no Supabase Storage (bucket privado),
@@ -439,6 +499,7 @@ model AccountDocument {
   createdBy      User?               @relation(fields: [createdById], references: [id], onDelete: SetNull)
   createdAt      DateTime            @default(now())
   ownerChange    AccountOwnerChange?
+  erasure        ChurchErasure?
 
   @@index([organizationId])
 }

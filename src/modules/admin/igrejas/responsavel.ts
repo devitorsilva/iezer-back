@@ -25,10 +25,10 @@ const changeInclude = {
 
 type OwnerChangeRow = Prisma.AccountOwnerChangeGetPayload<{ include: typeof changeInclude }>;
 
-const civilDateBr = (date: Date) => formatCivilDate(date).split("-").reverse().join("/");
+export const civilDateBr = (date: Date) => formatCivilDate(date).split("-").reverse().join("/");
 
 // "Ata nº 12 de 10/10/2026", para o log e os e-mails.
-function describeDocument(document: { type: AccountDocumentType; documentDate: Date; minutesNumber: string | null }) {
+export function describeDocument(document: { type: AccountDocumentType; documentDate: Date; minutesNumber: string | null }) {
   return [
     DOCUMENT_TYPE_LABELS[document.type],
     document.minutesNumber ? `nº ${document.minutesNumber}` : null,

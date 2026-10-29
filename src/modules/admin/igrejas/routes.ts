@@ -1,5 +1,6 @@
 import { FastifyPluginAsync } from "fastify";
 import { requireTeamRole } from "../../../lib/team.js";
+import { internalAuditController } from "../auditoria/routes.js";
 import { organizationService } from "../../organizacao/routes.js";
 import { ChurchAdminController } from "./controller.js";
 import { ChurchAdminRepository } from "./repository.js";
@@ -13,7 +14,8 @@ const controller = new ChurchAdminController(churchAdminService, organizationSer
 // Igrejas no back-office (RF-BO11 a RF-BO21, RF-BO25 a RF-BO33). Ver e reenviar convite de admin:
 // todos os papéis. Criar, editar, marcar como ativa, trocar o responsável e abrir os documentos:
 // Administrador iEzer e Implantação. Redefinir 2FA de admin, destravar login e recuperar admin:
-// Suporte. Suspender e reativar: só o Administrador iEzer (PRD Back-office › Papéis internos).
+// Suporte. Suspender, reativar, exportar e registrar a eliminação: só o Administrador iEzer (PRD
+// Back-office › Papéis internos). Ver exportações, eliminação e Histórico: todos os papéis.
 export const churchAdminRoutes: FastifyPluginAsync = async (app) => {
   const implantacao = { preHandler: requireTeamRole("IMPLANTACAO") };
   const suporte = { preHandler: requireTeamRole("SUPORTE") };
@@ -39,4 +41,9 @@ export const churchAdminRoutes: FastifyPluginAsync = async (app) => {
   app.post("/:id/responsavel/troca", { ...implantacao, bodyLimit: DOCUMENT_BODY_LIMIT }, controller.changeAccountOwner);
   app.get("/:id/responsavel/historico", controller.accountOwnerHistory);
   app.get("/:id/documentos/:documentId/link", implantacao, controller.documentLink);
+  app.get("/:id/exportacoes", controller.exports);
+  app.post("/:id/exportacoes", administrador, controller.requestExport);
+  app.get("/:id/eliminacao", controller.erasure);
+  app.post("/:id/eliminacao", { ...administrador, bodyLimit: DOCUMENT_BODY_LIMIT }, controller.recordErasure);
+  app.get("/:id/historico", internalAuditController.churchHistory);
 };

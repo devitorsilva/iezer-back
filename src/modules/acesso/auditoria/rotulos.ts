@@ -141,6 +141,13 @@ export const ACTION_LABELS: Record<string, string> = {
   reativar_igreja: "Igreja reativada",
   trocar_responsavel_conta: "Responsável pela conta trocado",
   abrir_documento_conta: "Documento da conta aberto",
+  // Fim de contrato
+  gerar_exportacao: "Exportação de dados pedida",
+  exportacao_pronta: "Exportação enviada ao responsável",
+  exportacao_falhou: "Exportação falhou",
+  baixar_exportacao: "Exportação baixada",
+  apagar_exportacao: "Exportação vencida apagada",
+  registrar_eliminacao: "Eliminação definitiva registrada",
 };
 
 export const TARGET_TYPE_LABELS: Record<string, string> = {
@@ -169,6 +176,8 @@ export const TARGET_TYPE_LABELS: Record<string, string> = {
   TeamMember: "Membro da equipe",
   TeamInvite: "Convite da equipe",
   Announcement: "Aviso",
+  ChurchExport: "Exportação de dados",
+  ChurchErasure: "Eliminação definitiva",
   Rota: "Tela ou registro",
 };
 
@@ -266,6 +275,13 @@ const FIELD_LABELS: Record<string, string> = {
   jobTitle: "Cargo",
   statusReason: "Motivo da situação",
   sessionsEnded: "Sessões encerradas",
+  recipientEmail: "Enviada para",
+  replacedExportIds: "Exportações substituídas",
+  sizeBytes: "Tamanho (bytes)",
+  datasets: "Conjuntos",
+  erasedAt: "Eliminada em",
+  checkedByName: "Conferido por",
+  document: "Documento",
   accountOwner: "Responsável pela conta",
   lgpdOfficer: "Encarregado de LGPD",
   congregations: "Congregações",
@@ -350,6 +366,8 @@ const VALUE_LABELS: Record<string, string> = {
   IGREJA_SEM_ADMIN: "Igreja sem administrador",
   IMPLANTACAO: "Implantação",
   CHURCH_SUSPENDED: "Igreja suspensa ou encerrada",
+  ENCERRADA: "Encerrada",
+  SUSPENSA: "Suspensa",
 };
 
 // Campos técnicos ou derivados: não aparecem nas alterações.
@@ -398,7 +416,7 @@ export function formatDateTime(date: Date) {
   return dateTimeFormat.format(date);
 }
 
-function enumLabel(value: string) {
+export function enumLabel(value: string) {
   if (VALUE_LABELS[value]) return VALUE_LABELS[value];
   const text = value.toLowerCase().replaceAll("_", " ");
   return text.charAt(0).toUpperCase() + text.slice(1);

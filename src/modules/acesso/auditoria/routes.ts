@@ -5,9 +5,9 @@ import { AuditRepository } from "./repository.js";
 import { AuditService } from "./service.js";
 
 const repository = new AuditRepository();
-const service = new AuditService(repository);
+export const auditService = new AuditService(repository);
 // Também atende GET /pessoas/:id/historico (aba Histórico do perfil).
-export const auditController = new AuditController(service);
+export const auditController = new AuditController(auditService);
 
 // Configurações › Auditoria (RF-LP02). O escopo vem das organizações com "Ver log de auditoria".
 export const auditRoutes: FastifyPluginAsync = async (app) => {

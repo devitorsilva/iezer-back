@@ -10,6 +10,8 @@ import {
 } from "../../organizacao/schemas.js";
 import { recoverAdmin, resetAdminTwoFactor, unlockLogin } from "./acoes.js";
 import { createChurch } from "./criacao.js";
+import { getChurchErasure, recordChurchErasure } from "./eliminacao.js";
+import { listChurchExports, requestChurchExport } from "./exportacao.js";
 import { changeAccountOwner, listAccountOwnerChanges, openAccountDocument } from "./responsavel.js";
 import {
   activateChurchSchema,
@@ -21,6 +23,7 @@ import {
   documentParamsSchema,
   inviteParamsSchema,
   listChurchesQuerySchema,
+  recordErasureSchema,
   recoverAdminSchema,
   resetTwoFactorSchema,
   teamActionSchema,
@@ -179,6 +182,34 @@ export class ChurchAdminController {
   documentLink = async (request: FastifyRequest, reply: FastifyReply) => {
     const { id, documentId } = documentParamsSchema.parse(request.params);
     return this.handleNotFound(reply, () => openAccountDocument(teamActor(request), id, documentId));
+  };
+
+  exports = async (request: FastifyRequest, reply: FastifyReply) => {
+    const { id } = churchParamsSchema.parse(request.params);
+    return this.handleNotFound(reply, async () => {
+      await this.service.assertChurch(id);
+      return { items: await listChurchExports(id) };
+    });
+  };
+
+  requestExport = async (request: FastifyRequest, reply: FastifyReply) => {
+    const { id } = churchParamsSchema.parse(request.params);
+    return this.handleNotFound(reply, async () =>
+      reply.code(202).send(await requestChurchExport(teamActor(request), id)),
+    );
+  };
+
+  erasure = async (request: FastifyRequest, reply: FastifyReply) => {
+    const { id } = churchParamsSchema.parse(request.params);
+    return this.handleNotFound(reply, () => getChurchErasure(id));
+  };
+
+  recordErasure = async (request: FastifyRequest, reply: FastifyReply) => {
+    const { id } = churchParamsSchema.parse(request.params);
+    const input = recordErasureSchema.parse(request.body);
+    return this.handleNotFound(reply, async () =>
+      reply.code(201).send(await recordChurchErasure(teamActor(request), id, input)),
+    );
   };
 
   private context(request: FastifyRequest, churchId: string) {
