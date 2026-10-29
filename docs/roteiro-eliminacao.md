@@ -35,7 +35,7 @@ Requisitos: `docs/prd/backoffice.md`, decisões B5 e B6 e requisitos RF-BO22 a R
 
 ## Passo 1: apagar no banco
 
-Rode no **SQL Editor do Supabase de produção**, logado com o papel `postgres`, que é o dono das tabelas e pode desligar a trava. Troque `<SEDE_ID>` nas quatro ocorrências. A transação inteira é uma só: qualquer erro desfaz tudo.
+Rode no **SQL Editor do Supabase de produção**, logado com o papel `postgres`, que é o dono das tabelas e pode desligar a trava. Pelo terminal, dá para usar `psql` com o `DIRECT_URL` (sem o parâmetro `?schema=`, que o `psql` não aceita) e `-v ON_ERROR_STOP=1`. Ensaiado na igreja fictícia Dezoito em 29/10/2026: primeiro com `ROLLBACK` no lugar do `COMMIT`, para ver as contagens, depois para valer. Troque `<SEDE_ID>` nas quatro ocorrências. A transação inteira é uma só: qualquer erro desfaz tudo.
 
 O executor roda até o bloco de conferência, **sem o `COMMIT`**. O conferente lê o resultado. Só então roda `COMMIT`, ou `ROLLBACK` se algo não bateu.
 
