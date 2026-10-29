@@ -1,4 +1,4 @@
-import type { OrganizationType } from "@prisma/client";
+import type { OrganizationType, TeamRole } from "@prisma/client";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import {
   getPermission,
@@ -9,14 +9,14 @@ import type { AuditActor } from "./audit.js";
 import { AppError } from "./errors.js";
 import { prisma } from "./prisma.js";
 import {
+  canUseSupportMode,
   loadSupportOrganizations,
   SUPPORT_FORBIDDEN_CODE,
   SUPPORT_READ_ONLY_CODE,
   SUPPORT_WRITE_BLOCKED_PREFIXES,
   type SupportGrantAccess,
 } from "./support.js";
-import { hasTeamRole } from "./team.js";
-import { TERMS_VERSION } from "./terms.js";
+import { TEAM_TERMS_VERSION, TERMS_VERSION } from "./terms.js";
 
 export interface AccessibleOrganization {
   id: string;
@@ -54,12 +54,12 @@ declare module "fastify" {
 
 // Permissões efetivas por organização: as atribuições dali somadas às da sede,
 // que alcançam as congregações (PRD Acesso › Conceitos do domínio, RT-AB03). O atendente do
-// suporte não tem atribuições: alcança as igrejas com acesso do suporte ativo.
+// suporte não tem atribuições: com `teamRoles`, alcança só as igrejas com pedido de acesso ativo.
 export async function loadAccessibleOrganizations(
   userId: string,
-  isSupportAgent = false,
+  teamRoles?: readonly TeamRole[] | null,
 ): Promise<AccessibleOrganization[]> {
-  if (isSupportAgent) return sortOrganizations(await loadSupportOrganizations());
+  if (teamRoles) return canUseSupportMode(teamRoles) ? sortOrganizations(await loadSupportOrganizations(teamRoles)) : [];
 
   const assignments = await prisma.userAssignment.findMany({
     where: { userId, organization: { isActive: true } },
@@ -117,25 +117,29 @@ function headerValue(request: FastifyRequest, name: string) {
 // Hook das rotas de dados: resolve a organização ativa contra o que o usuário alcança,
 // nunca contra o que o front diz (RT-AB04).
 export async function resolveOrganization(request: FastifyRequest, reply: FastifyReply) {
-  // Termos aceitos antes de qualquer dado (RF-CV06); o aceite é POST /me/termos.
-  if (request.user.termsVersion !== TERMS_VERSION) {
+  const team = request.team;
+
+  // Termos aceitos antes de qualquer dado (RF-CV06); o aceite é POST /me/termos. A equipe responde
+  // pelo termo de confidencialidade dela, aceito no back-office.
+  if (team ? team.termsVersion !== TEAM_TERMS_VERSION : request.user.termsVersion !== TERMS_VERSION) {
     return reply.code(403).send({
       statusCode: 403,
-      code: "TERMS_REQUIRED",
-      message: "Aceite os termos de uso e de confidencialidade para continuar.",
+      code: team ? "TEAM_TERMS_REQUIRED" : "TERMS_REQUIRED",
+      message: team
+        ? "Aceite o termo de confidencialidade da equipe no back-office para continuar."
+        : "Aceite os termos de uso e de confidencialidade para continuar.",
     });
   }
 
-  // Equipe com o papel Suporte alcança as igrejas com acesso do suporte ativo (até a Sprint 19).
-  const isSupportAgent = hasTeamRole(request.team?.roles, "SUPORTE");
-  const organizations = await loadAccessibleOrganizations(request.user.id, isSupportAgent);
+  // Conta da equipe só entra no app das igrejas pelo modo suporte, com pedido ativo (RF-BO02, RT-BB03).
+  const organizations = await loadAccessibleOrganizations(request.user.id, team?.roles);
 
   if (organizations.length === 0) {
-    if (isSupportAgent) {
+    if (team) {
       return reply.code(403).send({
         statusCode: 403,
         code: "SUPPORT_NO_GRANT",
-        message: "Não há acesso do suporte ativo para nenhuma igreja. Peça a autorização no back-office.",
+        message: "Não há pedido de acesso ativo para nenhuma igreja. Abra o modo suporte pelo back-office.",
       });
     }
 

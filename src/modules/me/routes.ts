@@ -2,8 +2,7 @@ import { FastifyPluginAsync } from "fastify";
 import { loadAccessibleOrganizations } from "../../lib/access.js";
 import { runAudited } from "../../lib/audit.js";
 import { findUserChurch } from "../../lib/church.js";
-import { TERMS_VERSION } from "../../lib/terms.js";
-import { hasTeamRole } from "../../lib/team.js";
+import { TEAM_TERMS_VERSION, TERMS_VERSION } from "../../lib/terms.js";
 import { requiresTwoFactor } from "../../lib/two-factor.js";
 import { accountRoutes } from "./conta/routes.js";
 import { MeRepository } from "./repository.js";
@@ -22,15 +21,18 @@ export const meRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const { person, termsVersion, ...userData } = user;
-    // Atendente (equipe com o papel Suporte): as igrejas com acesso do suporte ativo, com prazo e
-    // escrita em `support`; o front abre o back-office (/app/suporte) até a Sprint 19.
-    const isSupportAgent = hasTeamRole(request.team?.roles, "SUPORTE");
-    const organizations = await loadAccessibleOrganizations(user.id, isSupportAgent);
+    // Conta da equipe (modo suporte, RF-BO38): só as igrejas com pedido de acesso ativo, com prazo e
+    // escrita em `support`. Sem nenhuma, o app das igrejas manda de volta ao back-office. O termo
+    // dela é o da equipe, aceito no back-office.
+    const team = request.team;
+    const organizations = await loadAccessibleOrganizations(user.id, team?.roles);
 
     return {
-      user: { ...userData, isSupportAgent },
+      user: { ...userData, isTeamAccount: team !== null },
       // Sem o aceite da versão atual, o front pede os termos antes de liberar o app (RF-CV06).
-      terms: { version: TERMS_VERSION, accepted: termsVersion === TERMS_VERSION },
+      terms: team
+        ? { version: TEAM_TERMS_VERSION, accepted: team.termsVersion === TEAM_TERMS_VERSION }
+        : { version: TERMS_VERSION, accepted: termsVersion === TERMS_VERSION },
       // Com permissão protegida e sem 2FA, o front abre a configuração obrigatória (RF-CV07).
       twoFactor: {
         enabled: user.twoFactorEnabled,

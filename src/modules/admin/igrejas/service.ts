@@ -17,7 +17,7 @@ import type {
 import type { ListChurchesQuery, TeamActionInput } from "./schemas.js";
 
 export class ChurchAdminNotFoundError extends Error {
-  constructor(readonly target: "church" | "congregation" | "invite" | "document") {
+  constructor(readonly target: "church" | "congregation" | "invite" | "document" | "user") {
     super("CHURCH_ADMIN_NOT_FOUND");
   }
 }
@@ -94,7 +94,9 @@ function groupAssignments(assignments: AssignmentRow[]) {
 const isAdminInvite = (invite: ChurchInviteRow) =>
   invite.assignments.some(({ profile }) => profile.permissions.length > 0);
 
-function mapUser(user: ChurchUserRow) {
+// Admin: algum perfil com "Gerenciar perfis de acesso". 2FA e bloqueio do login abrem as ações sem
+// acesso aos dados (RF-BO30, RF-BO31).
+function mapUser(user: ChurchUserRow, lockedUntil: Date | undefined) {
   return {
     kind: "USUARIO" as const,
     id: user.id,
@@ -105,6 +107,9 @@ function mapUser(user: ChurchUserRow) {
     organizations: groupAssignments(user.assignments),
     inviteExpiresAt: null,
     isAdminInvite: false,
+    isAdmin: user.assignments.some(({ profile }) => profile.permissions.length > 0),
+    twoFactorEnabled: user.twoFactorEnabled,
+    loginLockedUntil: lockedUntil?.toISOString() ?? null,
   };
 }
 
@@ -119,6 +124,9 @@ function mapInvite(invite: ChurchInviteRow) {
     organizations: groupAssignments(invite.assignments),
     inviteExpiresAt: invite.expiresAt.toISOString(),
     isAdminInvite: isAdminInvite(invite),
+    isAdmin: false,
+    twoFactorEnabled: false,
+    loginLockedUntil: null,
   };
 }
 
@@ -153,7 +161,8 @@ export class ChurchAdminService {
   async listUsers(id: string) {
     await this.assertChurch(id);
     const [users, invites] = await Promise.all([this.repository.findUsers(id), this.repository.findPendingInvites(id)]);
-    return [...invites.map(mapInvite), ...users.map(mapUser)];
+    const locks = await this.repository.findLoginLocks(users.map((user) => user.email));
+    return [...invites.map(mapInvite), ...users.map((user) => mapUser(user, locks.get(user.email.toLowerCase())))];
   }
 
   // Reenviar o convite de um admin (RF-BO29, RF-BO32): novo link por e-mail ao convidado, motivo no

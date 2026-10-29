@@ -1,4 +1,4 @@
-import type { Prisma } from "@prisma/client";
+import type { Prisma, TeamRole } from "@prisma/client";
 import {
   PERMISSION_MODULE_NAMES,
   permissionCatalog,
@@ -7,12 +7,16 @@ import {
 } from "../modules/acesso/permissoes/catalog/index.js";
 import type { AccessibleOrganization } from "./access.js";
 import { prisma } from "./prisma.js";
+import { hasTeamRole } from "./team.js";
 
-// Acesso do suporte do iEzer (PRD Acesso › Acesso do suporte do iEzer, RT-AB11).
+// Acesso do suporte do iEzer (PRD Acesso › Acesso do suporte do iEzer, RT-AB11), com os prazos da
+// B15: 24h por padrão, no máximo 72h, contadas da aprovação da igreja.
 
-export const SUPPORT_DEFAULT_HOURS = 72;
-export const SUPPORT_MAX_HOURS = 7 * 24;
+export const SUPPORT_DEFAULT_HOURS = 24;
+export const SUPPORT_MAX_HOURS = 72;
 export const SUPPORT_EMERGENCY_MAX_HOURS = 24;
+// Pedido sem resposta da igreja expira (RF-BO36).
+export const SUPPORT_REQUEST_TTL_DAYS = 7;
 
 // Escopo do pedido: módulos do catálogo de permissões.
 export const SUPPORT_SCOPES = Object.keys(PERMISSION_MODULE_NAMES) as [PermissionModule, ...PermissionModule[]];
@@ -48,12 +52,25 @@ export function supportPermissions(scope: readonly string[]) {
 export const activeGrantWhere = (now = new Date()) =>
   ({ status: "ATIVO", expiresAt: { gt: now } }) satisfies Prisma.SupportGrantWhereInput;
 
-// Organizações que o atendente alcança agora: sede e congregações de cada igreja com grant ativo,
-// com as permissões do escopo. Conferido a cada requisição (RT-AB11). Igreja suspensa ou encerrada
-// fica de fora: ninguém entra (RF-BO20).
-export async function loadSupportOrganizations(): Promise<AccessibleOrganization[]> {
+// Quem entra no modo suporte (RF-BO38): Suporte (e Administrador) usa qualquer grant ativo, porque o
+// grant é da equipe; Implantação sem o papel Suporte, só os de leitura de igreja em Implantação.
+export const canUseSupportMode = (roles: readonly TeamRole[] | null | undefined) =>
+  hasTeamRole(roles, "SUPORTE", "IMPLANTACAO");
+
+// Organizações que a equipe alcança agora no modo suporte: sede e congregações de cada igreja com
+// grant ativo, com as permissões do escopo. Conferido a cada requisição (RT-AB11). Igreja suspensa ou
+// encerrada fica de fora: ninguém entra (RF-BO20).
+export async function loadSupportOrganizations(roles: readonly TeamRole[]): Promise<AccessibleOrganization[]> {
+  const onlyImplantacao = !hasTeamRole(roles, "SUPORTE");
   const grants = await prisma.supportGrant.findMany({
-    where: { ...activeGrantWhere(), church: { isActive: true, status: { notIn: ["SUSPENSA", "ENCERRADA"] } } },
+    where: {
+      ...activeGrantWhere(),
+      ...(onlyImplantacao ? { canWrite: false } : {}),
+      church: {
+        isActive: true,
+        status: onlyImplantacao ? "IMPLANTACAO" : { notIn: ["SUSPENSA", "ENCERRADA"] },
+      },
+    },
     orderBy: { expiresAt: "desc" },
     select: {
       id: true,

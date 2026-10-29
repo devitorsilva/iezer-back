@@ -8,6 +8,7 @@ import {
   updateChurchSchema,
   updateCongregationSchema,
 } from "../../organizacao/schemas.js";
+import { recoverAdmin, resetAdminTwoFactor, unlockLogin } from "./acoes.js";
 import { createChurch } from "./criacao.js";
 import { changeAccountOwner, listAccountOwnerChanges, openAccountDocument } from "./responsavel.js";
 import {
@@ -20,7 +21,10 @@ import {
   documentParamsSchema,
   inviteParamsSchema,
   listChurchesQuerySchema,
+  recoverAdminSchema,
+  resetTwoFactorSchema,
   teamActionSchema,
+  userParamsSchema,
 } from "./schemas.js";
 import { ChurchAdminNotFoundError, type ChurchAdminService } from "./service.js";
 import { changeChurchStatus } from "./situacao.js";
@@ -30,6 +34,7 @@ const NOT_FOUND_MESSAGES = {
   congregation: "Congregação não encontrada.",
   invite: "Convite não encontrado.",
   document: "Documento não encontrado.",
+  user: "Usuário não encontrado nesta igreja.",
 } as const;
 
 // Edições da sede, das congregações e dos contatos reaproveitam o serviço de Configurações ›
@@ -117,6 +122,24 @@ export class ChurchAdminController {
     const { id, inviteId } = inviteParamsSchema.parse(request.params);
     const input = teamActionSchema.parse(request.body);
     return this.handleNotFound(reply, () => this.service.resendAdminInvite(teamActor(request), id, inviteId, input));
+  };
+
+  resetTwoFactor = async (request: FastifyRequest, reply: FastifyReply) => {
+    const { id, userId } = userParamsSchema.parse(request.params);
+    const input = resetTwoFactorSchema.parse(request.body);
+    return this.handleNotFound(reply, () => resetAdminTwoFactor(teamActor(request), id, userId, input));
+  };
+
+  unlockLogin = async (request: FastifyRequest, reply: FastifyReply) => {
+    const { id, userId } = userParamsSchema.parse(request.params);
+    const input = teamActionSchema.parse(request.body);
+    return this.handleNotFound(reply, () => unlockLogin(teamActor(request), id, userId, input));
+  };
+
+  recoverAdmin = async (request: FastifyRequest, reply: FastifyReply) => {
+    const { id } = churchParamsSchema.parse(request.params);
+    const input = recoverAdminSchema.parse(request.body);
+    return this.handleNotFound(reply, () => recoverAdmin(teamActor(request), id, input));
   };
 
   activate = async (request: FastifyRequest, reply: FastifyReply) => {

@@ -31,10 +31,17 @@ const userSelect = {
   email: true,
   status: true,
   lastLoginAt: true,
+  twoFactorEnabled: true,
   assignments: {
     select: {
       organization: { select: { id: true, name: true, type: true } },
-      profile: { select: { id: true, name: true } },
+      profile: {
+        select: {
+          id: true,
+          name: true,
+          permissions: { where: { permissionKey: ADMIN_PERMISSION }, select: { permissionKey: true } },
+        },
+      },
     },
   },
 } satisfies Prisma.UserSelect;
@@ -139,6 +146,15 @@ export class ChurchAdminRepository {
       orderBy: { createdAt: "desc" },
       select: inviteSelect,
     });
+  }
+
+  // Bloqueios vigentes do login, pelo e-mail em minúsculas (login-lock.ts).
+  async findLoginLocks(emails: string[]) {
+    const locks = await prisma.loginLock.findMany({
+      where: { email: { in: emails.map((email) => email.toLowerCase()) }, lockedUntil: { gt: new Date() } },
+      select: { email: true, lockedUntil: true },
+    });
+    return new Map(locks.map((lock) => [lock.email, lock.lockedUntil!]));
   }
 
   findInvite(id: string, churchId: string) {

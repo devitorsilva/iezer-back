@@ -5,6 +5,7 @@ import { MAX_DOCUMENT_BYTES } from "../../../lib/storage.js";
 import {
   blankToNull,
   cnpjValue,
+  contactPhone,
   contactEmail,
   contactJobTitle,
   lgpdOfficerSchema,
@@ -44,6 +45,26 @@ export const createChurchSchema = z.object({
 export const teamActionSchema = z.object({
   reason: z.string().trim().min(5, "Descreva o motivo (pelo menos 5 caracteres).").max(500),
   ticket: z.preprocess(blankToNull, z.string().max(60, "Use no máximo 60 caracteres.").nullable().optional()),
+});
+
+export const userParamsSchema = z.object({ id: z.string().cuid(), userId: z.string().cuid() });
+
+// Verificação de identidade anotada (RF-BO30, RF-BO33): documento, contato cadastrado, ata.
+const verification = z
+  .string()
+  .trim()
+  .min(10, "Descreva como a identidade foi conferida (documento, contato cadastrado, ata).")
+  .max(1000);
+
+// Redefinir o 2FA de um admin da igreja (RF-BO30).
+export const resetTwoFactorSchema = teamActionSchema.extend({ verification });
+
+// Recuperação de admin (RF-BO33, RF-SP10): quem será o admin e como a identidade foi conferida.
+export const recoverAdminSchema = teamActionSchema.extend({
+  name: personName,
+  email: z.email("E-mail inválido.").transform((value) => value.trim().toLowerCase()),
+  mobilePhone: contactPhone,
+  verification,
 });
 
 export const documentParamsSchema = z.object({ id: z.string().cuid(), documentId: z.string().cuid() });
@@ -89,4 +110,6 @@ export const changeAccountOwnerSchema = z.object({
 export type ListChurchesQuery = z.infer<typeof listChurchesQuerySchema>;
 export type CreateChurchInput = z.infer<typeof createChurchSchema>;
 export type TeamActionInput = z.infer<typeof teamActionSchema>;
+export type ResetTwoFactorInput = z.infer<typeof resetTwoFactorSchema>;
+export type RecoverAdminInput = z.infer<typeof recoverAdminSchema>;
 export type ChangeAccountOwnerInput = z.infer<typeof changeAccountOwnerSchema>;

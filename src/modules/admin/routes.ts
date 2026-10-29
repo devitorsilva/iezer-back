@@ -8,11 +8,11 @@ import { requireTeamSession } from "../../lib/team.js";
 import { TEAM_TERMS_VERSION } from "../../lib/terms.js";
 import { teamActionContext } from "./equipe/controller.js";
 import { churchAdminRoutes } from "./igrejas/routes.js";
+import { supportRequestRoutes } from "./pedidos/routes.js";
 import { teamRoutes, teamService } from "./equipe/routes.js";
 import { acceptTeamInviteSchema, teamTokenParamsSchema } from "./equipe/schemas.js";
 
 // Back-office da equipe iEzer (RT-BB01): só conta da equipe, papel conferido por rota.
-// /api/suporte/* continua à parte até a Sprint 19.
 export const adminRoutes: FastifyPluginAsync = async (app) => {
   app.addHook("onRequest", requireTeamSession);
 
@@ -42,6 +42,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
   await app.register(teamRoutes, { prefix: "/equipe" });
   await app.register(churchAdminRoutes, { prefix: "/igrejas" });
+  await app.register(supportRequestRoutes, { prefix: "/pedidos" });
 };
 
 // Convite da equipe, público como o da igreja (RF-BO03), com limite por IP (RT-AB09).

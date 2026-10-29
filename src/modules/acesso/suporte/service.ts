@@ -10,7 +10,7 @@ import {
 import { AppError } from "../../../lib/errors.js";
 import { trySendMail } from "../../../lib/mailer.js";
 import { prisma } from "../../../lib/prisma.js";
-import { churchUsersWith } from "../../../lib/support.js";
+import { churchUsersWith, SUPPORT_REQUEST_TTL_DAYS } from "../../../lib/support.js";
 import { PERMISSION_MODULE_NAMES, type PermissionModule } from "../permissoes/catalog/index.js";
 import type { SupportGrantRepository, SupportGrantRow } from "./repository.js";
 import type { ApproveGrantInput, AuthorizeGrantInput, RefuseGrantInput } from "./schemas.js";
@@ -34,9 +34,20 @@ export const expiresIn = (hours: number, from = new Date()) => new Date(from.get
 const scopeNames = (scope: string[]) =>
   scope.map((module) => PERMISSION_MODULE_NAMES[module as PermissionModule] ?? module);
 
-// Ativo vencido aparece como EXPIRADO (RF-SP08); o banco continua ATIVO.
-export function grantStatus(grant: Pick<SupportGrantRow, "status" | "expiresAt">, now = new Date()) {
-  return grant.status === "ATIVO" && grant.expiresAt && grant.expiresAt <= now ? "EXPIRADO" : grant.status;
+// Pedido chega à igreja ao ser criado (leitura) ou na aprovação interna (escrita) e expira em 7
+// dias sem resposta (RF-BO36).
+export const requestExpiresAt = (grant: Pick<SupportGrantRow, "requestedAt" | "internalApprovedAt">) =>
+  new Date((grant.internalApprovedAt ?? grant.requestedAt).getTime() + SUPPORT_REQUEST_TTL_DAYS * 24 * HOUR_MS);
+
+// Ativo vencido e pedido sem resposta em 7 dias aparecem como EXPIRADO (RF-SP08, RF-BO36); o banco
+// continua ATIVO ou PENDENTE.
+export function grantStatus(
+  grant: Pick<SupportGrantRow, "status" | "expiresAt" | "requestedAt" | "internalApprovedAt">,
+  now = new Date(),
+) {
+  if (grant.status === "ATIVO" && grant.expiresAt && grant.expiresAt <= now) return "EXPIRADO";
+  if (grant.status === "PENDENTE" && requestExpiresAt(grant) <= now) return "EXPIRADO";
+  return grant.status;
 }
 
 const personName = (person: SupportGrantRow["requestedBy"]) =>
@@ -60,6 +71,10 @@ export function mapGrant(grant: SupportGrantRow) {
     requestedAt: grant.requestedAt.toISOString(),
     requestedById: grant.requestedBy?.id ?? null,
     requestedByName: personName(grant.requestedBy),
+    internalApprovedAt: grant.internalApprovedAt?.toISOString() ?? null,
+    internalApprovedByName: personName(grant.internalApprovedBy),
+    // Até quando a igreja pode responder (só em PENDENTE).
+    requestExpiresAt: grant.status === "PENDENTE" ? requestExpiresAt(grant).toISOString() : null,
     approvedAt: grant.approvedAt?.toISOString() ?? null,
     approvedByName: personName(grant.approvedBy),
     startsAt: grant.startsAt?.toISOString() ?? null,
@@ -113,6 +128,7 @@ export async function notifySupportRequest(grant: SupportGrantRow) {
           churchName: grant.church.name,
           agentName: grant.requestedBy?.name ?? "Suporte iEzer",
           durationHours: grant.durationHours,
+          answerBy: requestExpiresAt(grant),
           grant: summary(grant),
         }),
       ),
@@ -139,7 +155,7 @@ export async function notifySupportAuthorized(grant: SupportGrantRow) {
   );
 }
 
-// Emergência: responsável pela conta e admins, sem repetir quem é as duas coisas (RF-SP09).
+// Emergência: responsável pela conta e admins, sem repetir quem é as duas coisas (RF-SP09, RF-BO39).
 export async function notifySupportEmergency(grant: SupportGrantRow) {
   const [admins, contacts] = await Promise.all([
     supportAdmins(grant.church.id),
@@ -158,7 +174,7 @@ export async function notifySupportEmergency(grant: SupportGrantRow) {
           name: recipient.name,
           churchName: grant.church.name,
           kindLabel: EMERGENCY_KIND_LABELS[grant.emergencyKind ?? "INCIDENTE"],
-          approvers: [grant.requestedBy?.name, grant.approvedBy?.name].filter((name): name is string => !!name),
+          approvers: [grant.requestedBy?.name, grant.internalApprovedBy?.name].filter((name): name is string => !!name),
           expiresAt: grant.expiresAt!,
           grant: summary(grant),
         }),
@@ -181,6 +197,15 @@ export function invalidGrantStatus(message: string) {
   return new AppError(409, "INVALID_SUPPORT_STATUS", message);
 }
 
+// Só pedido na mão da igreja e dentro dos 7 dias é aprovado ou recusado (RF-BO36).
+function assertAwaitingChurch(grant: SupportGrantRow) {
+  const status = grantStatus(grant);
+  if (status === "EXPIRADO") {
+    throw invalidGrantStatus("Este pedido expirou sem resposta. O suporte precisa pedir de novo.");
+  }
+  if (status !== "PENDENTE") throw invalidGrantStatus("Este pedido já foi decidido.");
+}
+
 export const auditGrant = (grant: SupportGrantRow, action: string, before?: SupportGrantRow, description?: string) => ({
   organizationId: grant.church.id,
   module: "ACESSO" as const,
@@ -197,10 +222,10 @@ export const auditGrant = (grant: SupportGrantRow, action: string, before?: Supp
 export class SupportGrantService {
   constructor(private readonly repository: SupportGrantRepository) {}
 
-  // Pedidos aguardando a segunda aprovação interna (emergência) não aparecem para a igreja.
+  // Pedidos aguardando o Administrador iEzer (escrita, emergência) não aparecem para a igreja.
   async list(churchId: string) {
     const grants = (await this.repository.findForChurch(churchId))
-      .filter((grant) => grant.status !== "AGUARDANDO_SEGUNDA_APROVACAO")
+      .filter((grant) => grant.status !== "AGUARDANDO_IEZER")
       .map(mapGrant);
 
     const active = grants.find((grant) => grant.status === "ATIVO") ?? null;
@@ -249,7 +274,7 @@ export class SupportGrantService {
 
   async approve(context: RequestContext, id: string, input: ApproveGrantInput) {
     const grant = await this.decide(context.actor, context.churchId, id, async (tx, current) => {
-      if (current.status !== "PENDENTE") throw invalidGrantStatus("Este pedido já foi decidido.");
+      assertAwaitingChurch(current);
       assertNoActiveGrant(await this.repository.findActive(context.churchId, tx));
 
       const now = new Date();
@@ -279,7 +304,7 @@ export class SupportGrantService {
 
   async refuse(context: RequestContext, id: string, input: RefuseGrantInput) {
     const grant = await this.decide(context.actor, context.churchId, id, async (tx, current) => {
-      if (current.status !== "PENDENTE") throw invalidGrantStatus("Este pedido já foi decidido.");
+      assertAwaitingChurch(current);
 
       return {
         action: "suporte_recusar",
@@ -331,7 +356,7 @@ export class SupportGrantService {
   ) {
     return runAudited(actor, async (tx, audit) => {
       const current = await this.repository.findById(id, churchId, tx);
-      if (!current || current.status === "AGUARDANDO_SEGUNDA_APROVACAO") throw new SupportGrantNotFoundError();
+      if (!current || current.status === "AGUARDANDO_IEZER") throw new SupportGrantNotFoundError();
 
       const { action, updated } = await fn(tx, current);
       if (!updated) throw invalidGrantStatus("Este acesso mudou enquanto você decidia. Atualize a tela.");

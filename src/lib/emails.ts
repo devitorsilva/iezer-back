@@ -217,12 +217,14 @@ export function twoFactorChangedNotice(input: {
   name: string;
   churchName: string | null;
   change: "ativada" | "desativada" | "redefinida" | "reconfigurada";
+  // Quem redefiniu, quando não foi o admin da igreja (o suporte do iEzer, RF-BO30).
+  by?: string;
 }): MailMessage {
   const body = {
     ativada: "A verificação em duas etapas foi ativada na sua conta do iEzer.",
     desativada: "A verificação em duas etapas foi desativada na sua conta do iEzer.",
     redefinida:
-      "O administrador da sua igreja redefiniu a verificação em duas etapas da sua conta do iEzer, e as sessões abertas foram encerradas. " +
+      `${input.by ?? "O administrador da sua igreja"} redefiniu a verificação em duas etapas da sua conta do iEzer, e as sessões abertas foram encerradas. ` +
       "No próximo login, configure de novo o app autenticador ou o código por e-mail.",
     reconfigurada:
       "O app autenticador da sua conta do iEzer foi trocado. O anterior deixou de valer, e as outras sessões foram encerradas.",
@@ -321,6 +323,7 @@ export function supportRequestNotice(input: {
   churchName: string;
   agentName: string;
   durationHours: number;
+  answerBy: Date;
   grant: SupportGrantSummary;
 }): MailMessage {
   return {
@@ -329,9 +332,11 @@ export function supportRequestNotice(input: {
     subject: "O suporte do iEzer pediu acesso aos dados da sua igreja",
     text:
       `Olá, ${firstName(input.name)}!\n\n` +
-      `${input.agentName}, do suporte do iEzer, pediu acesso aos dados da ${input.churchName} por ${input.durationHours} horas.\n\n` +
+      `${input.agentName}, do suporte do iEzer, pediu acesso aos dados da ${input.churchName} por ${input.durationHours} horas, ` +
+      `contadas a partir da aprovação.\n\n` +
       `${supportGrantLines(input.grant)}\n\n` +
-      `Nada é visto antes de um administrador autorizar. Para aprovar ou recusar, abra ${SUPPORT_SETTINGS_PATH} no iEzer.` +
+      `Nada é visto antes de um administrador autorizar. Para aprovar ou recusar, abra ${SUPPORT_SETTINGS_PATH} no iEzer ` +
+      `até ${formatSupportDeadline(input.answerBy)}; depois disso, o pedido expira.` +
       SIGNATURE,
   };
 }

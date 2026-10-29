@@ -210,8 +210,10 @@ enum SupportGrantOrigin {
 }
 
 enum SupportGrantStatus {
+  // Aguardando a igreja; sem resposta em 7 dias aparece como expirado (RF-BO36).
   PENDENTE
-  AGUARDANDO_SEGUNDA_APROVACAO
+  // Escrita ou emergência esperando um Administrador iEzer (RF-BO35, RF-BO39).
+  AGUARDANDO_IEZER
   ATIVO
   RECUSADO
   REVOGADO
@@ -228,41 +230,42 @@ enum SupportEmergencyKind {
 // User, Session, Account, Verification e TwoFactor seguem o schema do Better Auth
 // (core + plugin twoFactor). A senha fica em Account.password (providerId "credential").
 model User {
-  id                  String               @id @default(cuid())
-  name                String
-  email               String               @unique
-  emailVerified       Boolean              @default(false)
-  image               String?
-  twoFactorEnabled    Boolean              @default(false)
-  status              UserStatus           @default(ATIVO)
-  lastLoginAt         DateTime?
+  id                        String               @id @default(cuid())
+  name                      String
+  email                     String               @unique
+  emailVerified             Boolean              @default(false)
+  image                     String?
+  twoFactorEnabled          Boolean              @default(false)
+  status                    UserStatus           @default(ATIVO)
+  lastLoginAt               DateTime?
   // Versão dos termos de uso e de confidencialidade aceita (RF-CV06, RF-LP07).
-  termsVersion        String?
-  termsAcceptedAt     DateTime?
+  termsVersion              String?
+  termsAcceptedAt           DateTime?
   // Nulo só para conta da equipe iEzer (RT-BB02); conta de igreja nasce do convite, com pessoa.
-  personId            String?              @unique
-  person              Person?              @relation(fields: [personId], references: [id], onDelete: Restrict)
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
-  sessions            Session[]
-  accounts            Account[]
-  twoFactors          TwoFactor[]
-  auditLogs           AuditLog[]
-  assignments         UserAssignment[]
-  followUps           FollowUp[]
-  personEvents        PersonEvent[]
-  consentsRecorded    PersonConsent[]
-  invitesSent         Invite[]             @relation("InviteInvitedBy")
-  invitesAccepted     Invite[]             @relation("InviteAcceptedUser")
-  supportRequested    SupportGrant[]       @relation("SupportGrantRequestedBy")
-  supportApproved     SupportGrant[]       @relation("SupportGrantApprovedBy")
-  supportClosed       SupportGrant[]       @relation("SupportGrantClosedBy")
-  teamMember          TeamMember?          @relation("TeamMemberUser")
-  teamInvited         TeamMember[]         @relation("TeamMemberInvitedBy")
-  teamInvitesSent     TeamInvite[]         @relation("TeamInviteInvitedBy")
-  teamInvitesAccepted TeamInvite[]         @relation("TeamInviteAcceptedUser")
-  accountDocuments    AccountDocument[]
-  accountOwnerChanges AccountOwnerChange[]
+  personId                  String?              @unique
+  person                    Person?              @relation(fields: [personId], references: [id], onDelete: Restrict)
+  createdAt                 DateTime             @default(now())
+  updatedAt                 DateTime             @updatedAt
+  sessions                  Session[]
+  accounts                  Account[]
+  twoFactors                TwoFactor[]
+  auditLogs                 AuditLog[]
+  assignments               UserAssignment[]
+  followUps                 FollowUp[]
+  personEvents              PersonEvent[]
+  consentsRecorded          PersonConsent[]
+  invitesSent               Invite[]             @relation("InviteInvitedBy")
+  invitesAccepted           Invite[]             @relation("InviteAcceptedUser")
+  supportRequested          SupportGrant[]       @relation("SupportGrantRequestedBy")
+  supportApproved           SupportGrant[]       @relation("SupportGrantApprovedBy")
+  supportInternallyApproved SupportGrant[]       @relation("SupportGrantInternalApprovedBy")
+  supportClosed             SupportGrant[]       @relation("SupportGrantClosedBy")
+  teamMember                TeamMember?          @relation("TeamMemberUser")
+  teamInvited               TeamMember[]         @relation("TeamMemberInvitedBy")
+  teamInvitesSent           TeamInvite[]         @relation("TeamInviteInvitedBy")
+  teamInvitesAccepted       TeamInvite[]         @relation("TeamInviteAcceptedUser")
+  accountDocuments          AccountDocument[]
+  accountOwnerChanges       AccountOwnerChange[]
 }
 
 model Session {
@@ -942,35 +945,40 @@ model Receivable {
 // do suporte, na sede e nas congregações; cada ação fica no log com o nome do atendente. Ativo =
 // status ATIVO e expiresAt no futuro: expirar não precisa de job.
 model SupportGrant {
-  id                 String                @id @default(cuid())
-  churchId           String
-  church             Organization          @relation(fields: [churchId], references: [id], onDelete: Restrict)
-  origin             SupportGrantOrigin
-  status             SupportGrantStatus
-  emergencyKind      SupportEmergencyKind?
-  ticket             String?
-  reason             String
+  id                   String                @id @default(cuid())
+  churchId             String
+  church               Organization          @relation(fields: [churchId], references: [id], onDelete: Restrict)
+  origin               SupportGrantOrigin
+  status               SupportGrantStatus
+  emergencyKind        SupportEmergencyKind?
+  ticket               String?
+  reason               String
   // Módulos do catálogo de permissões liberados (pessoas, financeiro, acesso).
-  scope              String[]
-  canWrite           Boolean               @default(false)
-  writeJustification String?
-  durationHours      Int
-  requestedById      String?
-  requestedBy        User?                 @relation("SupportGrantRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
-  requestedAt        DateTime              @default(now())
-  // Admin da igreja que autorizou ou, na emergência, o segundo atendente.
-  approvedById       String?
-  approvedBy         User?                 @relation("SupportGrantApprovedBy", fields: [approvedById], references: [id], onDelete: Restrict)
-  approvedAt         DateTime?
-  startsAt           DateTime?
-  expiresAt          DateTime?
+  scope                String[]
+  canWrite             Boolean               @default(false)
+  writeJustification   String?
+  durationHours        Int
+  requestedById        String?
+  requestedBy          User?                 @relation("SupportGrantRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
+  requestedAt          DateTime              @default(now())
+  // Administrador iEzer que aprovou a escrita ou a emergência (RF-BO35, RF-BO39). Na escrita, os
+  // 7 dias para a igreja responder contam daqui.
+  internalApprovedById String?
+  internalApprovedBy   User?                 @relation("SupportGrantInternalApprovedBy", fields: [internalApprovedById], references: [id], onDelete: Restrict)
+  internalApprovedAt   DateTime?
+  // Admin da igreja que autorizou; o prazo começa aqui (RF-BO36). Nulo na emergência.
+  approvedById         String?
+  approvedBy           User?                 @relation("SupportGrantApprovedBy", fields: [approvedById], references: [id], onDelete: Restrict)
+  approvedAt           DateTime?
+  startsAt             DateTime?
+  expiresAt            DateTime?
   // Recusa, revogação, encerramento ou cancelamento.
-  closedById         String?
-  closedBy           User?                 @relation("SupportGrantClosedBy", fields: [closedById], references: [id], onDelete: Restrict)
-  closedAt           DateTime?
-  closeReason        String?
-  createdAt          DateTime              @default(now())
-  updatedAt          DateTime              @updatedAt
+  closedById           String?
+  closedBy             User?                 @relation("SupportGrantClosedBy", fields: [closedById], references: [id], onDelete: Restrict)
+  closedAt             DateTime?
+  closeReason          String?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
 
   @@index([churchId, status])
   @@index([status, expiresAt])

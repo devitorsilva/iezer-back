@@ -813,9 +813,9 @@ Leitura: qualquer de `acesso.suporte.autorizar`, `acesso.perfis.gerenciar` ou `a
 
 - **Avisos por e-mail:** o pedido vai para quem tem `acesso.suporte.autorizar`. A autorização ou aprovação vai para todos os admins, isto é, quem tem `acesso.suporte.autorizar` ou `acesso.perfis.gerenciar` na sede (RF-SP03).
 
-### Back-office (`/api/suporte/*`, só atendente)
+### Back-office (`/api/suporte/*`, só atendente) — removido na Sprint 19
 
-Fora da organização ativa. Desde a Sprint 15, só membro da equipe com o papel Suporte (ou Administrador iEzer); os outros recebem 403 `TEAM_ROLE_FORBIDDEN`. Tudo vai para o `AuditLog` com `actorType: SUPORTE`, na organização da igreja.
+Substituído por `/api/admin/pedidos` e pelas ações em `/api/admin/igrejas/:id` (ver "Sprint 19"). Fora da organização ativa. Desde a Sprint 15, só membro da equipe com o papel Suporte (ou Administrador iEzer); os outros recebem 403 `TEAM_ROLE_FORBIDDEN`. Tudo vai para o `AuditLog` com `actorType: SUPORTE`, na organização da igreja.
 
 | Método | Rota | Corpo | Resposta |
 | --- | --- | --- | --- |
@@ -1022,3 +1022,47 @@ Ver e reenviar convite: qualquer papel. Criar e editar: Administrador ou Implant
 - `POST /pessoas`: `guardianIsParent: true` (só com `guardian`) liga a pessoa nova ao responsável como pai/mãe (o "Cadastrar filho"), na mesma transação e com as mesmas regras.
 - `FamilyMember` ganha `parentIds` (pais registrados que moram no domicílio) e `spouseId` (cônjuge registrado no domicílio, ou `null`), para o texto "filho de…" usar o parentesco real.
 - `DELETE /pessoas/:id`: parentes contam como vínculo (`links` com `relatives`, 409 `PERSON_HAS_LINKS`). Desligamento e falecimento não mexem no parentesco (RF-F14).
+
+## Sprint 19 — Suporte no back-office e pedidos de acesso
+
+`/api/suporte/*` saiu. O app das igrejas perdeu `/app/suporte`.
+
+### `SupportGrant` (mudanças)
+
+- `status`: `AGUARDANDO_SEGUNDA_APROVACAO` virou `AGUARDANDO_IEZER` (escrita ou emergência esperando um Administrador iEzer). `PENDENTE` = aguardando a igreja. `EXPIRADO` também é calculado para `PENDENTE` sem resposta em 7 dias, contados de `internalApprovedAt ?? requestedAt` (RF-BO36).
+- Campos novos: `internalApprovedAt`, `internalApprovedByName`, `requestExpiresAt` (só em `PENDENTE`). Na emergência, `approvedByName` fica `null` e quem aprovou vai em `internalApprovedByName`.
+- Prazos (B15): padrão 24 h e máximo 72 h, contados da aprovação da igreja; emergência até 24 h. Valem também para `POST /acesso/suporte` e `/aprovar` da igreja.
+- `GET /acesso/suporte` esconde `AGUARDANDO_IEZER`. `/aprovar` e `/recusar` da igreja respondem 409 `INVALID_SUPPORT_STATUS` ("expirou sem resposta") depois dos 7 dias.
+
+### `/api/admin/pedidos` (RF-BO34 a RF-BO40)
+
+| Método | Rota | Papel | Corpo | Resposta |
+| --- | --- | --- | --- | --- |
+| GET | `/admin/pedidos?igreja=&situacao=` | todos | — | `{ items: SupportGrant[] }` (até 200, mais recentes primeiro; `situacao` inclui `EXPIRADO`) |
+| POST | `/admin/pedidos` | Suporte, Implantação | corpo comum + `churchId`, `ticket` obrigatório | 201 `SupportGrant` + `notified`. Leitura: `PENDENTE`, admins da igreja avisados. Escrita: `AGUARDANDO_IEZER`, `notified: 0`. Implantação sem Suporte: 403 `SUPPORT_WRITE_FORBIDDEN` com escrita, 403 `SUPPORT_IMPLANTACAO_ONLY` fora de igreja em Implantação. 409 `CHURCH_SUSPENDED` para igreja suspensa ou encerrada |
+| POST | `/admin/pedidos/emergencia` | Suporte | corpo comum + `churchId`, `kind` | 201 `SupportGrant` em `AGUARDANDO_IEZER` |
+| POST | `/admin/pedidos/:id/aprovar` | Administrador | — | Escrita: vai a `PENDENTE` e avisa a igreja (+ `notified`). Emergência: `ATIVO` na hora, avisa o responsável e os admins; 409 `SUPPORT_ALREADY_ACTIVE` se a igreja já tem acesso ativo. 403 `SUPPORT_SAME_APPROVER` para quem pediu |
+| POST | `/admin/pedidos/:id/recusar` | Administrador | `{ reason? }` | `AGUARDANDO_IEZER` → `RECUSADO` |
+| POST | `/admin/pedidos/:id/cancelar` | Suporte, Implantação | `{ reason? }` | `AGUARDANDO_IEZER` ou `PENDENTE` (inclusive vencido) → `CANCELADO` |
+| POST | `/admin/pedidos/:id/encerrar` | Suporte, Implantação | `{ reason? }` | `ATIVO` → `ENCERRADO` (RF-BO40; único jeito de encerrar a emergência) |
+
+### Ações sem acesso aos dados (`/api/admin/igrejas/:id`, papel Suporte; RF-BO30 a RF-BO33)
+
+Corpo comum: `{ reason (5–500), ticket? }`. Registro na Auditoria da igreja como Suporte iEzer, com motivo, chamado e verificação na descrição; o responsável pela conta recebe `teamActionNotice`.
+
+| Método | Rota | Corpo | Resposta |
+| --- | --- | --- | --- |
+| POST | `/:id/usuarios/:userId/redefinir-2fa` | comum + `verification` (10+) | `{ sessionsEnded, ownerNotified }`. Apaga o 2FA e as sessões; o usuário recebe o alerta. 409 `NOT_CHURCH_ADMIN`, 409 `TWO_FACTOR_DISABLED`. Log `suporte_redefinir_2fa` |
+| POST | `/:id/usuarios/:userId/destravar-login` | comum | `{ ownerNotified }`. 409 `LOGIN_NOT_LOCKED`. Log `suporte_destravar_login` |
+| POST | `/:id/recuperar-admin` | comum + `{ name, email, mobilePhone?, verification }` | `{ adminName, viaInvite, emailSent }`. Mesmas regras do RF-SP10; o link do convite não volta para a equipe (B8) |
+
+- 404 "Usuário não encontrado nesta igreja." quando o usuário não tem atribuição na igreja.
+- `GET /admin/igrejas/:id/usuarios`: cada usuário ganha `isAdmin`, `twoFactorEnabled` e `loginLockedUntil` (ISO ou `null`); convites vêm com `false`/`null`.
+
+### Modo suporte (RF-BO02, RF-BO38, RT-BB03)
+
+- `GET /me`: `user.isSupportAgent` virou `user.isTeamAccount`. Para conta da equipe, `terms` é o termo da equipe e `organizations` são as igrejas com pedido ativo (`support: { grantId, canWrite, expiresAt }`), vazias sem pedido.
+- Quem usa o pedido: Suporte e Administrador, qualquer pedido ativo; Implantação sem Suporte, só pedido de leitura em igreja em Implantação.
+- Rotas de dados com conta da equipe: termo da equipe em vez do da igreja (403 `TEAM_TERMS_REQUIRED`); sem pedido ativo, 403 `SUPPORT_NO_GRANT`.
+- O back-office abre `VITE_APP_URL/app?igreja=<churchId>`; o app das igrejas seleciona a igreja e mostra a faixa fixa.
+- Ações novas no log: `suporte_aprovar_iezer`, `suporte_recusar_iezer`, `suporte_redefinir_2fa`, `suporte_destravar_login`.

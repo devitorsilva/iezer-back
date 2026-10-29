@@ -13,7 +13,6 @@ import { meRoutes } from "./me/routes.js";
 import { organizacaoRoutes } from "./organizacao/routes.js";
 import { pessoasRoutes } from "./pessoas/routes.js";
 import { relatoriosRoutes } from "./relatorios/routes.js";
-import { backOfficeRoutes } from "./suporte/routes.js";
 import { placeholdersRoutes } from "./placeholders/routes.js";
 
 export const registerModuleRoutes: FastifyPluginAsync = async (app) => {
@@ -34,9 +33,7 @@ export const registerModuleRoutes: FastifyPluginAsync = async (app) => {
     await protectedApp.register(meRoutes, { prefix: "/me" });
     await protectedApp.register(acessoCatalogRoutes, { prefix: "/acesso" });
     await protectedApp.register(placeholdersRoutes, { prefix: "/modulos" });
-    // Back-office do suporte do iEzer (só atendentes).
-    await protectedApp.register(backOfficeRoutes, { prefix: "/suporte" });
-    // Back-office da equipe iEzer (só contas da equipe; RT-BB01).
+    // Back-office da equipe iEzer (só contas da equipe; RT-BB01), com os pedidos de acesso do suporte.
     await protectedApp.register(adminRoutes, { prefix: "/admin" });
 
     // Rotas de dados: organização ativa (X-Organization-Id) e permissões por rota.

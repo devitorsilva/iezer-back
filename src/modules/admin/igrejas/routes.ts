@@ -10,12 +10,13 @@ const repository = new ChurchAdminRepository();
 export const churchAdminService = new ChurchAdminService(repository);
 const controller = new ChurchAdminController(churchAdminService, organizationService);
 
-// Igrejas no back-office (RF-BO11 a RF-BO21, RF-BO25 a RF-BO29). Ver e reenviar convite de admin:
+// Igrejas no back-office (RF-BO11 a RF-BO21, RF-BO25 a RF-BO33). Ver e reenviar convite de admin:
 // todos os papéis. Criar, editar, marcar como ativa, trocar o responsável e abrir os documentos:
-// Administrador iEzer e Implantação. Suspender e reativar: só o Administrador iEzer (PRD Back-office
-// › Papéis internos).
+// Administrador iEzer e Implantação. Redefinir 2FA de admin, destravar login e recuperar admin:
+// Suporte. Suspender e reativar: só o Administrador iEzer (PRD Back-office › Papéis internos).
 export const churchAdminRoutes: FastifyPluginAsync = async (app) => {
   const implantacao = { preHandler: requireTeamRole("IMPLANTACAO") };
+  const suporte = { preHandler: requireTeamRole("SUPORTE") };
   const administrador = { preHandler: requireTeamRole("ADMINISTRADOR") };
 
   app.get("/", controller.list);
@@ -29,6 +30,9 @@ export const churchAdminRoutes: FastifyPluginAsync = async (app) => {
   app.delete("/:id/contatos/encarregado-lgpd", implantacao, controller.removeLgpdOfficer);
   app.get("/:id/usuarios", controller.users);
   app.post("/:id/convites/:inviteId/reenviar", controller.resendInvite);
+  app.post("/:id/usuarios/:userId/redefinir-2fa", suporte, controller.resetTwoFactor);
+  app.post("/:id/usuarios/:userId/destravar-login", suporte, controller.unlockLogin);
+  app.post("/:id/recuperar-admin", suporte, controller.recoverAdmin);
   app.post("/:id/ativar", implantacao, controller.activate);
   app.post("/:id/suspender", administrador, controller.suspend);
   app.post("/:id/reativar", administrador, controller.reactivate);
