@@ -6,6 +6,7 @@ import { prisma } from "../../lib/prisma.js";
 import { rateLimitByIp } from "../../lib/rate-limit.js";
 import { requireTeamSession } from "../../lib/team.js";
 import { TEAM_TERMS_VERSION } from "../../lib/terms.js";
+import { announcementRoutes } from "./avisos/routes.js";
 import { teamActionContext } from "./equipe/controller.js";
 import { churchAdminRoutes } from "./igrejas/routes.js";
 import { healthPanelRoutes } from "./painel/routes.js";
@@ -45,6 +46,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   await app.register(churchAdminRoutes, { prefix: "/igrejas" });
   await app.register(supportRequestRoutes, { prefix: "/pedidos" });
   await app.register(healthPanelRoutes, { prefix: "/painel" });
+  await app.register(announcementRoutes, { prefix: "/avisos" });
 };
 
 // Convite da equipe, público como o da igreja (RF-BO03), com limite por IP (RT-AB09).

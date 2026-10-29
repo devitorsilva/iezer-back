@@ -233,6 +233,26 @@ enum EmailEventType {
   RECLAMACAO
 }
 
+// Avisos em massa da equipe (B13, RT-BB10). A ordem do nível é a da faixa: o mais alto vem primeiro.
+enum AnnouncementLevel {
+  INFORMATIVO
+  MANUTENCAO
+  IMPORTANTE
+}
+
+// Público por igreja (RF-BO45): todas, por situação ou escolhidas uma a uma.
+enum AnnouncementAudience {
+  TODAS
+  SITUACAO
+  ESCOLHIDAS
+}
+
+// Dentro da igreja: todos os usuários ou só os admins.
+enum AnnouncementRecipients {
+  TODOS
+  ADMINS
+}
+
 // User, Session, Account, Verification e TwoFactor seguem o schema do Better Auth
 // (core + plugin twoFactor). A senha fica em Account.password (providerId "credential").
 model User {
@@ -272,6 +292,9 @@ model User {
   teamInvitesAccepted       TeamInvite[]         @relation("TeamInviteAcceptedUser")
   accountDocuments          AccountDocument[]
   accountOwnerChanges       AccountOwnerChange[]
+  announcementsCreated      Announcement[]       @relation("AnnouncementCreatedBy")
+  announcementsPublished    Announcement[]       @relation("AnnouncementPublishedBy")
+  announcementViews         AnnouncementView[]
 }
 
 model Session {
@@ -392,6 +415,7 @@ model Organization {
   accountDocuments        AccountDocument[]
   accountOwnerChanges     AccountOwnerChange[]
   emailEvents             EmailEvent[]
+  announcements           AnnouncementChurch[]
 
   @@index([parentId])
 }
@@ -1007,4 +1031,62 @@ model EmailEvent {
 
   @@index([organizationId, occurredAt])
   @@index([email, occurredAt])
+}
+
+// Aviso em massa (B13, RF-BO44 a RF-BO49, RT-BB10). O status não é coluna: rascunho sem
+// `publishedAt`; agendado antes de `startsAt`; no ar até `endsAt`; encerrado depois dele ou com
+// `closedAt`. Igrejas suspensas e encerradas nunca veem, qualquer que seja o público.
+model Announcement {
+  id                  String                 @id @default(cuid())
+  title               String
+  body                String
+  linkUrl             String?
+  level               AnnouncementLevel
+  startsAt            DateTime
+  endsAt              DateTime
+  audience            AnnouncementAudience
+  // Só com o público SITUACAO (IMPLANTACAO e/ou ATIVA).
+  churchStatuses      OrganizationStatus[]
+  recipients          AnnouncementRecipients
+  // E-mail aos admins e ao responsável pela conta quando entra no ar (RF-BO46).
+  sendEmail           Boolean                @default(false)
+  emailSentAt         DateTime?
+  emailRecipientCount Int?
+  createdById         String?
+  createdBy           User?                  @relation("AnnouncementCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  publishedById       String?
+  publishedBy         User?                  @relation("AnnouncementPublishedBy", fields: [publishedById], references: [id], onDelete: Restrict)
+  publishedAt         DateTime?
+  closedAt            DateTime?
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  churches            AnnouncementChurch[]
+  views               AnnouncementView[]
+
+  @@index([publishedAt, startsAt, endsAt])
+}
+
+// Igrejas (sedes) escolhidas uma a uma, no público ESCOLHIDAS.
+model AnnouncementChurch {
+  announcementId String
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@id([announcementId, organizationId])
+  @@index([organizationId])
+}
+
+// Quem viu e quem dispensou (RF-BO49): uma linha por usuário e aviso.
+model AnnouncementView {
+  id             String       @id @default(cuid())
+  announcementId String
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  seenAt         DateTime     @default(now())
+  dismissedAt    DateTime?
+
+  @@unique([announcementId, userId])
+  @@index([userId])
 }

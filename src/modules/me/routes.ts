@@ -4,6 +4,7 @@ import { runAudited } from "../../lib/audit.js";
 import { findUserChurch } from "../../lib/church.js";
 import { TEAM_TERMS_VERSION, TERMS_VERSION } from "../../lib/terms.js";
 import { requiresTwoFactor } from "../../lib/two-factor.js";
+import { myAnnouncementRoutes } from "./avisos/routes.js";
 import { accountRoutes } from "./conta/routes.js";
 import { MeRepository } from "./repository.js";
 
@@ -12,6 +13,7 @@ const repository = new MeRepository();
 // GET /api/me (RT-AB04): usuário, pessoa, organizações alcançadas e permissões em cada uma.
 export const meRoutes: FastifyPluginAsync = async (app) => {
   await app.register(accountRoutes);
+  await app.register(myAnnouncementRoutes, { prefix: "/avisos" });
 
   app.get("/", async (request, reply) => {
     const user = await repository.findUser(request.user.id);

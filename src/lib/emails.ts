@@ -503,3 +503,37 @@ export function accountOwnerChangedNotice(input: {
       SIGNATURE,
   };
 }
+
+const announcementDateTime = new Intl.DateTimeFormat("pt-BR", {
+  timeZone: "America/Sao_Paulo",
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+// Aviso da equipe que entrou no ar (RF-BO46): aos admins e ao responsável pela conta. Sai como
+// "iEzer", não em nome da igreja.
+export function announcementEmail(input: {
+  to: string;
+  name: string | null;
+  churchName: string;
+  levelLabel: string;
+  title: string;
+  body: string;
+  linkUrl: string | null;
+  endsAt: Date;
+}): MailMessage {
+  return {
+    to: input.to,
+    subject: `Aviso do iEzer: ${input.title}`,
+    text:
+      (input.name ? `Olá, ${firstName(input.name)}!\n\n` : "Olá!\n\n") +
+      `A equipe do iEzer publicou um aviso (${input.levelLabel.toLowerCase()}) para a ${input.churchName}:\n\n` +
+      `${input.title}\n${input.body}` +
+      (input.linkUrl ? `\n\nSaiba mais: ${input.linkUrl}` : "") +
+      `\n\nO aviso aparece no topo do iEzer até ${announcementDateTime.format(input.endsAt)} (horário de Brasília).` +
+      `\n\n—\nEquipe iEzer\nVocê recebe este e-mail como admin ou responsável pela conta da igreja.`,
+  };
+}

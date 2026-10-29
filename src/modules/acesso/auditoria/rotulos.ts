@@ -98,6 +98,13 @@ export const ACTION_LABELS: Record<string, string> = {
   redefinir_autenticador_equipe: "App autenticador da equipe redefinido",
   aceitar_termo_equipe: "Termo da equipe aceito",
   promover_administrador_equipe: "Administrador iEzer criado pelo script",
+  // Avisos em massa (back-office; só na auditoria interna)
+  criar_aviso: "Aviso criado",
+  editar_aviso: "Aviso editado",
+  publicar_aviso: "Aviso publicado",
+  encerrar_aviso: "Aviso encerrado",
+  apagar_aviso: "Rascunho de aviso apagado",
+  enviar_email_aviso: "E-mail do aviso enviado",
   // Pessoas
   editar_pessoa: "Pessoa editada",
   apagar_registro: "Registro apagado",
@@ -161,6 +168,7 @@ export const TARGET_TYPE_LABELS: Record<string, string> = {
   SupportGrant: "Acesso do suporte",
   TeamMember: "Membro da equipe",
   TeamInvite: "Convite da equipe",
+  Announcement: "Aviso",
   Rota: "Tela ou registro",
 };
 

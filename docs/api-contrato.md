@@ -1099,3 +1099,37 @@ Corpo comum: `{ reason (5–500), ticket? }`. Registro na Auditoria da igreja co
 | Pedido com escrita ou emergência aguardando o iEzer | Administradores iEzer, menos quem pediu |
 | Pedido aprovado ou recusado pelo iEzer ou pela igreja; emergência aprovada | Quem pediu (só conta da equipe e se não foi quem decidiu) |
 | Último admin da igreja suspenso pelo ciclo de vida de Pessoas | Suporte e Administradores (sem nome nem situação da pessoa) |
+
+## Sprint 21 — Avisos em massa
+
+### `/api/admin/avisos` (B13, RF-BO44 a RF-BO49, RT-BB10)
+
+Ver: Suporte e Administrador iEzer. Criar, editar, publicar, encerrar e apagar: só Administrador (403 `TEAM_ROLE_FORBIDDEN`).
+
+| Método | Rota | Corpo | Resposta |
+| --- | --- | --- | --- |
+| GET | `/admin/avisos?status=` | — | `{ items: Announcement[] }` (até 500, mais novos primeiro; `status` opcional: `RASCUNHO`, `AGENDADO`, `NO_AR`, `ENCERRADO`) |
+| GET | `/admin/avisos/:id` | — | `Announcement` |
+| POST | `/admin/avisos` | `AnnouncementInput` | 201 `Announcement` (rascunho) |
+| PUT | `/admin/avisos/:id` | `AnnouncementInput` (inteiro) | `Announcement`. Só rascunho ou agendado; agendado com início no passado entra no ar na hora |
+| POST | `/admin/avisos/:id/publicar` | — | `Announcement` (agendado ou no ar). Só rascunho, com o fim no futuro |
+| POST | `/admin/avisos/:id/encerrar` | — | `Announcement` (encerrado). Agendado ou no ar |
+| DELETE | `/admin/avisos/:id` | — | 204. Só rascunho |
+
+- `AnnouncementInput`: `{ title (3–80), body (até 280), linkUrl? (só https), level: INFORMATIVO|MANUTENCAO|IMPORTANTE, startsAt, endsAt (ISO com fuso; fim depois do início), audience: TODAS|SITUACAO|ESCOLHIDAS, churchStatuses: (IMPLANTACAO|ATIVA)[] (obrigatório em SITUACAO), churchIds: string[] (obrigatório em ESCOLHIDAS, até 500, só sedes em Implantação ou Ativa), recipients: TODOS|ADMINS, sendEmail }`.
+- `Announcement`: o input + `{ id, dismissible, churches: [{ id, name, status }], status, emailSentAt, emailRecipientCount, createdByName, publishedAt, publishedByName, closedAt, seenCount, dismissedCount, createdAt, updatedAt }`.
+- Status calculado: rascunho sem publicação; agendado antes do início; no ar até o fim; encerrado depois do fim ou com `closedAt`.
+- Erros: 409 `ANNOUNCEMENT_STATUS_INVALID` (`status`), 409 `ANNOUNCEMENT_ENDS_IN_PAST` (`field: "endsAt"`), 400 `ANNOUNCEMENT_CHURCH_INVALID` (`field: "churchIds"`), 404.
+- Auditoria interna (organização nula, módulo `BACKOFFICE`): `criar_aviso`, `editar_aviso`, `publicar_aviso`, `encerrar_aviso`, `apagar_aviso`; `enviar_email_aviso` pelo sistema.
+- E-mail (`sendEmail`): quando o aviso entra no ar, uma vez, aos admins ativos e ao responsável pela conta de cada igreja do público (sem repetir endereço). Sai na publicação, a cada minuto no servidor e a cada `GET /me/avisos`; com o servidor dormindo, no próximo uso. Aviso que acabou antes disso não manda.
+
+### `/api/me/avisos` (app das igrejas; RF-BO47, RT-BB10)
+
+| Método | Rota | Resposta |
+| --- | --- | --- |
+| GET | `/me/avisos` | `{ items: [{ id, title, body, linkUrl, level, startsAt, endsAt, dismissible, seen }] }` |
+| POST | `/me/avisos/:id/visto` | `{ seen: true }` (grava só a primeira vez) |
+| POST | `/me/avisos/:id/dispensar` | `{ dismissed: true }`; 409 `ANNOUNCEMENT_NOT_DISMISSIBLE` no importante |
+
+- Só os avisos no ar com a igreja do usuário no público (Implantação ou Ativa); em `ADMINS`, só para admin ativo (permissão `acesso.perfis.gerenciar`, regra das travas). Sem os dispensados. Ordem: importante, manutenção, informativo; depois o início mais recente.
+- Conta da equipe (inclusive em modo suporte): lista vazia e 404 nos POSTs.

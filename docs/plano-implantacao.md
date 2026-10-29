@@ -290,7 +290,7 @@ A Sprint 14 (homologação no navegador) continua adiada; estas sprints vêm ant
 - **IDs:** B10, B12, RF-BO41 a RF-BO43, RF-BO54, RT-BB08, RT-BB09, RT-BB13.
 - **Pronto quando:** uma igreja de teste sem admin aparece no painel e gera e-mail (no log) para Suporte e Administradores.
 
-## Sprint 21 — Avisos em massa (back + front) `[ ]`
+## Sprint 21 — Avisos em massa (back + front) `[x]`
 
 **Objetivo:** a equipe avisa as igrejas sem depender de e-mail em massa.
 
@@ -498,3 +498,9 @@ Entradas curtas (até 8 linhas), mais recente por último.
   Decisões: alertas para todas as igrejas menos Encerrada; "sem acesso" só Ativa e conta login ou sessão renovada; igreja nova em Implantação sem admin já entra em "sem admin"; aprovação interna também avisa quem pediu; o e-mail à equipe sobre igreja sem admin não traz nome nem situação da pessoa (B10).
   Testado: painel no serviço (Dezoito sem admin, Sede com um só; alertas com prazo 0 e bloqueio temporário, desfeito no fim), webhook por HTTP na 3399 (válido, repetido, assinatura errada, timestamp velho, tipo ignorado, e-mail sem igreja, corpo inválido), aba Usuários com a marca, e-mails no log (sem admin para Suporte e Administrador, emergência aguardando, decisões, autor que decide o próprio sem e-mail); `/api/admin/painel` 401 sem sessão; typecheck dos dois, `build` e `build:admin`. Ficou um `EmailEvent` REJEITADO de `pastor.18.6ni4@iezer.local` para o teste visual.
   Pendências: teste visual; no Render, `migrate deploy` e `RESEND_WEBHOOK_SECRET` (webhook só com domínio verificado no Resend); o painel leva ~6 s daqui (banco remoto), por isso o cache.
+- 29/10/2026 · Sprint 21 · Branch `sprint-21-avisos` nos dois repos (saindo da `sprint-20-saude`, já commitada). Migração `20261031_avisos` (aditiva, `migrate deploy` feito): `Announcement` (status calculado, sem coluna; CHECK fim > início), `AnnouncementChurch`, `AnnouncementView`.
+  Back: `/api/admin/avisos` (`admin/avisos/`; ver Suporte e Administrador, gerir só Administrador), `/api/me/avisos` (`me/avisos/`: lista, visto, dispensar), regras em `src/lib/announcements.ts`, e-mail em `admin/avisos/envio.ts` (`emailSentAt` marcado antes de enviar; roda na publicação, num `setInterval` de 1 min do `server.ts` e a cada `GET /me/avisos`). Rótulos `*_aviso` na Auditoria.
+  Front: admin `/avisos` (pílulas de status na URL, tabela → cards, `AvisoDialog` com prévia da faixa, `IgrejasEscolha`, `AvisoDetalheDialog`); app das igrejas `AvisosFaixa` acima do header (busca a cada minuto, some na hora do fim, marca visto, "X" fora do importante). `HoraInput` (`src/components/`, wrapper do TimePicker do ReUI, variante Radix copiada à mão com `ui/input-group.tsx`; padrão no `CLAUDE.md` do front), `FaixaAviso semPortal`, tipos em `src/lib/avisos.ts`.
+  Decisões: Suporte vê a tela só para leitura (pedido do usuário; publicar continua só Administrador, B13); "só admins" = regra das travas; e-mail aos admins e ao responsável qualquer que seja o "quem vê"; encerrar um agendado = cancelar; conta da equipe não vê a faixa; faixas empilhadas, nível mais alto em cima.
+  Testado: service de ponta a ponta no banco (validações, agendado → no ar pela edição, só admins, dispensar importante recusado, visto uma vez, contagens, e-mail uma vez no log, encerrar, apagar só rascunho; dados de teste apagados), rotas novas 401 sem sessão por `inject`; typecheck dos dois, `build` e `build:admin`.
+  Pendências: teste visual; no Render, só o deploy (a migração já está no banco único); Resend gratuito limita envios por segundo (avisos para muitas igrejas mandam em sequência).

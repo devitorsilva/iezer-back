@@ -15,7 +15,7 @@ const inChurch = (churchId: string) => ({ OR: [{ id: churchId }, { parentId: chu
 
 // Admin ativo da igreja: usuário ATIVO com "Gerenciar perfis de acesso" numa organização ativa
 // (a mesma regra das travas).
-const activeAdminWhere = (churchId: string) =>
+export const activeAdminWhere = (churchId: string) =>
   ({
     status: "ATIVO",
     assignments: {
