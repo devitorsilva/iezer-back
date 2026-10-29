@@ -203,12 +203,16 @@ Decisão em aberto: o RT-AB14 pede autenticação própria da equipe, o que apon
 
 ## Sprint 14 — Homologação no navegador e correções `[ ]`
 
-**Objetivo:** validar no navegador, no ambiente de homologação atual, tudo o que até aqui foi testado só por typecheck e por HTTP.
+**Objetivo:** validar no navegador, no ambiente de homologação atual, os dois apps (o das igrejas e o admin da equipe iEzer), com tudo o que até aqui foi testado só por typecheck e por HTTP: Sprints 1 a 13 e 15 a 24.
 
-- **[usuário]** Seguir `docs/homologacao.md` no desktop e no celular, primeiro sozinho e depois com o pastor. Anotar os achados na tabela do fim do roteiro.
-- Enquanto o Resend não tiver domínio, os fluxos de e-mail (convite, código do 2FA, alertas, redefinição) são testados pelo log do back ou pelo "Copiar link".
-- Claude Code: corrigir os achados em janelas "Sprint 14 — correções", em lotes por tela, começando pelos que bloqueiam. Já conhecido: botões de gestão visíveis ao atendente em somente leitura (Perfis, Organização).
-- Usar só dados fictícios: o banco atual não tem backup e guarda registros de auditoria que não podem ser apagados.
+- **[usuário]** Seguir `docs/homologacao.md` no desktop e no celular, primeiro sozinho e depois com o pastor (passos marcados [pastor]). Anotar os achados na tabela do fim do roteiro.
+- Pré-requisitos (os passos que dependem deles estão marcados [depende] no roteiro e podem ser pulados):
+  - segundo Administrador iEzer ativo (escrita e emergência no suporte);
+  - Render: `ADMIN_WEB_ORIGIN`, `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY` com domínio verificado, `RESEND_WEBHOOK_SECRET`, `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`;
+  - Vercel: projeto do app admin (`npm run build:admin`, `dist-admin`) e `VITE_APP_URL`/`VITE_ADMIN_URL` nos dois projetos.
+- Enquanto o Resend não tiver domínio, os fluxos de e-mail (convites, código do 2FA, alertas, redefinição, exportação) são testados pelo log do back ou pelo "Copiar link"; o webhook, pela simulação descrita no roteiro.
+- Claude Code: corrigir os achados em janelas "Sprint 14 — correções", em lotes por tela, começando pelos que bloqueiam.
+- Usar só dados fictícios: o banco atual não tem backup e guarda registros de auditoria que não podem ser apagados. Duas igrejas de teste novas, criadas pelo back-office: A (jornada da piloto) e B (situação, responsável e fim de contrato; termina Suspensa).
 - **Pronto quando:** o roteiro passa sem achados que bloqueiam, e o pastor percorreu as jornadas dele.
 
 ## Back-office do iEzer (Sprints 15 a 22)
@@ -511,3 +515,7 @@ Entradas curtas (até 8 linhas), mais recente por último.
   Testado: de ponta a ponta com a Dezoito suspensa (pedido, segundo pedido recusado, `.zip` de 66 KB em ~33 s daqui, e-mail no log, substituição com o arquivo antigo apagado e link antigo 410, download com nome do arquivo, segundo download 410, nova exportação recusada, limpeza do vencido), `.zip` da Sede piloto (datas e valores no Excel), recusas da eliminação, auditoria interna e Histórico; rotas 401 e link público 404/400 na 3399; typecheck dos dois, `build`, `build` e `build:admin`. Dezoito reativada (Implantação) e exportações de teste apagadas; os logs ficam. Bucket `iezer-documentos` criado (privado, 25 MB). Achado no teste: o Storage guarda cache de 1h e o link já assinado servia o arquivo apagado; upload agora com `cache-control: max-age=0` (conferido: 400 depois de apagar). Outro: arquivo já apagado volta 400 com `NoSuchKey`; `removeObject` passa a tratar como removido (senão a limpeza tentava para sempre o `.zip` apagado à mão).
   Roteiro rodado na Dezoito (pedido do usuário): ensaio com `ROLLBACK`, depois `COMMIT` por `psql` no `DIRECT_URL`; conferência zerada, trava do log de volta (UPDATE recusado), 26 linhas do log sem dados; registro pelo serviço (Encerrada, descarte em 29/10/2031, comprovante no log, segundo registro 409). A Dezoito agora está Encerrada para sempre.
   Pendências: teste visual; no Render, deploy, `SUPABASE_SERVICE_ROLE_KEY` e o bucket; `.zip` acima de 25 MB falha (subir o limite do bucket até 50 MB se precisar); validar retenção e roteiro com o jurídico.
+- 29/10/2026 · Sprint 14 (roteiro) · Só documentação, branch `sprint-14-roteiro` (só back; nada rodou no banco). `docs/homologacao.md` reescrito para os dois apps: Preparação (navegadores por pessoa, e-mails pelo log, equipe com dois Administradores, Suporte e Implantação, igrejas de teste A e B pelo back-office, CPFs e CNPJs fictícios válidos), Parte 1 com o app das igrejas na ordem da jornada (1.1 a 1.19, negativos por papel na 1.14) e Parte 2 com o app admin (2.1 a 2.12), em tabelas Passo | O que fazer | O que deve acontecer, com as marcas [celular], [pastor] e [depende], e a tabela de Achados.
+  [depende]: Google; Resend com domínio e webhook (simulação assinada à mão na 2.12); chave do Storage no Render (troca do responsável, exportação e link público); segundo Administrador iEzer (escrita e emergência); projeto do admin na Vercel e as variáveis; SQL para a sessão ociosa da equipe; tempo (Implantação há 15 dias, sem acesso há 30, pedido expirado em 7).
+  Sprint 14 no plano: sem a menção ao `/app/suporte` e ao achado já corrigido na 16, com o app admin e os pré-requisitos. `docs/api-contrato.md`: Sprints 23 e 24 depois da 22, texto igual.
+  Pendências: a trava do último Administrador iEzer não dá para provocar pela tela (2.3-10); a B termina Suspensa e o roteiro de eliminação não roda na homologação; a homologação em si (Sprint 14 continua `[ ]`).

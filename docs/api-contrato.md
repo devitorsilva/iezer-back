@@ -966,63 +966,6 @@ Ver e reenviar convite: qualquer papel. Criar e editar: Administrador ou Implant
 - Storage (RT-BB06): bucket privado `SUPABASE_STORAGE_BUCKET` (padrão `iezer-documentos`), caminho `{sedeId}/documentos/{documentId}.{pdf|png|jpg}`, só pelo back com a chave service_role.
 - **Auditoria** (na igreja, `actorType: SUPORTE`, módulo Configurações): `ativar_igreja`, `suspender_igreja` (`after.sessionsEnded`), `reativar_igreja` (`description` com o motivo), `trocar_responsavel_conta` (antes/depois do contato; `description` com o documento), `abrir_documento_conta` (cada link gerado).
 
-## Sprint 23 — Domicílio: contato principal e endereço sugerido
-
-### `Family` e `GET /pessoas/:id` (alterados)
-
-- `Family` (rotas `/pessoas/familias`) e `family` do detalhe da pessoa ganham `primaryContactPersonId` (ou `null`) e `address`: `{ postalCode, street, number, complement, district, city, state, secondaryPhone }` ou `null`. O endereço do domicílio é o do contato principal (não há cópia própria); `null` sem contato principal, sem endereço nele, ou quando ele é de uma organização que o usuário não lê.
-- `FamilyMember` ganha `sex`, `joinedAt` (ISO, ordem de entrada), `isPrimaryContact`, `mobilePhone`, `email`, `incomplete` (falta o mínimo do vínculo, como no detalhe), `usesFamilyAddress` (endereço igual ao do domicílio, sem contar o telefone) e `readable` (o usuário lê a organização da pessoa). Sem `readable`, `mobilePhone`/`email` vêm `null` e `incomplete`/`usesFamilyAddress` `false`.
-
-### Lista e página da família (RF-F05, revisão de 28/10)
-
-- `GET /pessoas/familias?page=&pageSize=&q=` (`pessoas.ver`) → `{ items: FamilyListItem[], total, page, pageSize }` (20 por página, até 100), ordenada pelo nome. Só famílias de organizações que o usuário lê ou com alguém delas. `q` busca no nome da família (sem diferenciar caixa) e no nome/apelido de qualquer membro (sem acento, todas as palavras).
-- `FamilyListItem`: `{ id, name, organizationId, organizationName, memberCount, primaryContact: { personId, name, preferredName, mobilePhone } | null, address }`. `address` no formato do `Family`; `mobilePhone` e `address` vêm `null` quando o contato principal é de uma organização que o usuário não lê.
-- `GET /pessoas/familias/:id` (`pessoas.ver`) → `Family` (o mesmo das rotas de escrita). 404 fora do alcance.
-
-### Contato principal (RF-F08)
-
-- É o primeiro a entrar: na família criada, o primeiro adulto da lista; na família criada pelo cadastro de filho, o responsável. Sem data de nascimento conta como adulto.
-- Domicílio sem contato principal: o primeiro adulto que entrar passa a ser. Saiu o contato principal: passa ao próximo adulto pela ordem de entrada; sem adulto, fica `null` (o front mostra o aviso).
-- `PATCH /pessoas/familias/:id/contato-principal` (`pessoas.editar`) `{ personId }` → `Family`. Qualquer membro que o usuário enxerga, inclusive menor; 404 para quem não é membro. Log `definir_contato_principal` (`before`/`after` com `primaryContactPersonId`). `adicionar_membro` e `remover_membro` registram `primaryContactPersonId` quando ele muda.
-
-### Endereço do domicílio (RF-F03, alterado)
-
-- **`PATCH /pessoas/:id` não aceita mais `applyToFamily`:** o endereço da pessoa é só dela.
-- `PATCH /pessoas/familias/:id/endereco` (`pessoas.editar`) `{ postalCode, street, number, complement, district, city, state, secondaryPhone, aplicarA: personId[] }` → `Family`. Grava o endereço inteiro (campo ausente limpa) em quem está em `aplicarA` (1 a 30, membros que o usuário enxerga; senão 404), com um `editar` por pessoa alterada. Regra do "não piorar": 400 `BOND_REQUIREMENTS` com `target: "family"`, `personId` e `missingFields` (ex.: o telefone era o único contato).
-- `POST /pessoas/familias/:id/membros` aceita `useFamilyAddress: true`: copia o endereço do domicílio para quem entra (mesma regra).
-
-### `POST /pessoas` (alterado, RF-F04, RF-F07)
-
-- `family: { id, role }`: cria a pessoa já no domicílio, com o papel. Menor ou Membro em formação precisa de um Responsável/Cônjuge adulto na família (400 `GUARDIAN_REQUIRED`); o consentimento do menor fica registrado como dado por ele. Família fora do alcance: 400 `INVALID_REFERENCE`. Não combina com `guardian` (400 `VALIDATION_ERROR`).
-- `useFamilyAddress: true`: copia o endereço do domicílio (o da família informada, o da família do responsável ou, se o responsável ainda não tem família, o dele). **O cadastro com `guardian` não copia mais o endereço sozinho.**
-
-## Sprint 24 — Parentesco entre domicílios
-
-`PersonRelation` (migração `20261028_parentesco`): só pai/mãe (`PAI_MAE`, `personId` é pai/mãe de `relativeId`) e cônjuge (`CONJUGE`, par em ordem de id); irmãos, avós e netos são deduzidos. As duas pessoas são da mesma igreja (`organizationId` = sede).
-
-### `GET /pessoas/:id/parentes` (`pessoas.ver`, RF-F10, RF-F12)
-
-- → `{ items: Relative[] }`, na ordem cônjuge, pais, filhos, irmãos, avós, netos (e pelo nome). 404 se a pessoa não é lida.
-- `Relative`: `{ kind: "CONJUGE" | "PAI_MAE" | "FILHO" | "IRMAO" | "AVO" | "NETO", relationId, personId, name, preferredName, sex, readable, age, status, organizationName, via }`.
-- `relationId` só nos laços diretos (cônjuge, pais, filhos); `null` nos deduzidos. `via`: `{ personId, name, preferredName }` por quem o avô/neto chega (o pai/mãe ou o filho), `null` nos demais. Irmão = outro filho de um dos pais (meio-irmão também).
-- Parente de organização que o usuário não lê: `readable: false` e `age`, `status`, `organizationName` `null` (só nome e parentesco). Contato e endereço nunca vêm.
-
-### `POST /pessoas/:id/parentes` (`pessoas.editar`, RF-F11, RF-F13)
-
-- `{ personId, type: "PAI_MAE" | "FILHO" | "CONJUGE" }` (o que `personId` é da pessoa da ficha) → 201 `{ items: Relative[] }`. As duas pessoas precisam ser lidas pelo usuário (ficha: 404; parente: 400 `INVALID_REFERENCE`).
-- Erros: 400 `INVALID_RELATION` (a própria pessoa), 409 `RELATION_EXISTS` (já há laço entre as duas, em qualquer sentido), 409 `TOO_MANY_PARENTS` (o filho já tem dois pais), 400 `RELATION_CYCLE` (o pai/mãe seria descendente do filho), 409 `SPOUSE_EXISTS` (uma das duas já tem cônjuge que não é Falecido).
-- Log `adicionar_parente` (alvo `PersonRelation`, `after` com tipo, ids e nomes; `personIds` com as duas pessoas).
-
-### `DELETE /pessoas/:id/parentes/:relationId` (`pessoas.editar`)
-
-- → `{ items: Relative[] }`. Só um laço que envolve a pessoa da ficha e com as duas pessoas lidas; senão 404. Log `remover_parente`.
-
-### Alterados
-
-- `POST /pessoas`: `guardianIsParent: true` (só com `guardian`) liga a pessoa nova ao responsável como pai/mãe (o "Cadastrar filho"), na mesma transação e com as mesmas regras.
-- `FamilyMember` ganha `parentIds` (pais registrados que moram no domicílio) e `spouseId` (cônjuge registrado no domicílio, ou `null`), para o texto "filho de…" usar o parentesco real.
-- `DELETE /pessoas/:id`: parentes contam como vínculo (`links` com `relatives`, 409 `PERSON_HAS_LINKS`). Desligamento e falecimento não mexem no parentesco (RF-F14).
-
 ## Sprint 19 — Suporte no back-office e pedidos de acesso
 
 `/api/suporte/*` saiu. O app das igrejas perdeu `/app/suporte`.
@@ -1184,3 +1127,60 @@ Ver: Suporte e Administrador iEzer. Criar, editar, publicar, encerrar e apagar: 
 - Interna: linhas com autor Suporte iEzer (logins, equipe, ações nas igrejas e no modo suporte) e as do back-office sem igreja (módulo `BACKOFFICE`). Histórico da igreja: autor Suporte iEzer ou Sistema nas organizações dela.
 - `InternalAuditEntry` = a linha da Auditoria da igreja (`AuditEntry`) + `{ peopleCount, redacted }`. Nos módulos de dados (Pessoas, Financeiro, Cadastro, Membros) e nas leituras do suporte (`suporte_ler`), `redacted: true`: sem pessoas, alterações nem nome do registro (a leitura traz só o nome da tela), por B8.
 - `de`/`ate` em dias civis (Brasília), os dois inclusive; `pageSize` até 100 (padrão 25).
+
+## Sprint 23 — Domicílio: contato principal e endereço sugerido
+
+### `Family` e `GET /pessoas/:id` (alterados)
+
+- `Family` (rotas `/pessoas/familias`) e `family` do detalhe da pessoa ganham `primaryContactPersonId` (ou `null`) e `address`: `{ postalCode, street, number, complement, district, city, state, secondaryPhone }` ou `null`. O endereço do domicílio é o do contato principal (não há cópia própria); `null` sem contato principal, sem endereço nele, ou quando ele é de uma organização que o usuário não lê.
+- `FamilyMember` ganha `sex`, `joinedAt` (ISO, ordem de entrada), `isPrimaryContact`, `mobilePhone`, `email`, `incomplete` (falta o mínimo do vínculo, como no detalhe), `usesFamilyAddress` (endereço igual ao do domicílio, sem contar o telefone) e `readable` (o usuário lê a organização da pessoa). Sem `readable`, `mobilePhone`/`email` vêm `null` e `incomplete`/`usesFamilyAddress` `false`.
+
+### Lista e página da família (RF-F05, revisão de 28/10)
+
+- `GET /pessoas/familias?page=&pageSize=&q=` (`pessoas.ver`) → `{ items: FamilyListItem[], total, page, pageSize }` (20 por página, até 100), ordenada pelo nome. Só famílias de organizações que o usuário lê ou com alguém delas. `q` busca no nome da família (sem diferenciar caixa) e no nome/apelido de qualquer membro (sem acento, todas as palavras).
+- `FamilyListItem`: `{ id, name, organizationId, organizationName, memberCount, primaryContact: { personId, name, preferredName, mobilePhone } | null, address }`. `address` no formato do `Family`; `mobilePhone` e `address` vêm `null` quando o contato principal é de uma organização que o usuário não lê.
+- `GET /pessoas/familias/:id` (`pessoas.ver`) → `Family` (o mesmo das rotas de escrita). 404 fora do alcance.
+
+### Contato principal (RF-F08)
+
+- É o primeiro a entrar: na família criada, o primeiro adulto da lista; na família criada pelo cadastro de filho, o responsável. Sem data de nascimento conta como adulto.
+- Domicílio sem contato principal: o primeiro adulto que entrar passa a ser. Saiu o contato principal: passa ao próximo adulto pela ordem de entrada; sem adulto, fica `null` (o front mostra o aviso).
+- `PATCH /pessoas/familias/:id/contato-principal` (`pessoas.editar`) `{ personId }` → `Family`. Qualquer membro que o usuário enxerga, inclusive menor; 404 para quem não é membro. Log `definir_contato_principal` (`before`/`after` com `primaryContactPersonId`). `adicionar_membro` e `remover_membro` registram `primaryContactPersonId` quando ele muda.
+
+### Endereço do domicílio (RF-F03, alterado)
+
+- **`PATCH /pessoas/:id` não aceita mais `applyToFamily`:** o endereço da pessoa é só dela.
+- `PATCH /pessoas/familias/:id/endereco` (`pessoas.editar`) `{ postalCode, street, number, complement, district, city, state, secondaryPhone, aplicarA: personId[] }` → `Family`. Grava o endereço inteiro (campo ausente limpa) em quem está em `aplicarA` (1 a 30, membros que o usuário enxerga; senão 404), com um `editar` por pessoa alterada. Regra do "não piorar": 400 `BOND_REQUIREMENTS` com `target: "family"`, `personId` e `missingFields` (ex.: o telefone era o único contato).
+- `POST /pessoas/familias/:id/membros` aceita `useFamilyAddress: true`: copia o endereço do domicílio para quem entra (mesma regra).
+
+### `POST /pessoas` (alterado, RF-F04, RF-F07)
+
+- `family: { id, role }`: cria a pessoa já no domicílio, com o papel. Menor ou Membro em formação precisa de um Responsável/Cônjuge adulto na família (400 `GUARDIAN_REQUIRED`); o consentimento do menor fica registrado como dado por ele. Família fora do alcance: 400 `INVALID_REFERENCE`. Não combina com `guardian` (400 `VALIDATION_ERROR`).
+- `useFamilyAddress: true`: copia o endereço do domicílio (o da família informada, o da família do responsável ou, se o responsável ainda não tem família, o dele). **O cadastro com `guardian` não copia mais o endereço sozinho.**
+
+## Sprint 24 — Parentesco entre domicílios
+
+`PersonRelation` (migração `20261028_parentesco`): só pai/mãe (`PAI_MAE`, `personId` é pai/mãe de `relativeId`) e cônjuge (`CONJUGE`, par em ordem de id); irmãos, avós e netos são deduzidos. As duas pessoas são da mesma igreja (`organizationId` = sede).
+
+### `GET /pessoas/:id/parentes` (`pessoas.ver`, RF-F10, RF-F12)
+
+- → `{ items: Relative[] }`, na ordem cônjuge, pais, filhos, irmãos, avós, netos (e pelo nome). 404 se a pessoa não é lida.
+- `Relative`: `{ kind: "CONJUGE" | "PAI_MAE" | "FILHO" | "IRMAO" | "AVO" | "NETO", relationId, personId, name, preferredName, sex, readable, age, status, organizationName, via }`.
+- `relationId` só nos laços diretos (cônjuge, pais, filhos); `null` nos deduzidos. `via`: `{ personId, name, preferredName }` por quem o avô/neto chega (o pai/mãe ou o filho), `null` nos demais. Irmão = outro filho de um dos pais (meio-irmão também).
+- Parente de organização que o usuário não lê: `readable: false` e `age`, `status`, `organizationName` `null` (só nome e parentesco). Contato e endereço nunca vêm.
+
+### `POST /pessoas/:id/parentes` (`pessoas.editar`, RF-F11, RF-F13)
+
+- `{ personId, type: "PAI_MAE" | "FILHO" | "CONJUGE" }` (o que `personId` é da pessoa da ficha) → 201 `{ items: Relative[] }`. As duas pessoas precisam ser lidas pelo usuário (ficha: 404; parente: 400 `INVALID_REFERENCE`).
+- Erros: 400 `INVALID_RELATION` (a própria pessoa), 409 `RELATION_EXISTS` (já há laço entre as duas, em qualquer sentido), 409 `TOO_MANY_PARENTS` (o filho já tem dois pais), 400 `RELATION_CYCLE` (o pai/mãe seria descendente do filho), 409 `SPOUSE_EXISTS` (uma das duas já tem cônjuge que não é Falecido).
+- Log `adicionar_parente` (alvo `PersonRelation`, `after` com tipo, ids e nomes; `personIds` com as duas pessoas).
+
+### `DELETE /pessoas/:id/parentes/:relationId` (`pessoas.editar`)
+
+- → `{ items: Relative[] }`. Só um laço que envolve a pessoa da ficha e com as duas pessoas lidas; senão 404. Log `remover_parente`.
+
+### Alterados
+
+- `POST /pessoas`: `guardianIsParent: true` (só com `guardian`) liga a pessoa nova ao responsável como pai/mãe (o "Cadastrar filho"), na mesma transação e com as mesmas regras.
+- `FamilyMember` ganha `parentIds` (pais registrados que moram no domicílio) e `spouseId` (cônjuge registrado no domicílio, ou `null`), para o texto "filho de…" usar o parentesco real.
+- `DELETE /pessoas/:id`: parentes contam como vínculo (`links` com `relatives`, 409 `PERSON_HAS_LINKS`). Desligamento e falecimento não mexem no parentesco (RF-F14).
