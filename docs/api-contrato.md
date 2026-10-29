@@ -920,7 +920,7 @@ Ver e reenviar convite: qualquer papel. Criar e editar: Administrador ou Implant
 | PATCH | `/admin/igrejas/:id` | `{ name?, cnpj? }` | igreja no formato de `GET /organizacao`. 409 `CHURCH_CNPJ_TAKEN`, `ORGANIZATION_NAME_TAKEN` |
 | POST | `/admin/igrejas/:id/congregacoes` | `{ name }` | 201 congregação |
 | PATCH | `/admin/igrejas/:id/congregacoes/:congregationId` | `{ name?, isActive? }` | congregação. Sem DELETE |
-| PUT | `/admin/igrejas/:id/contatos/responsavel` | `{ jobTitle?, email, phone? }` | contato. O nome não muda aqui: a troca do responsável exige documento (Sprint 18). 409 `ACCOUNT_OWNER_MISSING` |
+| PUT | `/admin/igrejas/:id/contatos/responsavel` | `{ jobTitle?, email, phone? }` | contato. O nome não muda aqui: a troca do responsável exige documento (`POST /:id/responsavel/troca`, Sprint 18). 409 `ACCOUNT_OWNER_MISSING` |
 | PUT | `/admin/igrejas/:id/contatos/encarregado-lgpd` | `{ name, jobTitle?, email, phone? }` | contato |
 | DELETE | `/admin/igrejas/:id/contatos/encarregado-lgpd` | — | 204 |
 | GET | `/admin/igrejas/:id/usuarios` | — | `{ items: ChurchUserItem[] }`: convites pendentes (inclusive vencidos) e depois usuários, por nome |
@@ -936,6 +936,35 @@ Ver e reenviar convite: qualquer papel. Criar e editar: Administrador ou Implant
 - `ChurchUserItem`: `{ kind: "USUARIO"|"CONVITE", id, name, email, status: "ATIVO"|"DESATIVADO"|"SUSPENSO"|"CONVIDADO"|"CONVITE_EXPIRADO", lastLoginAt, organizations: [{ organizationId, organizationName, profiles[] }], inviteExpiresAt, isAdminInvite }`. Sem id de Pessoa. Convite de admin = algum perfil com `acesso.perfis.gerenciar`.
 - **Reenviar convite de admin** (RF-BO29, RF-BO32): `reason` com 5 a 500 caracteres, `ticket` até 60. Gera um link novo (o anterior deixa de valer) e mais 72h, manda o e-mail ao convidado e avisa o responsável pela conta ("Ação do suporte do iEzer na conta da sua igreja", com motivo e chamado).
 - **Auditoria:** tudo na organização da igreja com `actorType: SUPORTE` ("Suporte iEzer" na Auditoria da igreja). Ações: `criar_igreja`, `criar_convite`, `editar_sede`, `criar_congregacao`, `editar_congregacao`, `desativar_congregacao`, `reativar_congregacao`, `editar_responsavel_conta` (nova), `editar_encarregado_lgpd`, `remover_encarregado_lgpd`, `suporte_reenviar_convite` (nova; `description` com motivo e chamado).
+
+## Sprint 18 — Situação da igreja e troca do responsável
+
+### Igreja suspensa ou encerrada (todas as rotas da igreja)
+
+- 403 `CHURCH_SUSPENDED` com `churchStatus` (`SUSPENSA` ou `ENCERRADA`) e a mensagem "O acesso da sua igreja está suspenso. Fale com o responsável pela conta." (encerrada: "A conta da sua igreja no iEzer foi encerrada…"). Vale para conta de igreja em toda rota protegida, inclusive `/api/me`, e no login: `POST /api/auth/sign-in/email`, a verificação do 2FA e o retorno do Google recusam com o mesmo código, sem abrir sessão.
+- Convite de igreja suspensa ou encerrada: `GET`/`POST /api/convites/:token` respondem 403 `CHURCH_SUSPENDED`.
+- Grant de suporte em igreja suspensa ou encerrada não vale (o atendente não vê a igreja).
+
+### `/api/admin/igrejas` (novas rotas)
+
+| Método | Rota | Papel | Corpo | Resposta |
+| --- | --- | --- | --- | --- |
+| POST | `/admin/igrejas/:id/ativar` | Administrador, Implantação | `{ reason? }` | `ChurchStatusResult`. 409 `CHURCH_STATUS_INVALID` (não está em Implantação), `CHURCH_WITHOUT_ADMIN` |
+| POST | `/admin/igrejas/:id/suspender` | Administrador | `{ reason }` | `ChurchStatusResult`. 409 `CHURCH_STATUS_INVALID` (já suspensa ou encerrada) |
+| POST | `/admin/igrejas/:id/reativar` | Administrador | `{ reason }` | `ChurchStatusResult`. 409 `CHURCH_STATUS_INVALID` (não está suspensa) |
+| POST | `/admin/igrejas/:id/responsavel/troca` | Administrador, Implantação | `ChangeAccountOwner` | 201 `AccountOwnerChange` + `emailsSent` |
+| GET | `/admin/igrejas/:id/responsavel/historico` | qualquer | — | `{ items: AccountOwnerChange[] }`, da mais recente para a mais antiga |
+| GET | `/admin/igrejas/:id/documentos/:documentId/link` | Administrador, Implantação | — | `{ url, expiresAt, fileName }`: link assinado de 5 minutos. 404 "Documento não encontrado." |
+
+- `reason`: 5 a 500 caracteres. `ChurchStatusResult`: `{ status, statusChangedAt, statusReason, emailsSent }`.
+- **Ativar** (RF-BO19): Implantação → Ativa, só com admin ativo (usuário ATIVO com `acesso.perfis.gerenciar` numa organização ativa). `ChurchDetail` ganhou `hasActiveAdmin` para o botão.
+- **Suspender** (RF-BO20): de Implantação ou Ativa. Apaga as sessões de todos os usuários da igreja (pelas atribuições ou pela pessoa) e manda e-mail ao responsável pela conta e aos admins.
+- **Reativar** (RF-BO21): Suspensa → Ativa; sem admin ativo, volta a Implantação. E-mail ao responsável.
+- `ChangeAccountOwner` (RF-BO25): `{ newOwner: { name, jobTitle?, email, phone }, document: { type: "ATA"|"PROCURACAO"|"OUTRO", date: "YYYY-MM-DD" (não futura), minutesNumber? (até 60) }, file: { name, content } }`. `content` é o arquivo em base64 (aceita o prefixo `data:...;base64,`), até 10 MB; o tipo é conferido pelo conteúdo (PDF, PNG ou JPEG). Erros: 400 `INVALID_FILE_TYPE` (`field: "file"`), `SAME_ACCOUNT_OWNER` (mesmo nome e e-mail: editar o contato), 409 `ACCOUNT_OWNER_MISSING`, 503 `STORAGE_UNAVAILABLE` (sem `SUPABASE_SERVICE_ROLE_KEY`), 502 `STORAGE_ERROR`.
+- A troca grava o documento, o histórico e o novo contato numa transação; o arquivo vai antes ao Storage e é removido se a gravação falhar. E-mail ao anterior, ao novo e aos admins (RF-BO26).
+- `AccountOwnerChange`: `{ id, createdAt, createdByName, previousOwner: { name, jobTitle, email, phone }, newOwner: {…}, document: { id, type, date, minutesNumber, fileName, mimeType, sizeBytes, discardAt } }`. `discardAt` fica `null` enquanto o contrato vale (preenchida no encerramento, Sprint 22).
+- Storage (RT-BB06): bucket privado `SUPABASE_STORAGE_BUCKET` (padrão `iezer-documentos`), caminho `{sedeId}/documentos/{documentId}.{pdf|png|jpg}`, só pelo back com a chave service_role.
+- **Auditoria** (na igreja, `actorType: SUPORTE`, módulo Configurações): `ativar_igreja`, `suspender_igreja` (`after.sessionsEnded`), `reativar_igreja` (`description` com o motivo), `trocar_responsavel_conta` (antes/depois do contato; `description` com o documento), `abrir_documento_conta` (cada link gerado).
 
 ## Sprint 23 — Domicílio: contato principal e endereço sugerido
 

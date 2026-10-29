@@ -49,10 +49,11 @@ export const activeGrantWhere = (now = new Date()) =>
   ({ status: "ATIVO", expiresAt: { gt: now } }) satisfies Prisma.SupportGrantWhereInput;
 
 // Organizações que o atendente alcança agora: sede e congregações de cada igreja com grant ativo,
-// com as permissões do escopo. Conferido a cada requisição (RT-AB11).
+// com as permissões do escopo. Conferido a cada requisição (RT-AB11). Igreja suspensa ou encerrada
+// fica de fora: ninguém entra (RF-BO20).
 export async function loadSupportOrganizations(): Promise<AccessibleOrganization[]> {
   const grants = await prisma.supportGrant.findMany({
-    where: { ...activeGrantWhere(), church: { isActive: true } },
+    where: { ...activeGrantWhere(), church: { isActive: true, status: { notIn: ["SUSPENSA", "ENCERRADA"] } } },
     orderBy: { expiresAt: "desc" },
     select: {
       id: true,

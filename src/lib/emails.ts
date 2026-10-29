@@ -248,7 +248,7 @@ export function newDeviceLoginNotice(input: {
   ip: string | null;
   location: string | null;
 }): MailMessage {
-  const where = [input.location, input.ip ? `IP ${input.ip}` : null].filter(Boolean).join(" · ");
+  const where = [input.location, input.ip ? `IP ${input.ip}` : null].filter(Boolean).join(", ");
 
   return {
     to: input.to,
@@ -431,6 +431,70 @@ export function teamActionNotice(input: {
       (input.ticket ? `\nChamado: ${input.ticket}` : "") +
       `\n\nA ação está registrada na Auditoria da igreja, no filtro "Suporte iEzer". ` +
       `Se você não reconhece esse pedido, fale com o iEzer imediatamente.` +
+      SIGNATURE,
+  };
+}
+
+// Situação da igreja mudada pela equipe (RF-BO19 a RF-BO21). Suspensão vai ao responsável pela
+// conta e aos admins; ativação e reativação, ao responsável.
+export function churchStatusNotice(input: {
+  to: string;
+  name: string;
+  churchName: string;
+  change: "ATIVADA" | "SUSPENSA" | "REATIVADA";
+  reason: string | null;
+}): MailMessage {
+  const subjects = {
+    ATIVADA: "A conta da sua igreja no iEzer está ativa",
+    SUSPENSA: "O acesso da sua igreja ao iEzer foi suspenso",
+    REATIVADA: "O acesso da sua igreja ao iEzer foi reativado",
+  } as const;
+  const bodies = {
+    ATIVADA: `A implantação da ${input.churchName} no iEzer foi concluída e a conta passou a Ativa.`,
+    SUSPENSA:
+      `O acesso da ${input.churchName} ao iEzer foi suspenso pela equipe iEzer. As sessões abertas foram ` +
+      `encerradas e ninguém da igreja consegue entrar enquanto durar a suspensão. Os dados continuam guardados.`,
+    REATIVADA: `O acesso da ${input.churchName} ao iEzer foi reativado. Todos os usuários ativos já podem entrar de novo.`,
+  } as const;
+
+  return {
+    to: input.to,
+    churchName: input.churchName,
+    subject: subjects[input.change],
+    text:
+      `Olá, ${firstName(input.name)}!\n\n` +
+      bodies[input.change] +
+      (input.reason ? `\n\nMotivo: ${input.reason}` : "") +
+      `\n\nEm caso de dúvida, fale com o iEzer.` +
+      SIGNATURE,
+  };
+}
+
+// Troca do responsável pela conta (RF-BO26): avisa o anterior, o novo e os admins da igreja.
+export function accountOwnerChangedNotice(input: {
+  to: string;
+  name: string;
+  churchName: string;
+  recipient: "ANTERIOR" | "NOVO" | "ADMIN";
+  previousName: string;
+  newName: string;
+  document: string;
+}): MailMessage {
+  const lead = {
+    ANTERIOR: `Você deixou de ser o(a) responsável pela conta da ${input.churchName} no iEzer. Quem responde pela conta agora é ${input.newName}.`,
+    NOVO: `Você passou a ser o(a) responsável pela conta da ${input.churchName} no iEzer, no lugar de ${input.previousName}. É com você que o iEzer fala sobre contrato, suspensão e devolução dos dados.`,
+    ADMIN: `O responsável pela conta da ${input.churchName} no iEzer mudou: saiu ${input.previousName} e entrou ${input.newName}.`,
+  } as const;
+
+  return {
+    to: input.to,
+    churchName: input.churchName,
+    subject: "Troca do responsável pela conta no iEzer",
+    text:
+      `Olá, ${firstName(input.name)}!\n\n` +
+      lead[input.recipient] +
+      `\n\nDocumento apresentado: ${input.document}.` +
+      `\n\nA troca está registrada na Auditoria da igreja. Se você não reconhece essa mudança, fale com o iEzer imediatamente.` +
       SIGNATURE,
   };
 }

@@ -124,6 +124,12 @@ export const ACTION_LABELS: Record<string, string> = {
   editar_responsavel_conta: "Contato do responsável pela conta editado",
   remover_encarregado_lgpd: "Encarregado de LGPD removido",
   conferir_congregacoes: "Congregações conferidas",
+  // Situação e responsável, pela equipe iEzer
+  ativar_igreja: "Igreja marcada como ativa",
+  suspender_igreja: "Igreja suspensa",
+  reativar_igreja: "Igreja reativada",
+  trocar_responsavel_conta: "Responsável pela conta trocado",
+  abrir_documento_conta: "Documento da conta aberto",
 };
 
 export const TARGET_TYPE_LABELS: Record<string, string> = {
@@ -139,6 +145,7 @@ export const TARGET_TYPE_LABELS: Record<string, string> = {
   UserAssignment: "Atribuição",
   Organization: "Organização",
   OrganizationContact: "Contato da organização",
+  AccountDocument: "Documento da conta",
   Supplier: "Fornecedor",
   Category: "Categoria",
   BankAccount: "Conta bancária",
@@ -245,6 +252,8 @@ const FIELD_LABELS: Record<string, string> = {
   organization: "Organização",
   isActive: "Ativo",
   jobTitle: "Cargo",
+  statusReason: "Motivo da situação",
+  sessionsEnded: "Sessões encerradas",
   accountOwner: "Responsável pela conta",
   lgpdOfficer: "Encarregado de LGPD",
   congregations: "Congregações",
@@ -327,6 +336,8 @@ const VALUE_LABELS: Record<string, string> = {
   INCIDENTE: "Incidente",
   ORDEM_JUDICIAL: "Ordem judicial",
   IGREJA_SEM_ADMIN: "Igreja sem administrador",
+  IMPLANTACAO: "Implantação",
+  CHURCH_SUSPENDED: "Igreja suspensa ou encerrada",
 };
 
 // Campos técnicos ou derivados: não aparecem nas alterações.

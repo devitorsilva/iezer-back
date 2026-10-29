@@ -9,20 +9,27 @@ import {
   updateCongregationSchema,
 } from "../../organizacao/schemas.js";
 import { createChurch } from "./criacao.js";
+import { changeAccountOwner, listAccountOwnerChanges, openAccountDocument } from "./responsavel.js";
 import {
+  activateChurchSchema,
+  changeAccountOwnerSchema,
   churchParamsSchema,
+  churchStatusReasonSchema,
   congregationParamsSchema,
   createChurchSchema,
+  documentParamsSchema,
   inviteParamsSchema,
   listChurchesQuerySchema,
   teamActionSchema,
 } from "./schemas.js";
 import { ChurchAdminNotFoundError, type ChurchAdminService } from "./service.js";
+import { changeChurchStatus } from "./situacao.js";
 
 const NOT_FOUND_MESSAGES = {
   church: "Igreja não encontrada.",
   congregation: "Congregação não encontrada.",
   invite: "Convite não encontrado.",
+  document: "Documento não encontrado.",
 } as const;
 
 // Edições da sede, das congregações e dos contatos reaproveitam o serviço de Configurações ›
@@ -110,6 +117,45 @@ export class ChurchAdminController {
     const { id, inviteId } = inviteParamsSchema.parse(request.params);
     const input = teamActionSchema.parse(request.body);
     return this.handleNotFound(reply, () => this.service.resendAdminInvite(teamActor(request), id, inviteId, input));
+  };
+
+  activate = async (request: FastifyRequest, reply: FastifyReply) => {
+    const { id } = churchParamsSchema.parse(request.params);
+    const { reason } = activateChurchSchema.parse(request.body ?? {});
+    return this.handleNotFound(reply, () => changeChurchStatus(teamActor(request), id, "ativar", reason ?? null));
+  };
+
+  suspend = async (request: FastifyRequest, reply: FastifyReply) => {
+    const { id } = churchParamsSchema.parse(request.params);
+    const { reason } = churchStatusReasonSchema.parse(request.body);
+    return this.handleNotFound(reply, () => changeChurchStatus(teamActor(request), id, "suspender", reason));
+  };
+
+  reactivate = async (request: FastifyRequest, reply: FastifyReply) => {
+    const { id } = churchParamsSchema.parse(request.params);
+    const { reason } = churchStatusReasonSchema.parse(request.body);
+    return this.handleNotFound(reply, () => changeChurchStatus(teamActor(request), id, "reativar", reason));
+  };
+
+  changeAccountOwner = async (request: FastifyRequest, reply: FastifyReply) => {
+    const { id } = churchParamsSchema.parse(request.params);
+    const input = changeAccountOwnerSchema.parse(request.body);
+    return this.handleNotFound(reply, async () =>
+      reply.code(201).send(await changeAccountOwner(teamActor(request), id, input)),
+    );
+  };
+
+  accountOwnerHistory = async (request: FastifyRequest, reply: FastifyReply) => {
+    const { id } = churchParamsSchema.parse(request.params);
+    return this.handleNotFound(reply, async () => {
+      await this.service.assertChurch(id);
+      return { items: await listAccountOwnerChanges(id) };
+    });
+  };
+
+  documentLink = async (request: FastifyRequest, reply: FastifyReply) => {
+    const { id, documentId } = documentParamsSchema.parse(request.params);
+    return this.handleNotFound(reply, () => openAccountDocument(teamActor(request), id, documentId));
   };
 
   private context(request: FastifyRequest, churchId: string) {

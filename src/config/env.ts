@@ -26,7 +26,11 @@ const envSchema = z.object({
   DIRECT_URL: z.string().min(1),
   SUPABASE_URL: z.url(),
   SUPABASE_PUBLISHABLE_KEY: optionalNonEmptyString,
+  // Chave service_role: só o back fala com o Storage (RT-BB06). Sem ela, o upload de documentos
+  // responde 503.
   SUPABASE_SERVICE_ROLE_KEY: optionalNonEmptyString,
+  // Bucket privado dos documentos da conta (B7), criado à mão no painel do Supabase.
+  SUPABASE_STORAGE_BUCKET: z.string().default("iezer-documentos"),
   WEB_ORIGIN: z.string().default("http://localhost:5173"),
   // Origem do app admin da equipe iEzer (RT-BB03, RT-BF01): CORS, trustedOrigins e links dos
   // e-mails da equipe. URL da Vercel até haver admin.<domínio>.

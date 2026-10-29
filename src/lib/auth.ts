@@ -6,6 +6,7 @@ import { env } from "../config/env.js";
 import { recordAccountEvent } from "./account-events.js";
 import { runAudited, type AuditActor } from "./audit.js";
 import { findUserChurch } from "./church.js";
+import { CHURCH_SUSPENDED_CODE, churchBlockedMessage, findBlockedChurchStatus } from "./church-status.js";
 import { CLIENT_IP_HEADER } from "./client-ip.js";
 import { approximateLocation, describeDevice } from "./devices.js";
 import {
@@ -486,6 +487,16 @@ export const auth = betterAuth({
             throw APIError.from("FORBIDDEN", {
               code: USER_INACTIVE_CODE,
               message: USER_INACTIVE_MESSAGE,
+            });
+          }
+
+          // Igreja suspensa ou encerrada (RF-BO20): o login nem abre sessão.
+          const blockedChurch = await findBlockedChurchStatus(session.userId);
+          if (blockedChurch) {
+            throw APIError.fromStatus("FORBIDDEN", {
+              code: CHURCH_SUSPENDED_CODE,
+              message: churchBlockedMessage(blockedChurch),
+              churchStatus: blockedChurch,
             });
           }
 

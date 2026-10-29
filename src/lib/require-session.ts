@@ -6,6 +6,7 @@ import {
   USER_INACTIVE_CODE,
   USER_INACTIVE_MESSAGE,
 } from "./auth.js";
+import { CHURCH_SUSPENDED_CODE, churchBlockedMessage, findBlockedChurchStatus } from "./church-status.js";
 import { findTeamMember, TEAM_TWO_FACTOR_SETUP_MESSAGE, touchTeamSession } from "./team.js";
 import {
   requiresTwoFactor,
@@ -26,7 +27,8 @@ declare module "fastify" {
 // (sessão do Google) e configurado por quem tem permissão protegida (RF-CV07). Sem o 2FA
 // configurado, só /api/me (Minha conta e a tela de configuração) responde.
 // Conta da equipe iEzer (RT-BB03): sessão cai após 12h sem uso e o 2FA vale só pelo app
-// autenticador; sem ele, só /api/me e /api/admin/me respondem.
+// autenticador; sem ele, só /api/me e /api/admin/me respondem. Conta de igreja suspensa ou
+// encerrada recebe 403 CHURCH_SUSPENDED em tudo.
 export async function requireSession(request: FastifyRequest, reply: FastifyReply) {
   const { headers, response } = await auth.api.getSession({
     headers: fromNodeHeaders(request.headers),
@@ -83,12 +85,25 @@ export async function requireSession(request: FastifyRequest, reply: FastifyRepl
         message: TEAM_TWO_FACTOR_SETUP_MESSAGE,
       });
     }
-  } else if (!meRoute && !response.user.twoFactorEnabled && (await requiresTwoFactor(response.user.id))) {
-    return reply.code(403).send({
-      statusCode: 403,
-      code: TWO_FACTOR_SETUP_REQUIRED_CODE,
-      message: TWO_FACTOR_SETUP_REQUIRED_MESSAGE,
-    });
+  } else {
+    // Igreja suspensa ou encerrada (RT-BB04): vale até em /api/me, para o front mostrar a tela.
+    const blocked = await findBlockedChurchStatus(response.user.id);
+    if (blocked) {
+      return reply.code(403).send({
+        statusCode: 403,
+        code: CHURCH_SUSPENDED_CODE,
+        message: churchBlockedMessage(blocked),
+        churchStatus: blocked,
+      });
+    }
+
+    if (!meRoute && !response.user.twoFactorEnabled && (await requiresTwoFactor(response.user.id))) {
+      return reply.code(403).send({
+        statusCode: 403,
+        code: TWO_FACTOR_SETUP_REQUIRED_CODE,
+        message: TWO_FACTOR_SETUP_REQUIRED_MESSAGE,
+      });
+    }
   }
 
   request.user = response.user;

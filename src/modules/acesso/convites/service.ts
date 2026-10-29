@@ -3,6 +3,7 @@ import { hashPassword } from "better-auth/crypto";
 import type { AccessibleOrganization } from "../../../lib/access.js";
 import { runAudited, type AuditActor, type AuditWriter } from "../../../lib/audit.js";
 import { findUserChurch } from "../../../lib/church.js";
+import { churchBlockedError, isChurchBlocked } from "../../../lib/church-status.js";
 import { INVITE_TTL_MS, inviteEmail, inviteUrl } from "../../../lib/emails.js";
 import { AppError } from "../../../lib/errors.js";
 import { trySendMail } from "../../../lib/mailer.js";
@@ -457,6 +458,9 @@ export class InviteService {
         "Este convite expirou. Peça ao administrador da sua igreja para reenviá-lo.",
       );
     }
+
+    // Igreja suspensa ou encerrada (RF-BO20): o convite não vale enquanto durar.
+    if (isChurchBlocked(invite.church.status)) throw churchBlockedError(invite.church.status);
 
     return invite;
   }

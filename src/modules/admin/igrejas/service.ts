@@ -5,6 +5,7 @@ import { AppError } from "../../../lib/errors.js";
 import { trySendMail } from "../../../lib/mailer.js";
 import { prisma } from "../../../lib/prisma.js";
 import { inviteService } from "../../acesso/convites/routes.js";
+import { hasActiveAdmin } from "./situacao.js";
 import type {
   ChurchAdminRepository,
   ChurchDetailRow,
@@ -16,7 +17,7 @@ import type {
 import type { ListChurchesQuery, TeamActionInput } from "./schemas.js";
 
 export class ChurchAdminNotFoundError extends Error {
-  constructor(readonly target: "church" | "congregation" | "invite") {
+  constructor(readonly target: "church" | "congregation" | "invite" | "document") {
     super("CHURCH_ADMIN_NOT_FOUND");
   }
 }
@@ -43,7 +44,7 @@ function mapListItem(church: ChurchListRow, usage: ChurchUsage) {
   };
 }
 
-function mapDetail(church: ChurchDetailRow, usage: ChurchUsage, people: number) {
+function mapDetail(church: ChurchDetailRow, usage: ChurchUsage, people: number, withAdmin: boolean) {
   return {
     id: church.id,
     name: church.name,
@@ -51,6 +52,8 @@ function mapDetail(church: ChurchDetailRow, usage: ChurchUsage, people: number) 
     status: church.status,
     statusChangedAt: church.statusChangedAt.toISOString(),
     statusReason: church.statusReason,
+    // "Marcar como ativa" só com admin ativo (RF-BO19).
+    hasActiveAdmin: withAdmin,
     createdAt: church.createdAt.toISOString(),
     accountOwner: mapContact(church.contacts.find((contact) => contact.role === "RESPONSAVEL_CONTA")),
     lgpdOfficer: mapContact(church.contacts.find((contact) => contact.role === "ENCARREGADO_LGPD")),
@@ -134,8 +137,12 @@ export class ChurchAdminService {
     const church = await this.repository.findChurch(id);
     if (!church) throw new ChurchAdminNotFoundError("church");
 
-    const [usage, people] = await Promise.all([this.repository.usage([id]), this.repository.countPeople(id)]);
-    return mapDetail(church, usage.get(id) ?? NO_USAGE, people);
+    const [usage, people, withAdmin] = await Promise.all([
+      this.repository.usage([id]),
+      this.repository.countPeople(id),
+      hasActiveAdmin(id),
+    ]);
+    return mapDetail(church, usage.get(id) ?? NO_USAGE, people, withAdmin);
   }
 
   async assertChurch(id: string) {
@@ -168,7 +175,7 @@ export class ChurchAdminService {
 
     const description = [`Motivo: ${input.reason}`, input.ticket ? `Chamado: ${input.ticket}` : null]
       .filter(Boolean)
-      .join(" · ");
+      .join(". ");
 
     const result = await inviteService.resend({ churchId, actor, organizations: null }, inviteId, true, {
       action: "suporte_reenviar_convite",

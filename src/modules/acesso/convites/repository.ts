@@ -4,7 +4,7 @@ import { prisma } from "../../../lib/prisma.js";
 type Db = Prisma.TransactionClient;
 
 const include = {
-  church: { select: { id: true, name: true } },
+  church: { select: { id: true, name: true, status: true } },
   person: { select: { id: true, name: true, email: true, organizationId: true } },
   invitedBy: { select: { id: true, name: true, teamMember: { select: { id: true } } } },
   assignments: {
