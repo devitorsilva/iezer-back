@@ -11,8 +11,10 @@ import {
   grantStatus,
   invalidGrantStatus,
   mapGrant,
+  notifyRequesterDecision,
   notifySupportEmergency,
   notifySupportRequest,
+  notifyTeamApprovalNeeded,
   SupportGrantNotFoundError,
 } from "../../acesso/suporte/service.js";
 import type { CloseGrantInput, EmergencyInput, ListRequestsQuery, RequestGrantInput } from "./schemas.js";
@@ -78,8 +80,14 @@ export class SupportRequestService {
       return grant;
     });
 
-    // Com escrita, a igreja só é avisada depois da aprovação interna (RF-BO35).
-    const notified = input.canWrite ? 0 : await notifySupportRequest(grant);
+    // Com escrita, a igreja só é avisada depois da aprovação interna (RF-BO35); antes, os
+    // Administradores iEzer (RT-BB13).
+    if (input.canWrite) {
+      await notifyTeamApprovalNeeded(grant);
+      return { ...mapGrant(grant), notified: 0 };
+    }
+
+    const notified = await notifySupportRequest(grant);
     return { ...mapGrant(grant), notified };
   }
 
@@ -108,6 +116,7 @@ export class SupportRequestService {
       return grant;
     });
 
+    await notifyTeamApprovalNeeded(grant);
     return mapGrant(grant);
   }
 
@@ -147,11 +156,17 @@ export class SupportRequestService {
     });
 
     if (grant.origin === "EMERGENCIA") {
-      await notifySupportEmergency(grant);
+      await Promise.all([
+        notifySupportEmergency(grant),
+        notifyRequesterDecision(grant, "EMERGENCIA_APROVADA", actor.userId),
+      ]);
       return mapGrant(grant);
     }
 
-    const notified = await notifySupportRequest(grant);
+    const [notified] = await Promise.all([
+      notifySupportRequest(grant),
+      notifyRequesterDecision(grant, "APROVADO_IEZER", actor.userId),
+    ]);
     return { ...mapGrant(grant), notified };
   }
 
@@ -170,6 +185,7 @@ export class SupportRequestService {
       };
     });
 
+    await notifyRequesterDecision(grant, "RECUSADO_IEZER", actor.userId);
     return mapGrant(grant);
   }
 

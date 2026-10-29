@@ -101,13 +101,17 @@ export async function touchTeamSession(sessionId: string) {
   return true;
 }
 
-// Administradores iEzer ativos: destinatários dos alertas da equipe (RF-BO55, RT-BB13).
-export function teamAdminRecipients(db: Prisma.TransactionClient = prisma) {
+// Membros ativos da equipe com algum dos papéis (o Administrador iEzer sempre entra): destinatários
+// dos e-mails da equipe por papel (RT-BB13).
+export function teamRecipients(roles: TeamRole[], db: Prisma.TransactionClient = prisma) {
   return db.user.findMany({
-    where: { status: "ATIVO", teamMember: { roles: { has: "ADMINISTRADOR" } } },
+    where: { status: "ATIVO", teamMember: { roles: { hasSome: ["ADMINISTRADOR", ...roles] } } },
     select: { id: true, name: true, email: true },
   });
 }
+
+// Administradores iEzer ativos: alertas de login e bloqueio da equipe (RF-BO55).
+export const teamAdminRecipients = (db: Prisma.TransactionClient = prisma) => teamRecipients([], db);
 
 // Autor das ações da equipe no AuditLog (RT-BB12).
 export const teamActor = (request: FastifyRequest): AuditActor => ({

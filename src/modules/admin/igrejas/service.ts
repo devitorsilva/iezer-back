@@ -13,6 +13,7 @@ import type {
   ChurchListRow,
   ChurchUsage,
   ChurchUserRow,
+  EmailRejection,
 } from "./repository.js";
 import type { ListChurchesQuery, TeamActionInput } from "./schemas.js";
 
@@ -94,9 +95,16 @@ function groupAssignments(assignments: AssignmentRow[]) {
 const isAdminInvite = (invite: ChurchInviteRow) =>
   invite.assignments.some(({ profile }) => profile.permissions.length > 0);
 
+// Último e-mail rejeitado ou marcado como spam (webhook do Resend, RF-BO42): o painel só mostra a
+// igreja; a pessoa aparece marcada aqui.
+const mapRejection = (rejection: EmailRejection | undefined) => ({
+  emailRejectedAt: rejection?.occurredAt.toISOString() ?? null,
+  emailRejectionType: rejection?.type ?? null,
+});
+
 // Admin: algum perfil com "Gerenciar perfis de acesso". 2FA e bloqueio do login abrem as ações sem
 // acesso aos dados (RF-BO30, RF-BO31).
-function mapUser(user: ChurchUserRow, lockedUntil: Date | undefined) {
+function mapUser(user: ChurchUserRow, lockedUntil: Date | undefined, rejection: EmailRejection | undefined) {
   return {
     kind: "USUARIO" as const,
     id: user.id,
@@ -110,10 +118,11 @@ function mapUser(user: ChurchUserRow, lockedUntil: Date | undefined) {
     isAdmin: user.assignments.some(({ profile }) => profile.permissions.length > 0),
     twoFactorEnabled: user.twoFactorEnabled,
     loginLockedUntil: lockedUntil?.toISOString() ?? null,
+    ...mapRejection(rejection),
   };
 }
 
-function mapInvite(invite: ChurchInviteRow) {
+function mapInvite(invite: ChurchInviteRow, rejection: EmailRejection | undefined) {
   return {
     kind: "CONVITE" as const,
     id: invite.id,
@@ -127,6 +136,7 @@ function mapInvite(invite: ChurchInviteRow) {
     isAdmin: false,
     twoFactorEnabled: false,
     loginLockedUntil: null,
+    ...mapRejection(rejection),
   };
 }
 
@@ -161,8 +171,17 @@ export class ChurchAdminService {
   async listUsers(id: string) {
     await this.assertChurch(id);
     const [users, invites] = await Promise.all([this.repository.findUsers(id), this.repository.findPendingInvites(id)]);
-    const locks = await this.repository.findLoginLocks(users.map((user) => user.email));
-    return [...invites.map(mapInvite), ...users.map((user) => mapUser(user, locks.get(user.email.toLowerCase())))];
+    const emails = [...users, ...invites].map((row) => row.email);
+    const [locks, rejections] = await Promise.all([
+      this.repository.findLoginLocks(emails),
+      this.repository.findEmailRejections(emails),
+    ]);
+    const rejection = (email: string) => rejections.get(email.toLowerCase());
+
+    return [
+      ...invites.map((invite) => mapInvite(invite, rejection(invite.email))),
+      ...users.map((user) => mapUser(user, locks.get(user.email.toLowerCase()), rejection(user.email))),
+    ];
   }
 
   // Reenviar o convite de um admin (RF-BO29, RF-BO32): novo link por e-mail ao convidado, motivo no

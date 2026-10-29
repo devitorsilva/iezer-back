@@ -11,6 +11,12 @@ import { AppError } from "../../../lib/errors.js";
 import { trySendMail } from "../../../lib/mailer.js";
 import { prisma } from "../../../lib/prisma.js";
 import { churchUsersWith, SUPPORT_REQUEST_TTL_DAYS } from "../../../lib/support.js";
+import {
+  teamApprovalNeededNotice,
+  teamRequestDecisionNotice,
+  type TeamRequestDecision,
+} from "../../../lib/team-emails.js";
+import { teamAdminRecipients } from "../../../lib/team.js";
 import { PERMISSION_MODULE_NAMES, type PermissionModule } from "../permissoes/catalog/index.js";
 import type { SupportGrantRepository, SupportGrantRow } from "./repository.js";
 import type { ApproveGrantInput, AuthorizeGrantInput, RefuseGrantInput } from "./schemas.js";
@@ -183,6 +189,55 @@ export async function notifySupportEmergency(grant: SupportGrantRow) {
   );
 }
 
+// Escrita ou emergência esperando um Administrador iEzer: todos menos quem pediu (RF-BO54, RT-BB13).
+export async function notifyTeamApprovalNeeded(grant: SupportGrantRow) {
+  const admins = (await teamAdminRecipients()).filter((admin) => admin.id !== grant.requestedBy?.id);
+  await Promise.all(
+    admins.map((admin) =>
+      trySendMail(
+        teamApprovalNeededNotice({
+          to: admin.email,
+          name: admin.name,
+          churchName: grant.church.name,
+          requesterName: grant.requestedBy?.name ?? "Alguém da equipe",
+          emergencyLabel: grant.origin === "EMERGENCIA" ? EMERGENCY_KIND_LABELS[grant.emergencyKind ?? "INCIDENTE"] : null,
+          reason: grant.reason,
+          ticket: grant.ticket,
+        }),
+      ),
+    ),
+  );
+}
+
+// Decisão do iEzer ou da igreja, a quem pediu, se é da equipe e não foi quem decidiu (RF-BO54).
+export async function notifyRequesterDecision(
+  grant: SupportGrantRow,
+  decision: TeamRequestDecision,
+  deciderId: string | null,
+) {
+  const requester = grant.requestedBy;
+  if (!requester?.teamMember || requester.id === deciderId) return;
+
+  const decider =
+    decision === "APROVADO_IGREJA"
+      ? grant.approvedBy
+      : decision === "RECUSADO_IEZER" || decision === "RECUSADO_IGREJA"
+        ? grant.closedBy
+        : grant.internalApprovedBy;
+
+  await trySendMail(
+    teamRequestDecisionNotice({
+      to: requester.email,
+      name: requester.name,
+      churchName: grant.church.name,
+      decision,
+      deciderName: decider?.name ?? "sem nome",
+      reason: grant.closeReason,
+      expiresAt: grant.status === "ATIVO" ? grant.expiresAt : null,
+    }),
+  );
+}
+
 export function assertNoActiveGrant(active: SupportGrantRow | null) {
   if (active) {
     throw new AppError(
@@ -298,7 +353,10 @@ export class SupportGrantService {
       };
     });
 
-    await notifySupportAuthorized(grant);
+    await Promise.all([
+      notifySupportAuthorized(grant),
+      notifyRequesterDecision(grant, "APROVADO_IGREJA", context.actor.userId),
+    ]);
     return mapGrant(grant);
   }
 
@@ -317,6 +375,7 @@ export class SupportGrantService {
       };
     });
 
+    await notifyRequesterDecision(grant, "RECUSADO_IGREJA", context.actor.userId);
     return mapGrant(grant);
   }
 

@@ -1,4 +1,4 @@
-import { Prisma, type OrganizationStatus } from "@prisma/client";
+import { Prisma, type EmailEventType, type OrganizationStatus } from "@prisma/client";
 import { normalizeAnyCnpj } from "../../../lib/cnpj.js";
 import { prisma } from "../../../lib/prisma.js";
 import { ADMIN_PERMISSION } from "../../acesso/travas.js";
@@ -69,6 +69,11 @@ const inviteSelect = {
 
 export type ChurchUserRow = Prisma.UserGetPayload<{ select: typeof userSelect }>;
 export type ChurchInviteRow = Prisma.InviteGetPayload<{ select: typeof inviteSelect }>;
+
+export interface EmailRejection {
+  type: EmailEventType;
+  occurredAt: Date;
+}
 
 export interface ChurchUsage {
   activeUsers: number;
@@ -155,6 +160,19 @@ export class ChurchAdminRepository {
       select: { email: true, lockedUntil: true },
     });
     return new Map(locks.map((lock) => [lock.email, lock.lockedUntil!]));
+  }
+
+  // Último e-mail rejeitado ou marcado como spam de cada endereço (EmailEvent guarda em minúsculas).
+  async findEmailRejections(emails: string[]): Promise<Map<string, EmailRejection>> {
+    if (emails.length === 0) return new Map();
+
+    const events = await prisma.emailEvent.findMany({
+      where: { email: { in: emails.map((email) => email.toLowerCase()) } },
+      orderBy: { occurredAt: "desc" },
+      distinct: ["email"],
+      select: { email: true, type: true, occurredAt: true },
+    });
+    return new Map(events.map((event) => [event.email, event]));
   }
 
   findInvite(id: string, churchId: string) {

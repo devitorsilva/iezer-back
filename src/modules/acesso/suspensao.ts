@@ -2,6 +2,8 @@ import type { Prisma } from "@prisma/client";
 import type { AuditWriter } from "../../lib/audit.js";
 import { accessSuspendedNotice } from "../../lib/emails.js";
 import { trySendMail } from "../../lib/mailer.js";
+import { churchWithoutAdminNotice } from "../../lib/team-emails.js";
+import { teamRecipients } from "../../lib/team.js";
 import { prisma } from "../../lib/prisma.js";
 import { ADMIN_PERMISSION, snapshotProtected } from "./travas.js";
 
@@ -46,8 +48,13 @@ export async function suspendPersonAccess(
   return { ...user, reason };
 }
 
-// Depois do commit: avisa os admins ativos ou, se nenhum sobrou, o responsável pela conta.
-// Ainda não há e-mail do suporte configurado; o caso fica no log.
+const wasChurchAdmin = async (churchId: string, userId: string) =>
+  (await prisma.userAssignment.count({
+    where: { userId, profile: { organizationId: churchId, permissions: { some: { permissionKey: ADMIN_PERMISSION } } } },
+  })) > 0;
+
+// Depois do commit: avisa os admins ativos ou, se nenhum sobrou, o responsável pela conta e a
+// equipe iEzer (Suporte e Administradores, B12).
 export async function notifySuspension(churchId: string, suspended: SuspendedUser) {
   const snapshot = await snapshotProtected(prisma, churchId);
   const admins = [...snapshot.values()].filter((user) => user.keys.has(ADMIN_PERMISSION));
@@ -58,12 +65,23 @@ export async function notifySuspension(churchId: string, suspended: SuspendedUse
 
   const noAdminLeft = admins.length === 0;
   const recipients = noAdminLeft ? (church?.contacts ?? []) : admins;
-  if (noAdminLeft) {
-    console.warn(`[suspensão] igreja ${churchId} ficou sem administrador ativo (usuário ${suspended.id}); avisar o suporte.`);
-  }
+  // A equipe só é avisada quando quem caiu era o último admin; sem nome nem situação da pessoa (B10).
+  const wasLastAdmin = noAdminLeft && (await wasChurchAdmin(churchId, suspended.id));
+  const team = wasLastAdmin ? await teamRecipients(["SUPORTE"]) : [];
 
-  await Promise.all(
-    recipients.map((recipient) =>
+  await Promise.all([
+    ...team.map((member) =>
+      trySendMail(
+        churchWithoutAdminNotice({
+          to: member.email,
+          name: member.name,
+          churchId,
+          churchName: church?.name ?? "igreja",
+          cause: "O último administrador teve o acesso suspenso automaticamente, por mudança na situação da pessoa.",
+        }),
+      ),
+    ),
+    ...recipients.map((recipient) =>
       trySendMail(
         accessSuspendedNotice({
           to: recipient.email,
@@ -75,5 +93,5 @@ export async function notifySuspension(churchId: string, suspended: SuspendedUse
         }),
       ),
     ),
-  );
+  ]);
 }

@@ -4,7 +4,8 @@ import { activeGrantWhere } from "../../../lib/support.js";
 
 type Db = Prisma.TransactionClient;
 
-const person = { select: { id: true, name: true, teamMember: { select: { id: true } } } } as const;
+// O e-mail só serve aos avisos de decisão para quem pediu (RF-BO54); não vai no DTO.
+const person = { select: { id: true, name: true, email: true, teamMember: { select: { id: true } } } } as const;
 
 const select = {
   id: true,

@@ -8,6 +8,7 @@ import { requireTeamSession } from "../../lib/team.js";
 import { TEAM_TERMS_VERSION } from "../../lib/terms.js";
 import { teamActionContext } from "./equipe/controller.js";
 import { churchAdminRoutes } from "./igrejas/routes.js";
+import { healthPanelRoutes } from "./painel/routes.js";
 import { supportRequestRoutes } from "./pedidos/routes.js";
 import { teamRoutes, teamService } from "./equipe/routes.js";
 import { acceptTeamInviteSchema, teamTokenParamsSchema } from "./equipe/schemas.js";
@@ -43,6 +44,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   await app.register(teamRoutes, { prefix: "/equipe" });
   await app.register(churchAdminRoutes, { prefix: "/igrejas" });
   await app.register(supportRequestRoutes, { prefix: "/pedidos" });
+  await app.register(healthPanelRoutes, { prefix: "/painel" });
 };
 
 // Convite da equipe, público como o da igreja (RF-BO03), com limite por IP (RT-AB09).

@@ -227,6 +227,12 @@ enum SupportEmergencyKind {
   IGREJA_SEM_ADMIN
 }
 
+// Eventos do webhook do Resend que viram alerta (RT-BB08): rejeitado (bounce) e marcado como spam.
+enum EmailEventType {
+  REJEITADO
+  RECLAMACAO
+}
+
 // User, Session, Account, Verification e TwoFactor seguem o schema do Better Auth
 // (core + plugin twoFactor). A senha fica em Account.password (providerId "credential").
 model User {
@@ -385,6 +391,7 @@ model Organization {
   supportGrants           SupportGrant[]
   accountDocuments        AccountDocument[]
   accountOwnerChanges     AccountOwnerChange[]
+  emailEvents             EmailEvent[]
 
   @@index([parentId])
 }
@@ -982,4 +989,22 @@ model SupportGrant {
 
   @@index([churchId, status])
   @@index([status, expiresAt])
+}
+
+// E-mail rejeitado ou marcado como spam, vindo do webhook do Resend (RT-BB08). A igreja (sede) é
+// achada pelo e-mail no recebimento; nula quando o e-mail não é de ninguém de igreja.
+model EmailEvent {
+  id             String         @id @default(cuid())
+  type           EmailEventType
+  email          String
+  organizationId String?
+  organization   Organization?  @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  resendEmailId  String?
+  // svix-id do webhook: o Resend reenvia o mesmo evento em caso de falha.
+  webhookId      String         @unique
+  occurredAt     DateTime
+  createdAt      DateTime       @default(now())
+
+  @@index([organizationId, occurredAt])
+  @@index([email, occurredAt])
 }

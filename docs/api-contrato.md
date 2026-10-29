@@ -1066,3 +1066,36 @@ Corpo comum: `{ reason (5–500), ticket? }`. Registro na Auditoria da igreja co
 - Rotas de dados com conta da equipe: termo da equipe em vez do da igreja (403 `TEAM_TERMS_REQUIRED`); sem pedido ativo, 403 `SUPPORT_NO_GRANT`.
 - O back-office abre `VITE_APP_URL/app?igreja=<churchId>`; o app das igrejas seleciona a igreja e mostra a faixa fixa.
 - Ações novas no log: `suporte_aprovar_iezer`, `suporte_recusar_iezer`, `suporte_redefinir_2fa`, `suporte_destravar_login`.
+
+## Sprint 20 — Painel de saúde e e-mails da equipe
+
+### `GET /api/admin/painel` (todos os papéis; RF-BO41 a RF-BO43, RT-BB09)
+
+```json
+{
+  "generatedAt": "ISO",
+  "thresholds": { "implantacaoDays": 15, "rejectedEmailDays": 7, "withoutAccessDays": 30 },
+  "alerts": [{ "key": "SEM_ADMIN", "count": 1, "churches": [{ "id": "…", "name": "…", "status": "IMPLANTACAO" }] }]
+}
+```
+
+- `key`, nesta ordem: `SEM_ADMIN`, `UM_ADMIN` (admins ativos pela regra das travas), `IMPLANTACAO_PARADA` (`statusChangedAt` há mais de 15 dias), `EMAIL_REJEITADO` (`EmailEvent` nos últimos 7 dias), `LOGIN_BLOQUEADO` (bloqueio vigente de algum usuário), `SEM_ACESSO` (só Ativa; nem login nem sessão renovada em 30 dias), `PEDIDO_PENDENTE` (`AGUARDANDO_IEZER` ou `PENDENTE` dentro dos 7 dias).
+- Entram todas as igrejas menos as encerradas. `churches` traz até 50 (ordem por nome); `count` é o total. Nunca devolve dados de pessoa (B10). Cache de 2 minutos no servidor.
+
+### `POST /api/webhooks/resend` (público, assinatura Svix; RT-BB08)
+
+- Headers `svix-id`, `svix-timestamp` (tolerância de 5 min) e `svix-signature` (`v1,<base64>`), HMAC-SHA256 de `id.timestamp.corpo` com `RESEND_WEBHOOK_SECRET`. 503 `WEBHOOK_UNAVAILABLE` sem o segredo; 401 `INVALID_SIGNATURE`; 400 para corpo inválido; 200 `{ received: true }`.
+- Grava `email.bounced` (`REJEITADO`) e `email.complained` (`RECLAMACAO`) em `EmailEvent`, uma vez por `svix-id`, com o primeiro destinatário em minúsculas. A igreja vem do e-mail: usuário com atribuição, convite, contato da conta; senão `null`. Outros tipos: 200 e nada gravado.
+- No Resend: endpoint `<URL pública da API>/api/webhooks/resend`, eventos `email.bounced` e `email.complained`. Só funciona com o domínio verificado.
+
+### `GET /admin/igrejas/:id/usuarios` (alterado)
+
+- Usuários e convites ganham `emailRejectedAt` (ISO ou `null`) e `emailRejectionType` (`REJEITADO`, `RECLAMACAO` ou `null`), do último `EmailEvent` do endereço.
+
+### E-mails da equipe (RF-BO54, RT-BB13; sem `RESEND_API_KEY`, no log)
+
+| Quando | Para |
+| --- | --- |
+| Pedido com escrita ou emergência aguardando o iEzer | Administradores iEzer, menos quem pediu |
+| Pedido aprovado ou recusado pelo iEzer ou pela igreja; emergência aprovada | Quem pediu (só conta da equipe e se não foi quem decidiu) |
+| Último admin da igreja suspenso pelo ciclo de vida de Pessoas | Suporte e Administradores (sem nome nem situação da pessoa) |
