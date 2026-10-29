@@ -29,6 +29,9 @@ export const familyMemberPersonSelect = {
   admissionMethodId: true,
   admissionDate: true,
   consents: { where: { purpose: "CADASTRO", revokedAt: null }, select: { id: true }, take: 1 },
+  // Parentesco (RF-F10): o texto "filho de…" usa os laços reais entre os moradores.
+  relationsAsRelative: { select: { personId: true, type: true } },
+  relationsAsPerson: { where: { type: "CONJUGE" }, select: { relativeId: true } },
 } satisfies Prisma.PersonSelect;
 
 const include = {

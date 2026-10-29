@@ -9,6 +9,7 @@ import { normalizeSearchText } from "../../../lib/text.js";
 import type { FamilyRepository } from "../familias/repository.js";
 import { mapFamilyAddress, mapFamilyMembers } from "../familias/service.js";
 import type { ChurchListRepository } from "../listas/repository.js";
+import type { PersonRelationService } from "../parentes/service.js";
 import { indicatorDays, JOURNEY_INDICATORS, loadJourneySettings } from "./jornada.js";
 import type { PersonDetail, PersonListItem, PersonRepository } from "./repository.js";
 import {
@@ -253,6 +254,7 @@ export class PersonService {
     private readonly repository: PersonRepository,
     private readonly lists: ChurchListRepository,
     private readonly families: FamilyRepository,
+    private readonly relations: PersonRelationService,
   ) {}
 
   async list(context: RequestContext, query: PersonListQuery) {
@@ -348,6 +350,7 @@ export class PersonService {
       consent,
       family: familyRef,
       useFamilyAddress,
+      guardianIsParent,
       organizationId: requestedOrganizationId,
       bond,
       ...fields
@@ -410,6 +413,9 @@ export class PersonService {
         );
 
         if (guardianPerson) await this.linkToGuardianFamily(created, guardianPerson, tx, audit);
+        if (guardianPerson && guardianIsParent) {
+          await this.relations.linkParent(context, guardianPerson, created, created, tx, audit);
+        }
         if (family) await this.joinFamily(family, created, familyRef!.role, tx, audit);
 
         if (consent) {
@@ -508,7 +514,7 @@ export class PersonService {
         throw new AppError(
           409,
           "PERSON_HAS_LINKS",
-          "Esta pessoa tem vínculos (lançamentos, família, acesso ou histórico) e não pode ser apagada. Para registrar a saída, mude a situação.",
+          "Esta pessoa tem vínculos (lançamentos, família, parentes, acesso ou histórico) e não pode ser apagada. Para registrar a saída, mude a situação.",
           { links },
         );
       }

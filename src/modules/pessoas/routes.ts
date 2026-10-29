@@ -3,9 +3,10 @@ import { lifecycleRoutes } from "./ciclo-vida/routes.js";
 import { familyRoutes } from "./familias/routes.js";
 import { importRoutes } from "./importacao/routes.js";
 import { churchListRoutes } from "./listas/routes.js";
+import { personRelationRoutes } from "./parentes/routes.js";
 import { personRoutes } from "./pessoas/routes.js";
 
-const sections = ["listas", "familias", "importacao"];
+const sections = ["listas", "familias", "importacao", "parentes"];
 
 export const pessoasRoutes: FastifyPluginAsync = async (app) => {
   app.get("/overview", async () => ({
@@ -19,4 +20,5 @@ export const pessoasRoutes: FastifyPluginAsync = async (app) => {
   await app.register(importRoutes);
   await app.register(personRoutes);
   await app.register(lifecycleRoutes);
+  await app.register(personRelationRoutes);
 };

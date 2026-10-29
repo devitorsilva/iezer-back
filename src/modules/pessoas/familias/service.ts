@@ -65,7 +65,18 @@ function addressOf(family: FamilyRow) {
 // organização que o usuário não lê ficam de fora (a família pode juntar sede e congregação).
 export function mapFamilyMembers(family: FamilyRow, readOrganizationIds?: string[]) {
   const address = addressOf(family);
+  const household = new Set(family.members.map((member) => member.personId));
   return family.members.map((member) => {
+    // Parentesco só entre moradores: o que é de fora fica na seção Parentes da ficha.
+    const { relationsAsRelative, relationsAsPerson } = member.person;
+    const parentIds = relationsAsRelative
+      .filter((relation) => relation.type === "PAI_MAE" && household.has(relation.personId))
+      .map((relation) => relation.personId);
+    const spouseId =
+      [
+        ...relationsAsRelative.filter((relation) => relation.type === "CONJUGE").map((relation) => relation.personId),
+        ...relationsAsPerson.map((relation) => relation.relativeId),
+      ].find((personId) => household.has(personId)) ?? null;
     const readable = !readOrganizationIds || readOrganizationIds.includes(member.person.organizationId);
     const hasGuardian = family.members.some(
       (other) =>
@@ -91,6 +102,8 @@ export function mapFamilyMembers(family: FamilyRow, readOrganizationIds?: string
       email: readable ? member.person.email : null,
       incomplete: readable && missing.length > 0,
       usesFamilyAddress: readable && address !== null && sameAddress(member.person, address),
+      parentIds,
+      spouseId,
     };
   });
 }

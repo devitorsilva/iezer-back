@@ -139,9 +139,14 @@ export const personCreateSchema = z.object({
     .optional(),
   // RF-F03: copia o endereço do domicílio (o do contato principal, ou o do responsável sem família).
   useFamilyAddress: z.boolean().optional(),
+  // RF-F13: "Cadastrar filho" liga a criança ao responsável também como pai/mãe (parentesco).
+  guardianIsParent: z.boolean().optional(),
 }).refine((value) => !(value.guardian && value.family), {
   message: "Informe o responsável ou a família, não os dois.",
   path: ["family"],
+}).refine((value) => !value.guardianIsParent || value.guardian, {
+  message: "Informe o responsável.",
+  path: ["guardianIsParent"],
 });
 
 export const personUpdateSchema = z.object({

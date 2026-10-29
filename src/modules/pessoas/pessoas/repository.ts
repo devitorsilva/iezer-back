@@ -176,15 +176,16 @@ export class PersonRepository {
 
   // Vínculos que impedem apagar o registro (RF-V05).
   async countLinks(id: string, db: Db) {
-    const [receivables, family, user, followUps, events, consentsGiven] = await Promise.all([
+    const [receivables, family, relatives, user, followUps, events, consentsGiven] = await Promise.all([
       db.receivable.count({ where: { personId: id } }),
       db.familyMember.count({ where: { personId: id } }),
+      db.personRelation.count({ where: { OR: [{ personId: id }, { relativeId: id }] } }),
       db.user.count({ where: { personId: id } }),
       db.followUp.count({ where: { personId: id } }),
       db.personEvent.count({ where: { personId: id } }),
       db.personConsent.count({ where: { givenByPersonId: id } }),
     ]);
-    return { receivables, family, user, followUps, events, consentsGiven };
+    return { receivables, family, relatives, user, followUps, events, consentsGiven };
   }
 
   // Contadores dos indicadores da jornada (RT-B13): só números.

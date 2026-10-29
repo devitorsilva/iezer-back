@@ -102,6 +102,8 @@ export const ACTION_LABELS: Record<string, string> = {
   remover_membro: "Membro removido",
   trocar_papel: "Papel na família trocado",
   definir_contato_principal: "Contato principal definido",
+  adicionar_parente: "Parente adicionado",
+  remover_parente: "Parente removido",
   promover_vinculo: "Mudança de estágio",
   inativar: "Inativação",
   transferir: "Transferência",
@@ -127,6 +129,7 @@ export const ACTION_LABELS: Record<string, string> = {
 export const TARGET_TYPE_LABELS: Record<string, string> = {
   Person: "Pessoa",
   Family: "Família",
+  PersonRelation: "Parentesco",
   FollowUp: "Acompanhamento",
   PersonConsent: "Consentimento",
   PersonImport: "Importação",

@@ -195,7 +195,7 @@ No mobile, as abas viram rolagem horizontal. O skeleton espelha o cabeçalho e o
 | RF-V02 | Cada ação pede data e motivo (quando aplicável) e gera um evento na linha do tempo com autor                                                                                       | MVP  |
 | RF-V03 | Promover vínculo pede só os campos que faltam para o novo estágio                                                                                                                  | MVP  |
 | RF-V04 | Transferência para outra congregação do iEzer muda a congregação e preserva o histórico                                                                                            | MVP  |
-| RF-V05 | "Apagar registro" só para cadastro sem vínculos (recebíveis, família, histórico de membresia), com confirmação explícita                                                           | MVP  |
+| RF-V05 | "Apagar registro" só para cadastro sem vínculos (recebíveis, família, parentes, histórico de membresia), com confirmação explícita                                                           | MVP  |
 | RF-V06 | Ação "Registrar acompanhamento" no perfil e na linha da listagem: data, tipo (ligação, visita, mensagem, conversa), autor automático e observação curta. Aparece na linha do tempo | MVP  |
 
 ### Família (básica)
@@ -211,6 +211,19 @@ No mobile, as abas viram rolagem horizontal. O skeleton espelha o cabeçalho e o
 | RF-F07 | Adicionar pessoa ao domicílio por uma busca única: vincula uma pessoa já cadastrada ou cadastra uma nova, com o nome digitado já preenchido                                                                                                          | MVP  |
 | RF-F08 | Contato principal é o primeiro a entrar no domicílio. Quando ele sai, o papel passa para o próximo adulto (18 anos ou mais) pela ordem de entrada; sem adulto, o domicílio fica sem contato principal e mostra um aviso para a secretaria definir um | MVP  |
 | RF-F09 | Filho de outra relação entra no domicílio com o papel "filho", sem distinção                                                                                                                                                                         | MVP  |
+
+### Parentesco entre domicílios
+
+O domicílio diz quem mora junto; o parentesco diz quem é pai, mãe, filho ou cônjuge de quem, mesmo em casas diferentes (filho casado com família própria, avós, pais separados).
+
+| ID     | Requisito                                                                                                                                                                                                                                   | Fase |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| RF-F10 | Parentesco separado do domicílio: registram-se pai/mãe e cônjuge; irmãos, avós e netos são deduzidos. O texto da relação no domicílio (RF-F06) usa o parentesco quando ele existe e, sem ele, os papéis da casa                            | MVP  |
+| RF-F11 | Regras: ninguém é parente de si; sem ciclo (ninguém é ancestral de si mesmo); no máximo dois pais; um cônjuge por pessoa (cônjuge falecido não conta); as duas pessoas na mesma igreja; um laço por par                                    | MVP  |
+| RF-F12 | A aba Família mostra os parentes abaixo do domicílio, em lista e texto ("mãe de…", "neto de…"), com link para a ficha. Parente de organização que o usuário não lê aparece só com o nome e o parentesco, sem link, contato nem situação | MVP  |
+| RF-F13 | Adicionar parente pela busca de pessoa (ou cadastrando uma nova) e removê-lo, com "Editar dados" e as duas pessoas visíveis; "Cadastrar filho" (RF-F04) já liga o filho a quem o cadastrou. Auditado com as duas pessoas               | MVP  |
+| RF-F14 | Desligamento e falecimento não desfazem o parentesco; a situação aparece junto do nome. "Apagar registro" exige remover os parentes antes (RF-V05)                                                                                        | MVP  |
+| RF-F15 | O responsável do menor (RF-F02) continua sendo do domicílio: parentesco não conta como responsável. Uma pessoa está em um só domicílio; filho de pais separados mora num e se liga ao outro pai pelo parentesco                         | MVP  |
 
 ### Indicadores da jornada no Painel
 

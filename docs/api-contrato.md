@@ -966,3 +966,30 @@ Ver e reenviar convite: qualquer papel. Criar e editar: Administrador ou Implant
 
 - `family: { id, role }`: cria a pessoa já no domicílio, com o papel. Menor ou Membro em formação precisa de um Responsável/Cônjuge adulto na família (400 `GUARDIAN_REQUIRED`); o consentimento do menor fica registrado como dado por ele. Família fora do alcance: 400 `INVALID_REFERENCE`. Não combina com `guardian` (400 `VALIDATION_ERROR`).
 - `useFamilyAddress: true`: copia o endereço do domicílio (o da família informada, o da família do responsável ou, se o responsável ainda não tem família, o dele). **O cadastro com `guardian` não copia mais o endereço sozinho.**
+
+## Sprint 24 — Parentesco entre domicílios
+
+`PersonRelation` (migração `20261028_parentesco`): só pai/mãe (`PAI_MAE`, `personId` é pai/mãe de `relativeId`) e cônjuge (`CONJUGE`, par em ordem de id); irmãos, avós e netos são deduzidos. As duas pessoas são da mesma igreja (`organizationId` = sede).
+
+### `GET /pessoas/:id/parentes` (`pessoas.ver`, RF-F10, RF-F12)
+
+- → `{ items: Relative[] }`, na ordem cônjuge, pais, filhos, irmãos, avós, netos (e pelo nome). 404 se a pessoa não é lida.
+- `Relative`: `{ kind: "CONJUGE" | "PAI_MAE" | "FILHO" | "IRMAO" | "AVO" | "NETO", relationId, personId, name, preferredName, sex, readable, age, status, organizationName, via }`.
+- `relationId` só nos laços diretos (cônjuge, pais, filhos); `null` nos deduzidos. `via`: `{ personId, name, preferredName }` por quem o avô/neto chega (o pai/mãe ou o filho), `null` nos demais. Irmão = outro filho de um dos pais (meio-irmão também).
+- Parente de organização que o usuário não lê: `readable: false` e `age`, `status`, `organizationName` `null` (só nome e parentesco). Contato e endereço nunca vêm.
+
+### `POST /pessoas/:id/parentes` (`pessoas.editar`, RF-F11, RF-F13)
+
+- `{ personId, type: "PAI_MAE" | "FILHO" | "CONJUGE" }` (o que `personId` é da pessoa da ficha) → 201 `{ items: Relative[] }`. As duas pessoas precisam ser lidas pelo usuário (ficha: 404; parente: 400 `INVALID_REFERENCE`).
+- Erros: 400 `INVALID_RELATION` (a própria pessoa), 409 `RELATION_EXISTS` (já há laço entre as duas, em qualquer sentido), 409 `TOO_MANY_PARENTS` (o filho já tem dois pais), 400 `RELATION_CYCLE` (o pai/mãe seria descendente do filho), 409 `SPOUSE_EXISTS` (uma das duas já tem cônjuge que não é Falecido).
+- Log `adicionar_parente` (alvo `PersonRelation`, `after` com tipo, ids e nomes; `personIds` com as duas pessoas).
+
+### `DELETE /pessoas/:id/parentes/:relationId` (`pessoas.editar`)
+
+- → `{ items: Relative[] }`. Só um laço que envolve a pessoa da ficha e com as duas pessoas lidas; senão 404. Log `remover_parente`.
+
+### Alterados
+
+- `POST /pessoas`: `guardianIsParent: true` (só com `guardian`) liga a pessoa nova ao responsável como pai/mãe (o "Cadastrar filho"), na mesma transação e com as mesmas regras.
+- `FamilyMember` ganha `parentIds` (pais registrados que moram no domicílio) e `spouseId` (cônjuge registrado no domicílio, ou `null`), para o texto "filho de…" usar o parentesco real.
+- `DELETE /pessoas/:id`: parentes contam como vínculo (`links` com `relatives`, 409 `PERSON_HAS_LINKS`). Desligamento e falecimento não mexem no parentesco (RF-F14).

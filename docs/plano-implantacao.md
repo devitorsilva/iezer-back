@@ -11,7 +11,7 @@ Ambiente: Claude Code no Cursor, aberto no `iezer-back`.
 1. **Leia só o necessário:** `CLAUDE.md`, a seção da sprint atual e as duas últimas entradas do Registro. Nos PRDs, busque os IDs citados na sprint (`grep`) em vez de ler o arquivo inteiro. Nas sprints com front, leia também o `CLAUDE.md` do front e o `docs/api-contrato.md`.
 2. **Planeje antes:** proponha um plano curto (arquivos a criar ou alterar, decisões em aberto) e espere a aprovação.
 3. **Execute em ordem:** back, depois front. Uma branch com o nome da sprint em cada repositório tocado (ex.: `sprint-02-login`).
-4. **Feche a sprint:** `npm run typecheck` no back e `npx tsc --noEmit` no front; marque a sprint como feita; escreva no Registro no máximo 8 linhas (o que foi feito, decisões, pendências); atualize `docs/api-contrato.md` com as rotas novas ou alteradas.
+4. **Feche a sprint:** `npm run typecheck` nos dois repos (no front, `npx tsc --noEmit` na raiz não confere nada: o `tsconfig.json` tem `files: []`); marque a sprint como feita; escreva no Registro no máximo 8 linhas (o que foi feito, decisões, pendências); atualize `docs/api-contrato.md` com as rotas novas ou alteradas.
 5. **Seja breve nas respostas:** relate o que mudou e onde, sem repetir código já aplicado.
 6. **Se a janela ficar pesada** (contexto compactando) antes do fim: registre o ponto exato onde parou no Registro e peça para abrir outra janela com "continuar Sprint N".
 7. O usuário testa no navegador; não rodar Playwright nem screenshots sem pedido. Para desfazer, editar manualmente; nunca `git checkout`, `git reset` ou `git restore`.
@@ -344,14 +344,14 @@ Limite do modelo atual: `Family` é o domicílio. `FamilyMember.personId` é ún
 - **IDs (revisão):** + RF-F05.
 - **Pronto quando:** num domicílio com casal, dois filhos (um menor) e um Outro, a página da família mostra o contato principal; removê-lo passa a estrela ao próximo adulto; com só o menor, aparece o aviso; "Atualizar endereço" muda só quem foi marcado; a ficha da pessoa mostra a família sem ações de gestão; a lista de famílias acha a família pelo nome de um membro.
 
-## Sprint 24 — Pessoas: parentesco entre domicílios (back + front) `[ ]`
+## Sprint 24 — Pessoas: parentesco entre domicílios (back + front) `[x]`
 
 **Objetivo:** ligar pais, filhos e cônjuges de domicílios diferentes.
 
 - **Antes de planejar:** decisão no PRD Pessoas. Proposta: `PersonRelation` (pessoa, parente, tipo PAI_MAE ou CONJUGE), separada do domicílio; regras (sem ciclo, no máximo dois pais, cônjuge recíproco, mesma igreja); auditoria com as duas pessoas em `personIds`; efeito do desligamento e do falecimento; o que aparece de um parente numa organização que o usuário não lê. Decidir também se uma pessoa pode estar em mais de um domicílio (pais separados).
 - Parentes na ficha em lista e texto ("pai de…", "filho de…", com link para a ficha), sem diagrama.
 - A lista de famílias (RF-F05) foi para a Sprint 23; aqui fica a visão por família nos relatórios, se o PRD mantiver.
-- **IDs:** as decisões novas do PRD.
+- **IDs:** RF-F10 a RF-F15 (decididos em 28/10/2026).
 - **Pronto quando:** avós, pais e netos em domicílios diferentes aparecem ligados na ficha, e nenhum dado de pessoa fora do escopo do usuário vaza.
 
 ---
@@ -474,3 +474,9 @@ Entradas curtas (até 8 linhas), mais recente por último.
   Front: item Famílias no menu de Pessoas (a seção vira grupo), `/app/pessoas/familias` (lista com busca e página na URL) e `/app/pessoas/familias/:id` (cabeçalho com Adicionar pessoa, Atualizar endereço e Renomear; aviso sem contato principal; lista com ⋯). `FamiliaMembros` compartilhado; a aba Família da ficha ficou só leitura com "Abrir família", "Cadastrar filho" e, sem família, "Criar família" e "Adicionar a uma família" (`FamiliaPicker`).
   Decisões: a lista cria família com a primeira pessoa e abre a página dela (ajuste após o teste visual, junto com o título "Famílias" no header); removido o último membro, a página volta à lista; busca pelo nome de membro inclui quem é de organização não lida (o nome já aparece na família).
   Testado: script só leitura nos serviços (lista, busca sem acento pelo nome de membro, escopo vazio, detalhe); typecheck dos dois, `build` e `build:admin`; teste visual feito pelo usuário.
+- 28/10/2026 · Sprint 24 · Branch `sprint-24-parentesco` nos dois repos (saindo da `sprint-23-familia-lista`). PRD Pessoas: RF-F10 a RF-F15 e RF-V05 com parentes (copiar para a Doc). Migração `20261028_parentesco` (aditiva, `migrate deploy`): `PersonRelation` (PAI_MAE ou CONJUGE, organização = sede), CHECKs de "não é parente de si" e do par de cônjuges em ordem de id.
+  Back: slice `pessoas/parentes` (`GET/POST /pessoas/:id/parentes`, `DELETE /:id/parentes/:relationId`): cônjuge, pais e filhos registrados; irmãos, avós e netos deduzidos (duas consultas); regras sem ciclo (CTE recursiva), dois pais, um cônjuge não falecido, um laço por par; log `adicionar_parente`/`remover_parente` com as duas pessoas. `POST /pessoas` com `guardianIsParent`; `FamilyMember` com `parentIds`/`spouseId`; parentes bloqueiam "Apagar registro".
+  Front: bloco "Parentes" na aba Família (lista com texto "Avó · mãe de Ana", link só para quem o usuário lê, ⋯ Remover parentesco, "Adicionar parente" com tipo + `PersonPicker` + "Cadastrar nova pessoa"); "Cadastrar filho" manda `guardianIsParent`; texto do domicílio usa o parentesco real e cai nos papéis sem ele.
+  Decisões: parente de organização não lida aparece só com nome e parentesco; uma pessoa em um só domicílio; responsável do menor continua só do domicílio; sem backfill (laços manuais e pelo "Cadastrar filho"); apagar registro com parente dá 409 em vez de apagar os laços (coerente com RF-V05).
+  Testado: script nos serviços (avós, pais, neto e tia; si mesmo, par repetido, terceiro pai, ciclo, segundo cônjuge, cônjuge falecido, apagar com parente, escopo não lido, remover de outra ficha, auditoria), dados apagados no fim (o log fica); rotas 401 com o servidor na 3399; typecheck, `build` e `build:admin`. Daqui o banco leva ~4 min para o script (transação com timeout maior só no teste).
+  Pendências: teste visual; parentesco pela importação; visão por família nos relatórios (RF-F05, F2); cadastrar pela busca de parente cria a pessoa antes do laço (se a regra recusar, ela fica sem o laço, com aviso).

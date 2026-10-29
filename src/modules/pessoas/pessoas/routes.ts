@@ -4,12 +4,18 @@ import { auditController } from "../../acesso/auditoria/routes.js";
 import { userController } from "../../acesso/usuarios/routes.js";
 import { FamilyRepository } from "../familias/repository.js";
 import { churchListRepository } from "../listas/routes.js";
+import { personRelationService } from "../parentes/routes.js";
 import { PersonController } from "./controller.js";
 import { PersonRepository } from "./repository.js";
 import { PersonService } from "./service.js";
 
 export const personRepository = new PersonRepository();
-export const personService = new PersonService(personRepository, churchListRepository, new FamilyRepository());
+export const personService = new PersonService(
+  personRepository,
+  churchListRepository,
+  new FamilyRepository(),
+  personRelationService,
+);
 const controller = new PersonController(personService);
 
 export const personRoutes: FastifyPluginAsync = async (app) => {

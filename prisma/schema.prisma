@@ -152,6 +152,12 @@ enum FamilyRole {
   OUTRO
 }
 
+// Parentesco (RF-F10): só pai/mãe e cônjuge; irmãos, avós e netos são deduzidos.
+enum PersonRelationType {
+  PAI_MAE
+  CONJUGE
+}
+
 // Eventos da linha do tempo (RF-V02): mudança de vínculo ou de situação, com data e autor.
 enum PersonEventType {
   PROMOCAO
@@ -358,6 +364,7 @@ model Organization {
   costCenters             CostCenter[]
   people                  Person[]
   families                Family[]
+  personRelations         PersonRelation[]
   followUps               FollowUp[]
   personEvents            PersonEvent[]
   consents                PersonConsent[]
@@ -661,6 +668,8 @@ model Person {
   user                  User?
   familyMember          FamilyMember?
   primaryContactOf      Family[]           @relation("FamilyPrimaryContact")
+  relationsAsPerson     PersonRelation[]   @relation("RelationPerson")
+  relationsAsRelative   PersonRelation[]   @relation("RelationRelative")
   followUps             FollowUp[]
   events                PersonEvent[]
   consents              PersonConsent[]    @relation("ConsentSubject")
@@ -700,6 +709,25 @@ model FamilyMember {
   createdAt DateTime   @default(now())
 
   @@index([familyId])
+}
+
+// Parentesco entre pessoas, separado do domicílio (RF-F10, RF-F11). PAI_MAE: `personId` é pai/mãe de
+// `relativeId`. CONJUGE: o par em ordem de id (`personId` < `relativeId`), lido nos dois sentidos.
+// `organizationId` é a sede: as duas pessoas são da mesma igreja.
+model PersonRelation {
+  id             String             @id @default(cuid())
+  organizationId String
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  personId       String
+  person         Person             @relation("RelationPerson", fields: [personId], references: [id], onDelete: Restrict)
+  relativeId     String
+  relative       Person             @relation("RelationRelative", fields: [relativeId], references: [id], onDelete: Restrict)
+  type           PersonRelationType
+  createdAt      DateTime           @default(now())
+
+  @@unique([personId, relativeId])
+  @@index([relativeId])
+  @@index([organizationId])
 }
 
 // Acompanhamento (D15, RT-B12): contato de cuidado, não confidencial.
