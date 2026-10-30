@@ -8,6 +8,8 @@ export interface NoticeTarget {
   to: string;
   name: string;
   churchName: string | null;
+  // Conta da equipe iEzer: texto e assinatura do back-office.
+  team: boolean;
 }
 
 // Evento de segurança da própria conta: registro no log, na sede da igreja do usuário, e alerta
@@ -22,10 +24,14 @@ export async function recordAccountEvent(input: {
   after?: unknown;
   notice?: (target: NoticeTarget) => MailMessage;
 }) {
-  const user = await prisma.user.findUnique({ where: { id: input.userId }, select: { email: true, name: true } });
+  const user = await prisma.user.findUnique({
+    where: { id: input.userId },
+    select: { email: true, name: true, teamMember: { select: { id: true } } },
+  });
   if (!user) return;
 
-  const church = await findUserChurch(input.userId);
+  const team = user.teamMember !== null;
+  const church = team ? null : await findUserChurch(input.userId);
 
   await runAudited(input.actor, (_tx, audit) =>
     audit({
@@ -41,6 +47,6 @@ export async function recordAccountEvent(input: {
   );
 
   if (input.notice) {
-    await trySendMail(input.notice({ to: user.email, name: user.name, churchName: church?.name ?? null }));
+    await trySendMail(input.notice({ to: user.email, name: user.name, churchName: church?.name ?? null, team }));
   }
 }

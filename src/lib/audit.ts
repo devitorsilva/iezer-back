@@ -121,8 +121,9 @@ async function writeEntries(db: Prisma.TransactionClient, actor: AuditActor, lis
 
 // Helper único de auditoria (RT-AB10): a alteração e o AuditLog na mesma transação.
 // Se a gravação do log falhar, a alteração é desfeita. `timeout` maior só para escritas em
-// lote (importação); o padrão de 15 s vale para o resto. `maxWait` de 10 s (o padrão do Prisma é 2 s):
-// com o banco longe e o pool de 5 conexões, requisições simultâneas esperavam mais que isso e davam 500.
+// lote (importação); o padrão de 30 s vale para o resto (com o banco longe, cada ida e volta leva
+// de 0,5 a 2,5 s e uma escrita com travas passava de 15 s). `maxWait` de 10 s (o padrão do Prisma é
+// 2 s): com o pool de 5 conexões, requisições simultâneas esperavam mais que isso e davam 500.
 export function runAudited<T>(
   actor: AuditActor,
   fn: (tx: Prisma.TransactionClient, audit: AuditWriter) => Promise<T>,
@@ -133,7 +134,7 @@ export function runAudited<T>(
       const audit: AuditWriter = (entries) => writeEntries(tx, actor, Array.isArray(entries) ? entries : [entries]);
       return fn(tx, audit);
     },
-    { timeout: options.timeout ?? 15_000, maxWait: 10_000 },
+    { timeout: options.timeout ?? 30_000, maxWait: 10_000 },
   );
 }
 

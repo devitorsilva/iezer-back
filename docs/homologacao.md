@@ -47,7 +47,7 @@ Cobre o MVP (Sprints 1 a 13), o back-office (Sprints 15 a 22) e a família (Spri
 - Enquanto o Resend não tiver domínio, nenhum e-mail sai: o back escreve no log o assunto, o destinatário e o link.
   - Local: no terminal do `npm run dev`.
   - Render: na aba Logs do serviço.
-- Convites também têm "Copiar link" (Configurações › Usuários e Equipe do admin). Copiar gera um link novo e o anterior deixa de valer.
+- Convites também têm "Gerar novo link" (Configurações › Usuários e Equipe do admin). O link novo aparece num diálogo para copiar, e o anterior deixa de valer.
 - O link do convite de admin de igreja nunca aparece no app admin (B8): pegue-o no log.
 
 ### 0.3 Dados fictícios
@@ -59,11 +59,11 @@ Cobre o MVP (Sprints 1 a 13), o back-office (Sprints 15 a 22) e a família (Spri
 
 ### 0.4 Equipe iEzer
 
-Quatro contas da equipe, cada uma com TOTP no app autenticador. Não crie nada antes da hora; esta seção só descreve.
+Quatro contas da equipe, cada uma com TOTP no app autenticador. Não crie nada antes da hora; esta seção só descreve. Já existem `suporte@iezer.local` e `implantacao@iezer.local`, desativados: não use; o teste usa as contas `hml.*`.
 
 | Conta | E-mail sugerido | Papel | Como nasce |
 | --- | --- | --- | --- |
-| Administrador 1 | `admin.um@iezer.local` (já existe) | Administrador iEzer | Já é o Administrador ativo. Se ninguém tiver a senha ou o app: `npm run user:create` para a senha e "Redefinir autenticador" por outro Administrador. `npm run suporte:agente -- <email> "<nome>"` só roda quando não há Administrador ativo |
+| Administrador 1 | `admin@iezer.local` (já existe) | Administrador iEzer | Já é o Administrador ativo. Se ninguém tiver a senha ou o app: `npm run user:create` para a senha e "Redefinir autenticador" por outro Administrador. `npm run suporte:agente -- <email> "<nome>"` só roda quando não há Administrador ativo |
 | Administrador 2 | `hml.admin2@iezer.local` | Administrador iEzer | Convite em Equipe, feito pelo Administrador 1 (seção 2.3) |
 | Suporte | `hml.suporte@iezer.local` | Suporte | Convite em Equipe |
 | Implantação | `hml.implantacao@iezer.local` | Implantação (só) | Convite em Equipe |
@@ -153,7 +153,7 @@ Perfil: Pastor A; repetir os passos 1 a 3 com o Secretário A.
 | Passo | O que fazer | O que deve acontecer |
 | --- | --- | --- |
 | 1 | Menu do usuário › Minha conta [celular] | Senha, 2FA, sessões, meus acessos e e-mail |
-| 2 | Trocar a senha (atual errada, depois certa) | Errada recusada; certa troca e mantém esta sessão |
+| 2 | Trocar a senha (atual errada, depois certa) | O campo da senha nova se chama "Nova senha"; errada recusada; certa troca e mantém esta sessão |
 | 3 | Sessões: entrar em outro navegador e encerrar aquela sessão daqui | A outra cai no próximo clique |
 | 4 | Trocar o e-mail para outro `@iezer.local` | Confirmação no e-mail novo, aviso no antigo (log); só troca depois do link |
 | 5 | Trocar o e-mail para um e-mail da equipe iEzer (ex.: `hml.suporte@iezer.local`) | Recusado |
@@ -171,7 +171,8 @@ Perfil: Pastor A.
 | 2 | Criar a congregação "Congregação Alfa Sul" e renomear | Aparece na lista e no seletor de organização |
 | 3 | Trocar no seletor para Alfa Norte [celular] | Pessoas e Financeiro mostram só os dados dela |
 | 4 | Escolher "Todas as congregações" | Visão consolidada; Financeiro e cadastros escondem o criar; Pessoas mantém o cadastro rápido, que pede a congregação |
-| 5 | Desativar a Alfa Sul | Some do seletor; os dados dela continuam na auditoria |
+| 5 | Desativar a Alfa Sul | O ⋯ da linha gira enquanto salva; some do seletor; os dados dela continuam na auditoria |
+| 6 | Encarregado de LGPD com o e-mail de uma conta da equipe (ex.: `hml.suporte@iezer.local`) | Recusado: "Este e-mail é de uma conta da equipe iEzer. Use outro e-mail." |
 
 ### 1.5 Usuários e convites
 
@@ -181,7 +182,7 @@ Perfil: Pastor A.
 | --- | --- | --- |
 | 1 | Configurações › Usuários › Convidar: Secretário A a partir de uma pessoa nova pelo cadastro rápido dentro do fluxo [pastor] | Resumo em linguagem natural confere com o perfil Secretário na sede |
 | 2 | Convidar o Tesoureiro A a partir de uma pessoa já cadastrada (PersonPicker) | Convite pendente na lista |
-| 3 | "Copiar link" do convite do Tesoureiro e abrir no Safari [celular] | Abre a página do convite; o link anterior deixou de valer |
+| 3 | "Gerar novo link" do convite do Tesoureiro e abrir no Safari [celular] | O diálogo abre na hora com "Gerando link" e o ícone girando, depois mostra o link; ele abre a página do convite e o anterior deixou de valer |
 | 4 | Convidar de novo o mesmo e-mail | Recusado: já há convite pendente |
 | 5 | Convidar um e-mail de outra igreja (ex.: `hml.pastor.b@iezer.local`) ou da equipe | Recusado |
 | 6 | Secretário e Tesoureiro aceitam (cada um no seu perfil de navegador) | Entram sem 2FA obrigatório; aceitam os termos |
@@ -451,17 +452,17 @@ Perfis: Administrador 1; depois cada convidado da seção 2.3.
 
 | Passo | O que fazer | O que deve acontecer |
 | --- | --- | --- |
-| 1 | Administrador 1: login com e-mail, senha e código do app | Entra no Painel; no log, e-mail de login a todos os Administradores ativos |
+| 1 | Administrador 1: login com e-mail, senha e código do app; depois sair e entrar de outro navegador (ex.: Safari) | Entra no Painel. No navegador já usado nos últimos 90 dias, nenhum e-mail de login; no navegador novo, no log, e-mail de dispositivo novo a ele e aos outros Administradores ativos (RF-BO55) |
 | 2 | Login com código de recuperação | Entra; o código não vale de novo |
 | 3 | Procurar a opção de código por e-mail | Não existe: a equipe só usa app autenticador |
 | 4 | Login com a conta do Pastor A | "Esta conta não tem acesso ao back-office do iEzer." e a sessão é encerrada |
-| 5 | Convidado: abrir o link do convite da equipe (log ou "Copiar link") [celular] | Página do convite com nome e papéis |
-| 6 | Definir senha fraca, depois boa; configurar o app (QR), guardar os códigos ("Guardei"); aceitar o termo da equipe | Só entra depois dos três passos, nesta ordem |
+| 5 | Convidado: abrir o link do convite da equipe (log ou "Gerar novo link") [celular] | Página do convite com nome e papéis |
+| 6 | Definir senha fraca, depois boa, e aceitar o termo da equipe; configurar o app (QR); guardar os códigos ("Guardei") | Ordem: senha e termo → app → códigos. O app não pede a senha de novo (usa a que acabou de definir). Só entra depois dos três passos |
 | 7 | Abrir o mesmo convite de novo | Convite já usado |
 | 8 | Suporte: olhar o menu | Painel, Igrejas, Pedidos de acesso, Avisos, Minha conta; sem Equipe e Auditoria |
 | 9 | Implantação: olhar o menu | Painel, Igrejas, Pedidos de acesso, Minha conta; sem Avisos, Equipe e Auditoria |
 | 10 | Implantação: digitar `/equipe`, `/auditoria` e `/avisos` | Volta para o Painel |
-| 11 | Suporte: errar a senha 5 vezes e tentar a 6ª | Bloqueio de 15 min; no log, e-mail ao Suporte e a todos os Administradores |
+| 11 | Suporte: errar a senha 5 vezes e tentar a 6ª | Bloqueio de 15 min: "Espere esse tempo ou fale com um Administrador iEzer", sem "Esqueci minha senha". No log, e-mail ao Suporte (texto e assinatura da equipe) e a todos os Administradores |
 | 12 | Sessão ociosa: [depende: SQL no banco] rodar no Supabase `update "Session" set "lastActiveAt" = now() - interval '13 hours' where "userId" = (select id from "User" where email = 'hml.suporte@iezer.local');` e clicar em qualquer tela | Volta para o login (12h sem uso derrubam a sessão da equipe). Sem o SQL, deixar a sessão parada 12h |
 | 13 | "Esqueceu a senha?" | Só orienta a falar com um Administrador iEzer |
 
@@ -472,7 +473,7 @@ Perfil: Suporte.
 | Passo | O que fazer | O que deve acontecer |
 | --- | --- | --- |
 | 1 | Minha conta [celular] | Senha, app autenticador, códigos de recuperação e sessões |
-| 2 | Trocar a senha | Senha atual errada recusada; certa troca |
+| 2 | Trocar a senha | Campo "Nova senha"; senha atual errada recusada; certa troca; alerta (log) com o texto e a assinatura da equipe |
 | 3 | "Reconfigurar app" com senha errada, depois certa | Errada recusada; certa pede o QR novo, encerra as outras sessões e manda alerta (log) |
 | 4 | Novos códigos de recuperação | Os antigos param de valer |
 | 5 | Encerrar outra sessão | A outra cai no próximo clique |
@@ -485,13 +486,13 @@ Perfil: Administrador 1 (o 2 depois que existir).
 | --- | --- | --- |
 | 1 | Equipe › Convidar o Administrador 2 (marcar Administrador) | Os outros papéis aparecem marcados e travados; convite pendente |
 | 2 | Convidar Suporte e Implantação | Convites pendentes; links no log |
-| 3 | Convidar um e-mail de usuário de igreja (ex.: `hml.pastor.a@iezer.local`) | Recusado |
+| 3 | Convidar o e-mail de um usuário da Igreja Batista Sede (o Pastor A ainda não existe neste ponto) | Recusado |
 | 4 | Convidar de novo um e-mail com convite pendente | Recusado |
-| 5 | "Copiar link novo", "Reenviar" e "Cancelar" num convite de teste | Link antigo deixa de valer; cancelado some |
-| 6 | Mudar os papéis do Suporte (adicionar Implantação, depois tirar) | Menu dele muda depois de recarregar |
+| 5 | "Gerar novo link", "Reenviar" e "Cancelar convite" num convite de teste | "Gerar novo link" abre o diálogo na hora ("Gerando link" com o ícone girando) e avisa que o link anterior deixou de valer. Enquanto reenvia, o ⋯ da linha gira. No cancelar, o botão de saída é "Voltar"; cancelado some |
+| 6 | Mudar os papéis do Suporte (adicionar Implantação, depois tirar) | O menu não muda (Implantação não tem item próprio); em Igrejas aparece o botão "Nova igreja" e some ao tirar o papel. Se ele estiver numa tela que perdeu o papel (ex.: Avisos), na próxima ação vai ao Painel com "Seus papéis mudaram" |
 | 7 | Procurar o menu na própria linha | Não tem: ninguém altera os próprios papéis nem se desativa |
-| 8 | Desativar o Suporte com ele logado | Ele cai; login recusado. Reativar devolve o acesso |
-| 9 | "Redefinir autenticador" do Suporte | No próximo login ele configura o app de novo |
+| 8 | Desativar o Suporte com ele logado | Ele cai no próximo clique e vai ao login; login recusado com "Seu acesso à equipe iEzer foi desativado. Fale com um Administrador iEzer." Reativar devolve o acesso |
+| 9 | "Redefinir autenticador" do Suporte | No próximo login ele configura o app de novo, sem digitar a senha outra vez; os alertas (log) usam o texto e a assinatura da equipe |
 | 10 | [depende: segundo Administrador] Administrador 2 tira o papel de Administrador do 1 e devolve | Funciona. A trava "nunca sem Administrador ativo" não dá para provocar pela tela: quem age é sempre outro Administrador ativo |
 | 11 | Tabela vira cards abaixo de 768px [celular] | Ações no menu do card |
 
@@ -516,14 +517,14 @@ Os passos 1 a 7 vêm antes da Parte 1. Os passos 8 a 16 dependem dela: faça-os 
 
 | Passo | O que fazer | O que deve acontecer |
 | --- | --- | --- |
-| 1 | Igrejas: busca por nome e CNPJ, filtro por situação [celular] | Lista com situação; cards no celular |
-| 2 | Implantação: "Nova igreja" A com a congregação, contatos e o primeiro admin (seção 0.5) | Nasce em Implantação; convite do Pastor A no log |
+| 1 | Implantação: "Nova igreja" A com a congregação, contatos e o primeiro admin (seção 0.5) | Nasce em Implantação; convite do Pastor A no log |
+| 2 | Igrejas: busca por nome e CNPJ, filtro por situação [celular] | Enquanto busca, o ícone gira no campo e a lista anterior fica esmaecida; lista com situação e "nenhuma congregação", "1 congregação" ou "N congregações"; cards no celular |
 | 3 | Nova igreja com o mesmo CNPJ | Recusado, com link para a igreja que já tem |
 | 4 | CNPJ com dígito errado; CNPJ alfanumérico válido | Errado recusado no campo; alfanumérico aceito |
-| 5 | Primeiro admin com e-mail da equipe ou de outra igreja | Recusado no campo |
+| 5 | Primeiro admin, responsável pela conta e encarregado de LGPD com e-mail da equipe; primeiro admin com e-mail de outra igreja | Recusado no campo certo. Com vários campos errados, a página rola até o primeiro e põe o foco nele |
 | 6 | Criar a igreja B (sem congregação) | Nasce em Implantação |
 | 7 | Suporte: abrir "Nova igreja" | Não tem o botão; `/igrejas/nova` volta para o Painel |
-| 8 | Visão geral: editar sede e contatos (responsável: só cargo, e-mail e telefone) | Salva; a troca da pessoa é pela seção 2.7 |
+| 8 | Visão geral: editar sede e contatos (responsável: só cargo, e-mail e telefone); tentar um e-mail da equipe no responsável e no encarregado | Salva; e-mail da equipe recusado. A troca da pessoa é pela seção 2.7 |
 | 9 | Aba Congregações: criar, renomear | Aparece no seletor do Pastor A |
 | 10 | Aba Usuários | Só nome, e-mail, perfis, status, último acesso, marcas de bloqueio e de e-mail rejeitado; nada de dados da pessoa |
 | 11 | Suporte: "Reenviar convite" do admin pendente (B), com motivo e chamado | Convite novo no log; o link não aparece na tela; responsável avisado (log) |
@@ -562,7 +563,7 @@ Perfil: Implantação (ou Administrador), na igreja B. [depende: chave do Storag
 | 1 | Visão geral › responsável › "Trocar", sem anexo | Recusado |
 | 2 | Documento com data futura | Recusado |
 | 3 | Anexo acima de 10 MB; PDF falso | Recusados (tipo conferido pelo conteúdo) |
-| 4 | Mesmo responsável de hoje | Recusado |
+| 4 | Mesmo responsável de hoje; novo responsável com e-mail da equipe | Recusados (o e-mail da equipe antes de enviar o anexo) |
 | 5 | Novo responsável: o Pastor B2 (`hml.pastor.b2@iezer.local`), ata com número, PDF pequeno [celular] | Barra de progresso; troca feita; e-mails ao anterior (Pastor B), ao novo e aos admins (log) |
 | 6 | "Histórico de responsáveis" › abrir o documento | Abre numa aba nova; abertura registrada na Auditoria |
 | 7 | Copiar o link do documento e abrir depois de 5 minutos | Link vencido |

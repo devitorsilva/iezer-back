@@ -57,7 +57,7 @@ export function buildApp() {
   });
   app.register(sensible);
 
-  app.setErrorHandler((error, _request, reply) => {
+  app.setErrorHandler((error, request, reply) => {
     if (error instanceof AppError) {
       return reply.code(error.statusCode).send({
         statusCode: error.statusCode,
@@ -105,7 +105,29 @@ export function buildApp() {
       });
     }
 
-    return reply.send(error);
+    // Transação interativa que passou do tempo (banco lento): foi desfeita por inteiro.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2028") {
+      request.log.error(error);
+      return reply.code(503).send({
+        statusCode: 503,
+        code: "DATABASE_TIMEOUT",
+        message: "O banco demorou para responder. Nada foi gravado. Tente de novo.",
+      });
+    }
+
+    // Erros HTTP do Fastify e do @fastify/sensible (404, 413, validação...) seguem como são.
+    const statusCode = (error as { statusCode?: unknown }).statusCode;
+    if (typeof statusCode === "number" && statusCode < 500) {
+      return reply.send(error);
+    }
+
+    // Erro não tratado: mensagem genérica, o detalhe só no log.
+    request.log.error(error);
+    return reply.code(500).send({
+      statusCode: 500,
+      code: "INTERNAL_ERROR",
+      message: "Não foi possível concluir. Tente de novo.",
+    });
   });
 
   app.register(healthRoutes, { prefix: "/health" });

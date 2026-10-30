@@ -1,6 +1,6 @@
 import type { TeamRole } from "@prisma/client";
 import { env } from "../config/env.js";
-import { INVITE_TTL_MS } from "./emails.js";
+import { INVITE_TTL_MS, TEAM_SIGNATURE as SIGNATURE } from "./emails.js";
 import type { MailMessage } from "./mailer.js";
 import { TEAM_ROLE_LABELS } from "./team.js";
 
@@ -12,8 +12,6 @@ export const TEAM_INVITE_TTL_MS = INVITE_TTL_MS;
 export const teamInviteUrl = (token: string) => `${env.ADMIN_WEB_ORIGIN}/convite/${token}`;
 
 const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? name;
-
-const SIGNATURE = "\n\n—\nBack-office do iEzer\nMensagem interna da equipe iEzer.";
 
 const dateTime = new Intl.DateTimeFormat("pt-BR", {
   timeZone: "America/Sao_Paulo",
@@ -51,7 +49,7 @@ export function teamInviteEmail(input: {
   };
 }
 
-// Login de um membro da equipe, a cada Administrador iEzer (RF-BO55).
+// Login de um membro da equipe em dispositivo ou local novo, a cada Administrador iEzer (RF-BO55).
 export function teamLoginNotice(input: {
   to: string;
   adminName: string;
@@ -64,10 +62,10 @@ export function teamLoginNotice(input: {
 }): MailMessage {
   return {
     to: input.to,
-    subject: `Login na equipe iEzer: ${input.memberName}`,
+    subject: `Login em dispositivo novo na equipe iEzer: ${input.memberName}`,
     text:
       `Olá, ${firstName(input.adminName)}!\n\n` +
-      `${input.memberName} (${input.memberEmail}) entrou no iEzer.\n\n` +
+      `${input.memberName} (${input.memberEmail}) entrou no iEzer com um navegador e sistema que não aparecem nos logins dos últimos 90 dias.\n\n` +
       `Quando: ${formatDateTime(input.at)}\n` +
       `Navegador: ${input.device}\n` +
       `Local aproximado: ${input.location ?? "não informado"}\n` +

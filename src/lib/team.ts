@@ -1,5 +1,6 @@
 import type { Prisma, TeamRole } from "@prisma/client";
 import type { FastifyReply, FastifyRequest } from "fastify";
+import { env } from "../config/env.js";
 import type { AuditActor } from "./audit.js";
 import { AppError } from "./errors.js";
 import { prisma } from "./prisma.js";
@@ -26,10 +27,17 @@ export const TEAM_TOTP_ONLY_CODE = "TEAM_TOTP_ONLY";
 export const TEAM_TOTP_ONLY_MESSAGE =
   "Contas da equipe iEzer usam só o app autenticador. O código por e-mail não vale.";
 export const TEAM_TWO_FACTOR_SETUP_MESSAGE = "Configure o app autenticador para continuar.";
+export const TEAM_USER_INACTIVE_MESSAGE = "Seu acesso à equipe iEzer foi desativado. Fale com um Administrador iEzer.";
 
-// Contas exclusivas (Segurança da equipe): e-mail da equipe não vira conta de igreja.
-export const teamEmailError = () =>
-  new AppError(409, "TEAM_EMAIL", "Este e-mail é de uma conta da equipe iEzer. Use outro e-mail.", { field: "email" });
+// Contas exclusivas (Segurança da equipe): e-mail da equipe não vira conta de igreja, nem
+// responsável pela conta ou encarregado de LGPD (`field` aponta o campo do formulário).
+export const teamEmailError = (field = "email") =>
+  new AppError(409, "TEAM_EMAIL", "Este e-mail é de uma conta da equipe iEzer. Use outro e-mail.", { field });
+
+// Requisição vinda do app admin: a mensagem do bloqueio de login sai com o texto da equipe sem
+// revelar, no app das igrejas, quais e-mails são da equipe.
+export const isAdminOrigin = (headers: Headers | null | undefined) =>
+  headers?.get("origin") === env.ADMIN_WEB_ORIGIN;
 
 // E-mail de membro da equipe ou de convite da equipe ainda válido.
 export async function isTeamEmail(email: string, db: Prisma.TransactionClient = prisma) {
@@ -38,6 +46,11 @@ export async function isTeamEmail(email: string, db: Prisma.TransactionClient = 
     db.teamInvite.count({ where: { email, status: "PENDENTE", expiresAt: { gt: new Date() } } }),
   ]);
   return member + invite > 0;
+}
+
+// Responsável pela conta e encarregado de LGPD não podem ser da equipe iEzer.
+export async function assertNotTeamContactEmail(email: string, field: string, db: Prisma.TransactionClient = prisma) {
+  if (await isTeamEmail(email, db)) throw teamEmailError(field);
 }
 
 export interface TeamContext {

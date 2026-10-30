@@ -105,44 +105,23 @@ interface ProtectedHolder {
 // dá o último admin, as concessões e os admins removidos.
 export type ProtectedSnapshot = Map<string, ProtectedHolder>;
 
+// Uma consulta só: com o banco longe, o findMany com relações aninhadas fazia uma ida e volta por
+// nível (quatro), duas vezes por escrita, e a transação passava do tempo.
 export async function snapshotProtected(db: Db, churchId: string): Promise<ProtectedSnapshot> {
-  const profile = { organizationId: churchId };
-  const users = await db.user.findMany({
-    where: {
-      status: "ATIVO",
-      assignments: {
-        some: {
-          organization: { isActive: true },
-          profile: { ...profile, permissions: { some: { permissionKey: { in: PROTECTED_KEYS } } } },
-        },
-      },
-    },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      assignments: {
-        where: { organization: { isActive: true }, profile },
-        select: {
-          profile: {
-            select: { permissions: { where: { permissionKey: { in: PROTECTED_KEYS } }, select: { permissionKey: true } } },
-          },
-        },
-      },
-    },
-  });
+  const users = await db.$queryRaw<{ id: string; name: string; email: string; keys: string[] }[]>`
+    SELECT u."id", u."name", u."email", array_agg(DISTINCT p."permissionKey") AS "keys"
+    FROM "User" u
+    JOIN "UserAssignment" a ON a."userId" = u."id"
+    JOIN "Organization" o ON o."id" = a."organizationId" AND o."isActive"
+    JOIN "AccessProfile" ap ON ap."id" = a."profileId" AND ap."organizationId" = ${churchId}
+    JOIN "AccessProfilePermission" p ON p."profileId" = ap."id" AND p."permissionKey" = ANY(${[...PROTECTED_KEYS]})
+    WHERE u."status" = 'ATIVO'
+    GROUP BY u."id", u."name", u."email"`;
 
   return new Map(
     users.map((user) => [
       user.id,
-      {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        keys: new Set(
-          user.assignments.flatMap(({ profile }) => profile.permissions.map((p) => p.permissionKey).filter(isPermissionKey)),
-        ),
-      },
+      { id: user.id, name: user.name, email: user.email, keys: new Set(user.keys.filter(isPermissionKey)) },
     ]),
   );
 }
@@ -202,13 +181,15 @@ export async function notifyProtectedChanges(churchId: string, before: Protected
 }
 
 // Escrita de acesso com as travas: retrato das protegidas antes e depois na mesma transação
-// (último admin) e avisos por e-mail depois do commit.
+// (último admin) e avisos por e-mail depois do commit. Uma escrita de acesso por igreja de cada
+// vez: sem a trava, dois admins tirando um ao outro passavam os dois pela regra do último admin.
 export async function runGuarded<T>(
   actor: AuditActor,
   churchId: string,
   fn: (tx: Db, audit: AuditWriter) => Promise<T>,
 ): Promise<T> {
   const { result, before, after } = await runAudited(actor, async (tx, audit) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`acesso:${churchId}`}))`;
     const before = await snapshotProtected(tx, churchId);
     const result = await fn(tx, audit);
     const after = await snapshotProtected(tx, churchId);

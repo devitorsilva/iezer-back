@@ -14,7 +14,9 @@ Atualizado a cada sprint com rotas novas ou alteradas. Rotas antigas de cadastro
 | Status | Corpo | Quando |
 | --- | --- | --- |
 | 401 | `{ statusCode, code: "UNAUTHENTICATED", message }` | Sem sessão ou sessão expirada. Front leva ao login e volta à tela de origem |
-| 403 | `{ statusCode, code: "USER_INACTIVE", message: "Seu acesso foi desativado. Fale com o administrador da sua igreja." }` | Usuário `SUSPENSO` ou `DESATIVADO` |
+| 403 | `{ statusCode, code: "USER_INACTIVE", message: "Seu acesso foi desativado. Fale com o administrador da sua igreja." }` | Usuário `SUSPENSO` ou `DESATIVADO`. Conta da equipe: "Seu acesso à equipe iEzer foi desativado. Fale com um Administrador iEzer." (Sprint 14) |
+| 500 | `{ statusCode, code: "INTERNAL_ERROR", message: "Não foi possível concluir. Tente de novo." }` | Erro não tratado; o detalhe fica só no log (Sprint 14) |
+| 503 | `{ statusCode, code: "DATABASE_TIMEOUT", message }` | Transação que passou do tempo (P2028), desfeita por inteiro (Sprint 14) |
 
 ### `/api/auth/*` — Better Auth (público)
 
@@ -849,9 +851,9 @@ Conta da equipe = `User` sem pessoa e sem atribuições, com `TeamMember` (`role
 | 403 | `TEAM_GOOGLE_FORBIDDEN` | Conta da equipe no login pelo Google (volta em `?error=`) |
 | 403 | `TEAM_EMAIL_CHANGE_FORBIDDEN` | Conta da equipe em `POST /api/me/email` |
 
-- **Login da equipe:** e-mail a todos os Administradores iEzer (nome, data e hora, navegador, local, IP; RF-BO55), no lugar do alerta de dispositivo novo. No bloqueio após 5 erros, os Administradores também recebem aviso. No log, `actorType: SUPORTE`, organização nula.
+- **Login da equipe:** só em dispositivo novo (a mesma regra das igrejas: navegador e sistema fora dos logins dos últimos 90 dias, sem aviso no primeiro login), e-mail ao membro e aos outros Administradores iEzer (nome, data e hora, navegador, local, IP; RF-BO55, alterado na Sprint 14: antes, a cada login). No bloqueio após 5 erros, o membro e os Administradores recebem aviso sempre. No log, `actorType: SUPORTE`, organização nula; todo login fica na auditoria interna.
 - **`/sign-in/email`** ainda lista `twoFactorMethods: ["totp", "otp"]` para a equipe; o app admin oferece só o app autenticador.
-- **Contas exclusivas:** convite ou troca de e-mail de igreja para um e-mail da equipe (membro ou convite da equipe válido) dá 409 `TEAM_EMAIL` (`/acesso/convites`, `/acesso/usuarios`); em `/me/email`, 409 `EMAIL_IN_USE`.
+- **Contas exclusivas:** convite ou troca de e-mail de igreja para um e-mail da equipe (membro ou convite da equipe válido) dá 409 `TEAM_EMAIL` (`/acesso/convites`, `/acesso/usuarios`); em `/me/email`, 409 `EMAIL_IN_USE`. Desde a Sprint 14, também no responsável pela conta e no encarregado de LGPD (ver "Sprint 14 — correções, lote 1").
 
 ### Convite da equipe (público, limite por IP)
 
@@ -1184,3 +1186,29 @@ Ver: Suporte e Administrador iEzer. Criar, editar, publicar, encerrar e apagar: 
 - `POST /pessoas`: `guardianIsParent: true` (só com `guardian`) liga a pessoa nova ao responsável como pai/mãe (o "Cadastrar filho"), na mesma transação e com as mesmas regras.
 - `FamilyMember` ganha `parentIds` (pais registrados que moram no domicílio) e `spouseId` (cônjuge registrado no domicílio, ou `null`), para o texto "filho de…" usar o parentesco real.
 - `DELETE /pessoas/:id`: parentes contam como vínculo (`links` com `relatives`, 409 `PERSON_HAS_LINKS`). Desligamento e falecimento não mexem no parentesco (RF-F14).
+
+## Sprint 14 — correções, lote 1
+
+### Erros
+
+- Erro não tratado: 500 `INTERNAL_ERROR` com "Não foi possível concluir. Tente de novo."; o detalhe (Prisma, stack) fica só no log. Os 4xx do Fastify (404, 413, validação) seguem como antes.
+- Transação interativa que passou do tempo (Prisma P2028, "Transaction not found"): 503 `DATABASE_TIMEOUT`, "O banco demorou para responder. Nada foi gravado. Tente de novo." O tempo padrão do `runAudited` passou de 15 s para 30 s.
+- Escritas de acesso das igrejas (`runGuarded` em `acesso/travas.ts`) rodam uma por igreja de cada vez (`pg_advisory_xact_lock` por igreja), e o retrato das permissões protegidas é uma consulta só.
+
+### Mensagens da equipe
+
+- Login (`/sign-in/email`) e rotas protegidas de conta da equipe desativada: 403 `USER_INACTIVE`, "Seu acesso à equipe iEzer foi desativado. Fale com um Administrador iEzer."
+- 429 `LOGIN_LOCKED` pedido pelo app admin (`Origin` = `ADMIN_WEB_ORIGIN`): "… bloqueado por N min. Espere esse tempo ou fale com um Administrador iEzer." (sem "Esqueci minha senha"). A escolha é pela origem, para não revelar no app das igrejas quais e-mails são da equipe.
+- Alertas de conta enviados a conta da equipe (senha trocada, definida ou redefinida; 2FA ativado, desativado ou reconfigurado; dispositivo novo; bloqueio): "fale com um Administrador iEzer" e a assinatura do back-office.
+- Login da equipe: e-mail só em dispositivo novo, ao membro e aos outros Administradores iEzer (RF-BO55 alterado; ver Sprint 15).
+
+### E-mail da equipe nos contatos da igreja (R2)
+
+E-mail de conta da equipe (membro ou convite da equipe válido) não pode ser responsável pela conta nem encarregado de LGPD: 409 `TEAM_EMAIL`, "Este e-mail é de uma conta da equipe iEzer. Use outro e-mail.", com `field`:
+
+| Rota | `field` |
+| --- | --- |
+| `POST /admin/igrejas` | `accountOwner.email` ou `lgpdOfficer.email` |
+| `PUT /admin/igrejas/:id/contatos/responsavel`, `PUT /admin/igrejas/:id/contatos/encarregado-lgpd` | `email` |
+| `POST /admin/igrejas/:id/responsavel/troca` | `newOwner.email` (recusa antes do upload) |
+| `PUT /organizacao/encarregado-lgpd` | `email` |

@@ -2,6 +2,7 @@ import type { OrganizationContact, Prisma } from "@prisma/client";
 import type { RequestContext } from "../../lib/access.js";
 import { runAudited } from "../../lib/audit.js";
 import { AppError } from "../../lib/errors.js";
+import { assertNotTeamContactEmail } from "../../lib/team.js";
 import { slugify } from "../../lib/text.js";
 import type { ChurchWithRelations, OrganizationRepository } from "./repository.js";
 import type {
@@ -160,6 +161,7 @@ export class OrganizationService {
     return runAudited(context.actor, async (tx, audit) => {
       const church = await this.findChurchOrThrow(context.churchId, tx);
       const before = mapContact(church.contacts.find((contact) => contact.role === "ENCARREGADO_LGPD"));
+      await assertNotTeamContactEmail(input.email, "email", tx);
 
       const contact = await this.repository.upsertContact(
         church.id,
@@ -191,6 +193,7 @@ export class OrganizationService {
       if (!current) {
         throw new AppError(409, "ACCOUNT_OWNER_MISSING", "A igreja não tem responsável pela conta cadastrado.");
       }
+      await assertNotTeamContactEmail(input.email, "email", tx);
 
       const contact = await this.repository.upsertContact(
         church.id,

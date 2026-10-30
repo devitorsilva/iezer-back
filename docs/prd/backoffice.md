@@ -59,7 +59,7 @@ Sete decisões vêm do PRD de Acesso e quinze foram validadas nesta rodada. A B1
 | # | Decisão | Por quê |
 | --- | --- | --- |
 | B1 | App separado, com build e domínio próprios (`admin.<domínio>` quando houver domínio), saindo do repositório `iezer-front`, com o mesmo back e o mesmo login do Better Auth. Contas da equipe são exclusivas, nunca a conta de um usuário de igreja. `/app/suporte` sai do app das igrejas | Separa a ferramenta interna do produto e impede que uma conta de igreja chegue às telas da equipe |
-| B2 | 2FA obrigatório só por app autenticador (código por e-mail não vale). Sessão encerra após 12 horas sem uso. E-mail ao Administrador iEzer em todo login da equipe | Uma conta da equipe alcança todas as igrejas |
+| B2 | 2FA obrigatório só por app autenticador (código por e-mail não vale). Sessão encerra após 12 horas sem uso. Login da equipe em dispositivo novo avisa o membro e os Administradores iEzer por e-mail (alterado em 30/10/2026: antes, a cada login) | Uma conta da equipe alcança todas as igrejas |
 | B3 | Três papéis internos fixos no código, sem tela de permissões: Administrador iEzer, Suporte e Implantação | Equipe pequena; menos configuração, menos erro |
 | B4 | Criar igreja pela tela, substituindo o script: sede, CNPJ, congregações, responsável pela conta, encarregado de LGPD e primeiro admin (Pessoa e convite) | Implantação sem terminal |
 | B5 | Situação da igreja: Implantação, Ativa, Suspensa ou Encerrada. Suspensa: ninguém entra e os dados ficam guardados. Encerrada: depois da eliminação definitiva registrada, a igreja continua na lista, sem dados e sem acesso | Dá um estado claro a cada conta |
@@ -140,7 +140,7 @@ O back-office tem dez áreas: entrada, Equipe, Igrejas (lista, criação e detal
 | RF-BO11 | Lista de igrejas: sede, CNPJ, situação, número de congregações, responsável pela conta, usuários ativos e último uso. Busca por nome ou CNPJ e filtro por situação | MVP |
 | RF-BO12 | "Nova igreja" pela tela, no lugar do script `igreja:criar`: nome da sede, CNPJ (`CpfCnpjInput` com CNPJ alfanumérico), congregações iniciais (opcional), responsável pela conta (nome, cargo, e-mail, telefone), encarregado de LGPD (opcional) e primeiro admin (nome e e-mail) | MVP |
 | RF-BO13 | Ao salvar, numa transação: sede e congregações, contatos, seed dos perfis de fábrica e das listas da igreja, Pessoa do primeiro admin e convite com o perfil Pastor na sede. A igreja nasce em Implantação | MVP |
-| RF-BO14 | CNPJ já cadastrado bloqueia com "Já existe uma igreja com este CNPJ" e link para ela. E-mail do primeiro admin que já é usuário em outra igreja é recusado (RF-CV08 de Acesso) | MVP |
+| RF-BO14 | CNPJ já cadastrado bloqueia com "Já existe uma igreja com este CNPJ" e link para ela. E-mail do primeiro admin que já é usuário em outra igreja é recusado (RF-CV08 de Acesso). E-mail da equipe iEzer é recusado no primeiro admin, no responsável pela conta e no encarregado de LGPD | MVP |
 
 ### Igreja: detalhe
 
@@ -225,7 +225,7 @@ Pedido com escrita passa pelo Administrador iEzer antes de chegar à igreja; o r
 | RF-BO52 | Toda ação da equipe sobre uma igreja também entra na Auditoria dessa igreja, no filtro "Suporte iEzer" | MVP |
 | RF-BO53 | Exportar a auditoria interna, com a exportação registrada no próprio log | F2 |
 | RF-BO54 | E-mails para a equipe: pedido aprovado ou recusado (a quem pediu), emergência aberta (aos Administradores iEzer), igreja que ficou sem admin (a Suporte e Administradores) | MVP |
-| RF-BO55 | E-mail a todos os Administradores iEzer a cada login da equipe, com nome, data e hora, navegador e local aproximado | MVP |
+| RF-BO55 | Login da equipe em dispositivo novo (navegador e sistema fora dos logins dos últimos 90 dias; o primeiro login da conta não avisa): e-mail ao próprio membro e a todos os Administradores iEzer, com nome, data e hora, navegador e local aproximado. O aviso de bloqueio sai sempre, e todo login fica na auditoria interna (alterado em 30/10/2026: antes, a cada login) | MVP |
 
 ## Papéis internos e permissões
 
@@ -265,8 +265,8 @@ Uma conta da equipe alcança todas as igrejas, por isso as regras são mais dura
 | 2FA | Obrigatório desde o primeiro acesso, só por app autenticador (TOTP). Código por e-mail não vale. 10 códigos de recuperação de uso único | MVP |
 | Sessão | Encerra após 12 horas sem uso. Desativar, trocar a senha ou redefinir o 2FA derrubam as sessões na hora | MVP |
 | Tentativas | Bloqueio após 5 erros seguidos, como no Acesso, com aviso aos Administradores iEzer | MVP |
-| Alerta de login | E-mail a todos os Administradores iEzer a cada login da equipe (RF-BO55) | MVP |
-| Contas exclusivas | O e-mail de uma conta da equipe não pode ser de usuário de igreja, e vice-versa. A sessão do back-office não vale no app das igrejas, exceto no modo suporte | MVP |
+| Alerta de login | E-mail ao membro e a todos os Administradores iEzer no login em dispositivo novo (RF-BO55) | MVP |
+| Contas exclusivas | O e-mail de uma conta da equipe não pode ser de usuário de igreja, e vice-versa, nem responsável pela conta ou encarregado de LGPD de uma igreja (criação da igreja, contatos, troca do responsável e encarregado no app das igrejas). A sessão do back-office não vale no app das igrejas, exceto no modo suporte | MVP |
 | Buscadores | O app admin não é indexado (`noindex`) e não tem link a partir do app das igrejas | MVP |
 | Termo | Termo de confidencialidade da equipe aceito no primeiro acesso, com versão no log | MVP |
 | Revisão de acessos | A cada trimestre, o Administrador iEzer confere quem está na equipe e com quais papéis | MVP (processo) |

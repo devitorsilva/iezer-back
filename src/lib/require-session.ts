@@ -7,7 +7,13 @@ import {
   USER_INACTIVE_MESSAGE,
 } from "./auth.js";
 import { CHURCH_SUSPENDED_CODE, churchBlockedMessage, findBlockedChurchStatus } from "./church-status.js";
-import { findTeamMember, TEAM_TWO_FACTOR_SETUP_MESSAGE, touchTeamSession } from "./team.js";
+import {
+  findTeamMember,
+  isTeamUser,
+  TEAM_TWO_FACTOR_SETUP_MESSAGE,
+  TEAM_USER_INACTIVE_MESSAGE,
+  touchTeamSession,
+} from "./team.js";
 import {
   requiresTwoFactor,
   TWO_FACTOR_REQUIRED_CODE,
@@ -53,7 +59,7 @@ export async function requireSession(request: FastifyRequest, reply: FastifyRepl
     return reply.code(403).send({
       statusCode: 403,
       code: USER_INACTIVE_CODE,
-      message: USER_INACTIVE_MESSAGE,
+      message: (await isTeamUser(response.user.id)) ? TEAM_USER_INACTIVE_MESSAGE : USER_INACTIVE_MESSAGE,
     });
   }
 

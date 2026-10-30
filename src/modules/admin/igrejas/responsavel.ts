@@ -7,6 +7,7 @@ import { createId } from "../../../lib/ids.js";
 import { trySendMail } from "../../../lib/mailer.js";
 import { prisma } from "../../../lib/prisma.js";
 import { createSignedUrl, detectDocumentType, removeObject, uploadObject } from "../../../lib/storage.js";
+import { assertNotTeamContactEmail } from "../../../lib/team.js";
 import { normalizeSearchText } from "../../../lib/text.js";
 import type { ChangeAccountOwnerInput } from "./schemas.js";
 import { ChurchAdminNotFoundError } from "./service.js";
@@ -89,6 +90,8 @@ export async function changeAccountOwner(actor: AuditActor, churchId: string, in
   if (sameOwner(current, input.newOwner)) {
     throw new AppError(400, "SAME_ACCOUNT_OWNER", "O novo responsável é o mesmo de hoje. Para mudar só cargo, e-mail ou telefone, edite o contato.");
   }
+  // Antes do upload: e-mail da equipe iEzer não vira responsável pela conta.
+  await assertNotTeamContactEmail(input.newOwner.email, "newOwner.email");
 
   const documentId = createId();
   const storagePath = `${church.id}/documentos/${documentId}.${detected.extension}`;

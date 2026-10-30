@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { runAudited, type AuditActor } from "../../../lib/audit.js";
 import { AppError } from "../../../lib/errors.js";
+import { assertNotTeamContactEmail } from "../../../lib/team.js";
 import { normalizeSearchText, slugify } from "../../../lib/text.js";
 import { inviteService } from "../../acesso/convites/routes.js";
 import { assertLoginEmailAvailable } from "../../acesso/convites/service.js";
@@ -11,7 +12,7 @@ import type { CreateChurchInput } from "./schemas.js";
 
 type Db = Prisma.TransactionClient;
 
-// Perfis, listas e convite com o banco longe: a transação passa dos 15 s padrão.
+// Perfis, listas e convite com o banco longe: a transação passa dos 30 s padrão.
 const CREATE_CHURCH_TIMEOUT_MS = 60_000;
 
 async function uniqueSlug(db: Db, base: string) {
@@ -52,6 +53,8 @@ export async function createChurch(actor: AuditActor, input: CreateChurchInput) 
       // Antes de gravar, para recusar logo o e-mail de outra igreja ou da equipe (RF-BO14, RF-CV08).
       // O convite confere de novo.
       await assertLoginEmailAvailable(tx, input.admin.email, "");
+      await assertNotTeamContactEmail(input.accountOwner.email, "accountOwner.email", tx);
+      if (input.lgpdOfficer) await assertNotTeamContactEmail(input.lgpdOfficer.email, "lgpdOfficer.email", tx);
 
       const churchSlug = await uniqueSlug(tx, slugify(input.name));
       const church = await tx.organization.create({

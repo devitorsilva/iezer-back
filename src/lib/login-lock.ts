@@ -14,10 +14,14 @@ export const LOGIN_LOCKED_CODE = "LOGIN_LOCKED";
 
 const normalize = (email: string) => email.trim().toLowerCase();
 
-export function loginLockedMessage(lockedUntil: Date) {
+// No app admin (team), sem "Esqueci minha senha": a equipe espera ou fala com um Administrador iEzer.
+export function loginLockedMessage(lockedUntil: Date, team = false) {
   const minutes = Math.max(1, Math.ceil((lockedUntil.getTime() - Date.now()) / 60_000));
   const wait = minutes >= 60 ? `${Math.ceil(minutes / 60)} h` : `${minutes} min`;
-  return `Muitas tentativas erradas. Por segurança, o login deste e-mail está bloqueado por ${wait}. Se esqueceu a senha, use "Esqueci minha senha".`;
+  const blocked = `Muitas tentativas erradas. Por segurança, o login deste e-mail está bloqueado por ${wait}.`;
+  return team
+    ? `${blocked} Espere esse tempo ou fale com um Administrador iEzer.`
+    : `${blocked} Se esqueceu a senha, use "Esqueci minha senha".`;
 }
 
 // Data até quando o login do e-mail está bloqueado, ou null.

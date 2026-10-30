@@ -15,6 +15,12 @@ export const TWO_FACTOR_CODE_TTL_MINUTES = 10;
 const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? name;
 
 const SIGNATURE = "\n\n—\nEquipe iEzer\nSe você não esperava este e-mail, pode ignorá-lo.";
+export const TEAM_SIGNATURE = "\n\n—\nBack-office do iEzer\nMensagem interna da equipe iEzer.";
+
+// Alertas de conta (senha, 2FA, dispositivo novo, bloqueio) também vão a contas da equipe iEzer,
+// que não têm igreja: falam com um Administrador iEzer e assinam como o back-office.
+const contactWho = (team?: boolean) => (team ? "um Administrador iEzer" : "o administrador da sua igreja");
+const signature = (team?: boolean) => (team ? TEAM_SIGNATURE : SIGNATURE);
 
 export function inviteEmail(input: {
   to: string;
@@ -59,6 +65,7 @@ export function passwordChangedEmail(input: {
   to: string;
   name: string;
   churchName: string | null;
+  team?: boolean;
   kind?: "redefinida" | "alterada" | "definida";
 }): MailMessage {
   const kind = input.kind ?? "redefinida";
@@ -72,8 +79,8 @@ export function passwordChangedEmail(input: {
       (kind === "definida"
         ? `Uma senha acabou de ser definida para a sua conta no iEzer. Agora você também pode entrar com e-mail e senha.\n\n`
         : `A senha da sua conta no iEzer acabou de ser ${kind}, e as sessões abertas em outros aparelhos foram encerradas.\n\n`) +
-      `Se não foi você, fale agora com o administrador da sua igreja.` +
-      SIGNATURE,
+      `Se não foi você, fale agora com ${contactWho(input.team)}.` +
+      signature(input.team),
   };
 }
 
@@ -216,6 +223,7 @@ export function twoFactorChangedNotice(input: {
   to: string;
   name: string;
   churchName: string | null;
+  team?: boolean;
   change: "ativada" | "desativada" | "redefinida" | "reconfigurada";
   // Quem redefiniu, quando não foi o admin da igreja (o suporte do iEzer, RF-BO30).
   by?: string;
@@ -224,7 +232,7 @@ export function twoFactorChangedNotice(input: {
     ativada: "A verificação em duas etapas foi ativada na sua conta do iEzer.",
     desativada: "A verificação em duas etapas foi desativada na sua conta do iEzer.",
     redefinida:
-      `${input.by ?? "O administrador da sua igreja"} redefiniu a verificação em duas etapas da sua conta do iEzer, e as sessões abertas foram encerradas. ` +
+      `${input.by ?? (input.team ? "Um Administrador iEzer" : "O administrador da sua igreja")} redefiniu a verificação em duas etapas da sua conta do iEzer, e as sessões abertas foram encerradas. ` +
       "No próximo login, configure de novo o app autenticador ou o código por e-mail.",
     reconfigurada:
       "O app autenticador da sua conta do iEzer foi trocado. O anterior deixou de valer, e as outras sessões foram encerradas.",
@@ -236,8 +244,8 @@ export function twoFactorChangedNotice(input: {
     subject: `Verificação em duas etapas ${input.change} no iEzer`,
     text:
       `Olá, ${firstName(input.name)}!\n\n${body}\n\n` +
-      `Se não foi você, fale agora com o administrador da sua igreja.` +
-      SIGNATURE,
+      `Se não foi você, fale agora com ${contactWho(input.team)}.` +
+      signature(input.team),
   };
 }
 
@@ -246,6 +254,7 @@ export function newDeviceLoginNotice(input: {
   to: string;
   name: string;
   churchName: string | null;
+  team?: boolean;
   device: string;
   ip: string | null;
   location: string | null;
@@ -261,13 +270,14 @@ export function newDeviceLoginNotice(input: {
       `Sua conta do iEzer acabou de ser acessada de um dispositivo novo: ${input.device}` +
       (where ? ` (${where})` : "") +
       `.\n\nSe foi você, não precisa fazer nada. Se não foi, troque a senha e encerre as outras sessões em Minha conta, ` +
-      `ou fale com o administrador da sua igreja.` +
-      SIGNATURE,
+      `ou fale com ${contactWho(input.team)}.` +
+      signature(input.team),
   };
 }
 
-// Login bloqueado após erros seguidos (PRD Acesso, A6).
-export function loginLockedNotice(input: { to: string; name: string; churchName: string | null }): MailMessage {
+// Login bloqueado após erros seguidos (PRD Acesso, A6). A equipe não tem "Esqueci minha senha"
+// no back-office.
+export function loginLockedNotice(input: { to: string; name: string; churchName: string | null; team?: boolean }): MailMessage {
   return {
     to: input.to,
     churchName: input.churchName,
@@ -275,8 +285,10 @@ export function loginLockedNotice(input: { to: string; name: string; churchName:
     text:
       `Olá, ${firstName(input.name)}!\n\n` +
       `Houve várias tentativas erradas de entrar no iEzer com o seu e-mail, e o login foi bloqueado por um tempo.\n\n` +
-      `Se foi você, espere um pouco ou use "Esqueci minha senha". Se não foi, troque a sua senha assim que puder.` +
-      SIGNATURE,
+      (input.team
+        ? `Se foi você, espere 15 minutos ou fale com um Administrador iEzer. Se não foi, avise um Administrador iEzer.`
+        : `Se foi você, espere um pouco ou use "Esqueci minha senha". Se não foi, troque a sua senha assim que puder.`) +
+      signature(input.team),
   };
 }
 

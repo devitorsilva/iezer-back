@@ -32,10 +32,12 @@ import { prisma } from "./prisma.js";
 import { isRateLimited } from "./rate-limit.js";
 import {
   findTeamMember,
+  isAdminOrigin,
   isTeamUser,
   teamAdminRecipients,
   TEAM_TOTP_ONLY_CODE,
   TEAM_TOTP_ONLY_MESSAGE,
+  TEAM_USER_INACTIVE_MESSAGE,
 } from "./team.js";
 import { teamLoginLockedNotice, teamLoginNotice } from "./team-emails.js";
 import { requiresTwoFactor, TWO_FACTOR_REQUIRED_CODE, TWO_FACTOR_REQUIRED_MESSAGE } from "./two-factor.js";
@@ -128,7 +130,7 @@ async function auditLogin(
 }
 
 // Login concluído (com o 2FA, quando há): último acesso, alerta de dispositivo novo e log.
-// Login da equipe iEzer avisa todos os Administradores iEzer (RF-BO55).
+// Dispositivo novo da equipe iEzer avisa também todos os Administradores iEzer (RF-BO55).
 async function recordLogin(userId: string, headers: Headers | null | undefined) {
   const at = new Date();
   const user = await prisma.user.update({
@@ -137,28 +139,6 @@ async function recordLogin(userId: string, headers: Headers | null | undefined) 
     select: { email: true, name: true },
   });
   await clearLoginFailures(user.email);
-
-  if (await isTeamUser(userId)) {
-    await auditLogin("login", userId, headers);
-    const admins = await teamAdminRecipients();
-    await Promise.all(
-      admins.map((admin) =>
-        trySendMail(
-          teamLoginNotice({
-            to: admin.email,
-            adminName: admin.name,
-            memberName: user.name,
-            memberEmail: user.email,
-            at,
-            device: describeDevice(headers?.get("user-agent")),
-            ip: headers?.get(CLIENT_IP_HEADER) ?? null,
-            location: approximateLocation(headers),
-          }),
-        ),
-      ),
-    );
-    return;
-  }
 
   // Dispositivo novo: navegador e sistema que não aparecem nos logins dos últimos 90 dias.
   // O primeiro login da conta não avisa.
@@ -178,17 +158,36 @@ async function recordLogin(userId: string, headers: Headers | null | undefined) 
 
   await auditLogin("login", userId, headers);
 
-  if (previous.length > 0 && !previous.some((entry) => describeDevice(entry.userAgent) === device)) {
-    const church = await findUserChurch(userId);
-    await trySendMail(
-      newDeviceLoginNotice({
-        to: user.email,
-        name: user.name,
-        churchName: church?.name ?? null,
-        device,
-        ip: headers?.get(CLIENT_IP_HEADER) ?? null,
-        location: approximateLocation(headers),
-      }),
+  if (previous.length === 0 || previous.some((entry) => describeDevice(entry.userAgent) === device)) return;
+
+  const ip = headers?.get(CLIENT_IP_HEADER) ?? null;
+  const location = approximateLocation(headers);
+  const team = await isTeamUser(userId);
+  const church = team ? null : await findUserChurch(userId);
+
+  await trySendMail(
+    newDeviceLoginNotice({ to: user.email, name: user.name, churchName: church?.name ?? null, team, device, ip, location }),
+  );
+
+  if (team) {
+    const admins = await teamAdminRecipients();
+    await Promise.all(
+      admins
+        .filter((admin) => admin.id !== userId)
+        .map((admin) =>
+          trySendMail(
+            teamLoginNotice({
+              to: admin.email,
+              adminName: admin.name,
+              memberName: user.name,
+              memberEmail: user.email,
+              at,
+              device,
+              ip,
+              location,
+            }),
+          ),
+        ),
     );
   }
 }
@@ -303,7 +302,10 @@ export const auth = betterAuth({
         const lockedUntil = email ? await findLoginLock(email) : null;
 
         if (lockedUntil) {
-          throw APIError.from("TOO_MANY_REQUESTS", { code: LOGIN_LOCKED_CODE, message: loginLockedMessage(lockedUntil) });
+          throw APIError.from("TOO_MANY_REQUESTS", {
+            code: LOGIN_LOCKED_CODE,
+            message: loginLockedMessage(lockedUntil, isAdminOrigin(ctx.headers)),
+          });
         }
         return;
       }
@@ -388,11 +390,12 @@ export const auth = betterAuth({
         const lockedUntil = await recordLoginFailure(email);
         if (lockedUntil && user) {
           await auditLogin("login_bloqueado", user.id, ctx.headers, { actorUserId: null, after: { lockedUntil } });
-          const church = await findUserChurch(user.id);
-          await trySendMail(loginLockedNotice({ to: email, name: user.name, churchName: church?.name ?? null }));
+          const team = await isTeamUser(user.id);
+          const church = team ? null : await findUserChurch(user.id);
+          await trySendMail(loginLockedNotice({ to: email, name: user.name, churchName: church?.name ?? null, team }));
 
           // Conta da equipe: aviso também aos Administradores iEzer (Segurança da equipe › Tentativas).
-          if (await isTeamUser(user.id)) {
+          if (team) {
             const admins = await teamAdminRecipients();
             await Promise.all(
               admins.map((admin) =>
@@ -486,7 +489,7 @@ export const auth = betterAuth({
           if (user?.status !== "ATIVO") {
             throw APIError.from("FORBIDDEN", {
               code: USER_INACTIVE_CODE,
-              message: USER_INACTIVE_MESSAGE,
+              message: (await isTeamUser(session.userId)) ? TEAM_USER_INACTIVE_MESSAGE : USER_INACTIVE_MESSAGE,
             });
           }
 
