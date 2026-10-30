@@ -76,8 +76,18 @@ Duas igrejas novas, criadas pela tela "Nova igreja" do admin (seção 2.5) com a
 
 | Igreja | Para quê | Congregação | Primeiro admin (Pastor) | Outros usuários |
 | --- | --- | --- | --- | --- |
-| **A** — "Igreja Homologação Alfa", CNPJ `14.022.026/0001-45` | Jornada da piloto (Parte 1), pedidos de acesso, avisos, painel | "Congregação Alfa Norte" | `hml.pastor.a@iezer.local` | `hml.secretario.a@` (Secretário) e `hml.tesoureiro.a@` (Tesoureiro), convidados pelo Pastor na seção 1.5 |
-| **B** — "Igreja Homologação Beta", CNPJ `14.022.027/0001-90` | Situação, troca do responsável, fim de contrato (termina Suspensa) | nenhuma | `hml.pastor.b@iezer.local` | — |
+| **A** — "Igreja Homologação Alfa", CNPJ `14.022.026/0001-45` | Jornada da piloto (Parte 1), pedidos de acesso, avisos, painel | "Congregação Alfa Norte" | `hml.pastor.a@iezer.local` (**Pastor A = você**) | Ver a tabela abaixo, todos convidados pelo Pastor A na seção 1.5 |
+| **B** — "Igreja Homologação Beta", CNPJ `14.022.027/0001-90` | Situação, troca do responsável, fim de contrato (termina Suspensa) | nenhuma | `hml.pastor.b@iezer.local` | `hml.pastor.b2@iezer.local` (Pastor B2), admin novo pelo "Recuperar administrador" na 2.6 |
+
+Usuários da igreja A:
+
+| Usuário | E-mail | Perfil | Para quê |
+| --- | --- | --- | --- |
+| Pastor (o pastor de verdade) | `hml.pastor@iezer.local` | Pastor, na sede | Segundo admin (1.5-7); faz a 1.1 no próprio celular e o Roteiro do pastor (1.21) |
+| Secretário A | `hml.secretario.a@iezer.local` | Secretário, na sede | Rotina da secretaria |
+| Tesoureiro A | `hml.tesoureiro.a@iezer.local` | Tesoureiro, na sede | Financeiro e negativos |
+| Secretário Norte | `hml.secretario.norte@iezer.local` | Secretário, só na Congregação Alfa Norte | Escopo por congregação (1.11) |
+| Voluntário 1 e 2 | `hml.voluntario1@iezer.local`, `hml.voluntario2@iezer.local` | Secretário, na sede | Descartáveis: desligar do rol e falecimento (1.12-6 e 1.12-7) |
 
 - O responsável pela conta pode ser a mesma pessoa do primeiro admin, com o mesmo e-mail.
 - A igreja nasce em Implantação; o Pastor recebe o convite (link no log).
@@ -95,13 +105,13 @@ Comandos que existem, só para referência (não use no lugar das telas):
 - Um PDF pequeno (menos de 1 MB) e um JPG, para os anexos de documento.
 - Um PDF falso: um `.txt` renomeado para `.pdf`, para a recusa por tipo.
 - Um arquivo com mais de 10 MB, para a recusa por tamanho.
-- A planilha modelo baixada na seção 1.12, preenchida com os casos de lá.
+- A planilha modelo baixada na seção 1.13, preenchida com os casos de lá.
 
 ---
 
 ## Parte 1 — App das igrejas
 
-Ordem da jornada da piloto, na igreja A. Pré-requisito: seções 2.1, 2.3 e 2.5 feitas (equipe e igreja A criadas).
+Ordem da jornada da piloto, na igreja A. Pré-requisito: seções 2.1 e 2.3 e os passos 2.5-1 a 2.5-7 feitos (equipe e igrejas criadas).
 
 ### 1.1 Convite, senha, termos e 2FA
 
@@ -160,7 +170,7 @@ Perfil: Pastor A.
 | 1 | Configurações › Organização [pastor] | Sede e "Congregação Alfa Norte" com os dados da criação; responsável pela conta e encarregado de LGPD só leitura |
 | 2 | Criar a congregação "Congregação Alfa Sul" e renomear | Aparece na lista e no seletor de organização |
 | 3 | Trocar no seletor para Alfa Norte [celular] | Pessoas e Financeiro mostram só os dados dela |
-| 4 | Escolher "Todas as congregações" | Visão consolidada; botões de criar somem |
+| 4 | Escolher "Todas as congregações" | Visão consolidada; Financeiro e cadastros escondem o criar; Pessoas mantém o cadastro rápido, que pede a congregação |
 | 5 | Desativar a Alfa Sul | Some do seletor; os dados dela continuam na auditoria |
 
 ### 1.5 Usuários e convites
@@ -175,11 +185,12 @@ Perfil: Pastor A.
 | 4 | Convidar de novo o mesmo e-mail | Recusado: já há convite pendente |
 | 5 | Convidar um e-mail de outra igreja (ex.: `hml.pastor.b@iezer.local`) ou da equipe | Recusado |
 | 6 | Secretário e Tesoureiro aceitam (cada um no seu perfil de navegador) | Entram sem 2FA obrigatório; aceitam os termos |
-| 7 | Convidar um segundo admin (perfil Pastor) e ele aceitar | A faixa de admin único some |
-| 8 | Filtros por status (atalhos) e por perfil/organização [celular] | Lista vira cards no celular; contagens certas |
-| 9 | Desativar o Secretário com ele logado [pastor] | Ele cai no próximo clique; login recusado |
-| 10 | Reativar | Volta a entrar |
-| 11 | "Redefinir 2FA" de um usuário com 2FA | 2FA apagado, sessões dele encerradas, alerta no log |
+| 7 | Convidar o pastor como segundo admin (`hml.pastor@iezer.local`, perfil Pastor na sede) e guardar o link do log. O aceite fica para a sessão com ele (1.21, ordem 1) | Convite pendente na lista; a faixa de admin único continua até ele aceitar |
+| 8 | Convidar o Secretário Norte (perfil Secretário só na Congregação Alfa Norte) e os Voluntários 1 e 2 (Secretário na sede); cada um aceita no seu perfil de navegador | Resumo do Secretário Norte cita só a Alfa Norte; os três ativos |
+| 9 | Filtros por status (atalhos) e por perfil/organização [celular] | Lista vira cards no celular; contagens certas |
+| 10 | Desativar o Secretário com ele logado [pastor] | Ele cai no próximo clique; login recusado |
+| 11 | Reativar | Volta a entrar |
+| 12 | "Redefinir 2FA" de um usuário com 2FA | 2FA apagado, sessões dele encerradas, alerta no log |
 
 ### 1.6 Perfis de acesso e permissões
 
@@ -191,7 +202,7 @@ Perfil: Pastor A.
 | 2 | Duplicar o Secretário como "Secretário Júnior" | Tela de permissões com o resumo |
 | 3 | Ligar "Editar pessoas" com "Ver pessoas" desligado | Dependência liga sozinha; o resumo muda |
 | 4 | Prévia do perfil | Mostra só as telas que o perfil alcança |
-| 5 | Tirar "Gerenciar perfis" do Pastor quando só há um admin ativo (desative antes o segundo admin) | Bloqueado: a igreja ficaria sem admin |
+| 5 | Tirar "Gerenciar perfis" do perfil Pastor (antes da sessão do pastor, o Pastor A é o único admin) | Bloqueado: a igreja ficaria sem admin |
 | 6 | Tentar alterar o próprio acesso (Usuários › você) | Bloqueado |
 | 7 | Dar uma permissão protegida (ex.: "Autorizar suporte") ao Secretário Júnior e atribuí-lo a alguém sem 2FA | A pessoa recebe e-mail da permissão protegida (log) e, na próxima tela, precisa configurar o 2FA |
 | 8 | Apagar o Secretário Júnior com alguém atribuído | Pede para escolher para qual perfil mover os usuários |
@@ -258,9 +269,30 @@ Perfil: Secretário A. Monte avós, pais e netos em domicílios diferentes.
 | 6 | Tentar: a pessoa como parente de si mesma, um terceiro pai, um segundo cônjuge vivo, um ciclo (neto como pai do avô) | Cada um recusado com o motivo |
 | 7 | "Cadastrar nova pessoa" pela busca de parente | Cria e liga; se a regra recusar o laço, a pessoa fica criada com aviso |
 | 8 | ⋯ "Remover parentesco" | Some dos dois lados |
-| 9 | Parente de uma congregação que o usuário não lê (troque o seletor para Alfa Norte) | Aparece só o nome e o parentesco, sem link |
 
-### 1.11 Ciclo de vida, acompanhamento e Painel
+### 1.11 Escopo por congregação
+
+Perfil: Secretário Norte (Secretário só na Congregação Alfa Norte).
+
+Antes, com o Secretário A e o seletor em "Todas as congregações":
+
+- cadastrar na Alfa Norte "Norte Um" (adulto) e "Norte Dois";
+- pôr o Norte Um no domicílio da sede montado na 1.9 ("Adicionar pessoa");
+- ligar o Norte Um como filho de um adulto da sede ("Adicionar parente");
+- copiar o endereço (URL) da ficha de uma pessoa da sede.
+
+| Passo | O que fazer | O que deve acontecer |
+| --- | --- | --- |
+| 1 | Seletor de organização | Só a Alfa Norte, sem "Todas as congregações" |
+| 2 | Pessoas: lista e busca pelo nome de uma pessoa da sede [celular] | Só pessoas da Alfa Norte; a da sede não aparece |
+| 3 | PersonPicker (ex.: "Adicionar parente" na ficha do Norte Dois) buscando uma pessoa da sede | Não acha; só oferece pessoas da Alfa Norte |
+| 4 | Colar a URL da ficha da pessoa da sede | "Não encontrado", sem nenhum dado dela |
+| 5 | Ficha do Norte Um › aba Família | Domicílio aparece; os membros da sede vêm sem contato nem endereço e sem link para a ficha |
+| 6 | Pessoas › Famílias | A família da sede aparece (tem alguém da Alfa Norte); o nome do contato principal aparece, mas o celular e o endereço somem quando ele é da sede |
+| 7 | Ficha do Norte Um › Parentes | O pai ou a mãe da sede só com nome e parentesco, sem link |
+| 8 | Configurações › Auditoria | O Secretário de fábrica não tem a tela. Se quiser conferir: perfil duplicado com "Ver auditoria", atribuído só na Alfa Norte; aparecem só linhas da Alfa Norte |
+
+### 1.12 Ciclo de vida, acompanhamento e Painel
 
 Perfil: Secretário A; os passos 6 e 7 com o Pastor A.
 
@@ -271,25 +303,25 @@ Perfil: Secretário A; os passos 6 e 7 com o Pastor A.
 | 3 | "Transferir" para a Alfa Norte | Se a Alfa Norte não está no seletor atual, o perfil volta para a lista |
 | 4 | "Registrar acompanhamento" pelo perfil e pela linha da lista [celular] | Entra na linha do tempo e no card |
 | 5 | Painel: indicadores da jornada [pastor] | Contadores batem; clicar abre Pessoas com o chip do indicador |
-| 6 | "Desligar do rol" de uma pessoa com acesso (ex.: o Secretário Júnior do 1.6) | Acesso suspenso na hora; toast avisa; admins recebem e-mail (log) |
-| 7 | "Registrar falecimento" de outra pessoa com acesso | Mesmo efeito; a pessoa sai das listas de ativos |
+| 6 | "Desligar do rol" o Voluntário 1, com ele logado | Acesso suspenso na hora (ele cai no próximo clique); toast avisa; admins recebem e-mail (log) |
+| 7 | "Registrar falecimento" do Voluntário 2 | Mesmo efeito; a pessoa sai das listas de ativos |
 
-### 1.12 Importação pela planilha
+### 1.13 Importação pela planilha
 
 Perfil: Secretário A, com uma congregação escolhida no seletor (não "Todas").
 
 | Passo | O que fazer | O que deve acontecer |
 | --- | --- | --- |
-| 1 | Pessoas › Importar › baixar o modelo | `.xlsx` com o código do modelo na planilha e as listas suspensas |
-| 2 | Abrir no Excel e preencher: uma linha certa, uma com data inválida, uma duplicada (mesmo celular de alguém), um menor sem responsável | Dropdowns funcionam |
-| 3 | Enviar | Prévia mostra cada caso com a mensagem do back; nada gravado ainda [celular] |
-| 4 | Escolher "pular" num duplicado e "atualizar" noutro; marcar a declaração; confirmar | Relatório com o resultado; baixar o CSV |
+| 1 | Pessoas › Importar › baixar o modelo [pastor] | `.xlsx` com o código do modelo na planilha e as listas suspensas |
+| 2 | Abrir no Excel e preencher: uma linha certa, uma com data inválida, uma duplicada (mesmo celular de alguém), um menor sem responsável [pastor] | Dropdowns funcionam |
+| 3 | Enviar [pastor] | Prévia mostra cada caso com a mensagem do back; nada gravado ainda [celular] |
+| 4 | Escolher "pular" num duplicado e "atualizar" noutro; marcar a declaração; confirmar [pastor] | Relatório com o resultado; baixar o CSV |
 | 5 | Abrir o modelo no **Numbers**, editar, Arquivo › Exportar para › Excel (.xlsx) e enviar | Prévia funciona (o código do modelo vem da célula visível, mesmo sem a aba oculta) |
 | 6 | Subir o modelo no **Google Planilhas**, editar, Arquivo › Fazer download › Microsoft Excel (.xlsx) e enviar | Prévia funciona |
 | 7 | Enviar o modelo de outra congregação (baixe com outra selecionada) | Recusado: planilha de outra organização |
 | 8 | Enviar um `.xlsx` qualquer, sem o código | Recusado: modelo inválido |
 
-### 1.13 Contas a Receber e Financeiro
+### 1.14 Contas a Receber e Financeiro
 
 Perfil: Tesoureiro A.
 
@@ -301,7 +333,7 @@ Perfil: Tesoureiro A.
 | 4 | Contas a Pagar e cadastros (categorias, centros de custo, contas, fornecedores) | Abrem e gravam; fornecedor com CNPJ inválido recusado |
 | 5 | Abrir a pessoa da receita › aba Contribuições | Lançamentos dela aparecem |
 
-### 1.14 Testes negativos por papel
+### 1.15 Testes negativos por papel
 
 | Passo | Perfil | O que fazer | O que deve acontecer |
 | --- | --- | --- | --- |
@@ -314,7 +346,7 @@ Perfil: Tesoureiro A.
 | 7 | Secretário A | Configurações › Usuários, Perfis, Auditoria, Acesso do suporte | Não aparecem |
 | 8 | Secretário A | Painel | Sem os cartões financeiros |
 
-### 1.15 Auditoria e aba Histórico
+### 1.16 Auditoria e aba Histórico
 
 Perfil: Pastor A.
 
@@ -327,7 +359,7 @@ Perfil: Pastor A.
 | 5 | Perfil da pessoa › aba Histórico | Só alterações de Pessoas, com autor; "Ver acessos e alterações na Auditoria" abre a Auditoria filtrada pela pessoa |
 | 6 | Linhas da equipe iEzer (reenvio de convite, ações do suporte) | Autor "Suporte iEzer" |
 
-### 1.16 Acesso do suporte (lado da igreja)
+### 1.17 Acesso do suporte (lado da igreja)
 
 Fazer junto com a seção 2.8. Perfil: Pastor A.
 
@@ -338,11 +370,12 @@ Fazer junto com a seção 2.8. Perfil: Pastor A.
 | 3 | "Revogar" | Acesso encerrado na hora; o atendente perde os dados no próximo clique |
 | 4 | Recusar um pedido | Some dos pendentes; quem pediu recebe e-mail (log) |
 | 5 | "Autorizar acesso" por iniciativa da igreja | Prazo de 2h a 72h, padrão 24h; o acesso fica ativo na hora |
-| 6 | Pedido com escrita ainda aguardando o iEzer | Não aparece para a igreja |
-| 7 | Emergência aprovada pelo iEzer | Aparece ativa, sem "Revogar" |
-| 8 | Auditoria filtrada por "Suporte iEzer" | Leituras do atendente com o nome da tela |
+| 6 | "Revogar" o acesso do passo 5 | Encerrado. Só pode haver um acesso ativo por igreja: sem isso, os passos 2.8-12, 13 e 16 seriam recusados |
+| 7 | Pedido com escrita ainda aguardando o iEzer | Não aparece para a igreja |
+| 8 | Emergência aprovada pelo iEzer | Aparece ativa, sem "Revogar" |
+| 9 | Auditoria filtrada por "Suporte iEzer" | Leituras do atendente com o nome da tela |
 
-### 1.17 Faixa de avisos
+### 1.18 Faixa de avisos
 
 Fazer junto com a seção 2.9. Perfis: Pastor A e Secretário A.
 
@@ -355,29 +388,55 @@ Fazer junto com a seção 2.9. Perfis: Pastor A e Secretário A.
 | 5 | Aviso "só admins" | Pastor vê; Secretário não |
 | 6 | Chegar o horário de fim com a tela aberta | A faixa some sozinha |
 
-### 1.18 Tela de igreja suspensa
+### 1.19 Tela de igreja suspensa
 
-Fazer junto com a seção 2.6, na igreja B. Perfil: Pastor B.
+Fazer junto com a seção 2.6, na igreja B. Perfil: Pastor B2 (o admin recuperado na 2.6).
 
 | Passo | O que fazer | O que deve acontecer |
 | --- | --- | --- |
-| 1 | Pastor B logado quando o iEzer suspende a B | No próximo clique vai para "Igreja suspensa" [celular] |
+| 1 | Pastor B2 logado quando o iEzer suspende a B | No próximo clique vai para "Igreja suspensa" [celular] |
 | 2 | Tentar entrar de novo | Login leva à mesma tela, sem abrir sessão |
 | 3 | [depende: Google] Entrar com Google | Volta para a tela de igreja suspensa |
 | 4 | Abrir um convite pendente da B | Recusado com o aviso de igreja suspensa |
 | 5 | Reativada a B | Login volta a funcionar |
 
-### 1.19 Link público da exportação
+### 1.20 Link público da exportação
 
 Fazer junto com a seção 2.10, na igreja B. Sem login. [depende: chave do Storage no Render]
 
 | Passo | O que fazer | O que deve acontecer |
 | --- | --- | --- |
-| 1 | Pegar no log o e-mail da exportação pronta (para o responsável pela conta da B) | Link `/exportacao/<token>` |
+| 1 | Pegar no log o e-mail da exportação pronta (para o responsável pela conta da B; depois da 2.7, o Pastor B2) | Link `/exportacao/<token>` |
 | 2 | Abrir o link [celular] | Página com a igreja, o tamanho e o prazo; abrir não gasta o link |
 | 3 | "Baixar" | Baixa o `.zip` com um `.xlsx` por conjunto e o LEIA-ME; datas e valores certos no Excel |
 | 4 | Abrir o link de novo e clicar em "Baixar" | Já baixado; não baixa outra vez |
 | 5 | Link com um caractere trocado | Mensagem de link inválido, sem dados da igreja |
+
+### 1.21 Roteiro do pastor
+
+Só os passos marcados [pastor], em ordem, na conta dele (`hml.pastor@iezer.local`, perfil Pastor na sede). Ele usa o celular para o convite e o 2FA; o resto pode ser no computador.
+
+Antes da sessão, deixe pronto:
+
+- o convite dele criado (1.5-7), com o link copiado do log para mandar por WhatsApp;
+- pessoas cadastradas (1.7): membros, visitantes (um para promover) e aniversariantes do mês;
+- a família montada (1.9): casal, dois filhos (um menor) e um "Outro"; parentes em outro domicílio (1.10);
+- um pedido de acesso de leitura pendente na A, feito pelo Suporte e ainda sem resposta (2.8-2);
+- um aviso informativo no ar para a A (2.9);
+- um e-mail fictício novo para ele convidar (ex.: `hml.voluntario3@iezer.local`).
+
+| Ordem | Passos | O que ele faz |
+| --- | --- | --- |
+| 1 | 1.1-2, 1.1-4, 1.1-5, 1.1-10 | Abre o convite no celular, define a senha, aceita os termos, configura o 2FA e olha o Painel: checklist de primeiro acesso, sem a faixa de admin único (ele é o segundo admin) |
+| 2 | 1.18-1 | Vê a faixa do aviso e dispensa |
+| 3 | 1.4-1 | Confere Configurações › Organização |
+| 4 | 1.7-1, 1.7-3 | Pessoas: busca, atalhos e um cadastro rápido de visitante |
+| 5 | 1.8-1 | Abre uma pessoa e passa pelas abas |
+| 6 | 1.9-1, 1.10-1 | Famílias: lista, página da família e a aba Família da ficha |
+| 7 | 1.12-1, 1.12-5 | Promove o visitante e vê os indicadores do Painel |
+| 8 | 1.13-1 a 1.13-4 | Importação: baixa o modelo, preenche umas linhas, vê a prévia e confirma |
+| 9 | 1.5-1, 1.5-10 | Convida o Voluntário 3 a partir de uma pessoa; desativa e reativa o Secretário A |
+| 10 | 1.17-1 | Aprova ou recusa o pedido de acesso do suporte |
 
 ---
 
@@ -444,7 +503,7 @@ Perfil: qualquer papel. O painel guarda cache de 2 minutos: recarregue depois di
 | --- | --- | --- |
 | 1 | Abrir o Painel [celular] | Sete cartões, com contagem e nomes de igreja; nunca nome de pessoa |
 | 2 | Igreja B antes do Pastor B aceitar | B em "Sem administrador" |
-| 3 | Igreja A com só o Pastor A | A em "Com um administrador só"; some depois do segundo admin (1.5-7) |
+| 3 | Igreja A com só o Pastor A | A em "Com um administrador só". Depois da sessão do pastor (1.21), conferir que a A saiu desse cartão |
 | 4 | Login bloqueado na A (1.2-2) | A em "Com login bloqueado agora"; clicar abre a aba Usuários |
 | 5 | Pedido de acesso pendente (2.8) | Igreja em "Com pedido de acesso pendente"; clicar abre a aba Pedidos |
 | 6 | E-mail rejeitado (2.12) | Igreja em "E-mails rejeitados nos últimos 7 dias" |
@@ -453,6 +512,7 @@ Perfil: qualquer papel. O painel guarda cache de 2 minutos: recarregue depois di
 ### 2.5 Igrejas
 
 Perfis: Implantação (criar e editar), Suporte (ações sem acesso aos dados).
+Os passos 1 a 7 vêm antes da Parte 1. Os passos 8 a 16 dependem dela: faça-os depois da seção 1.5 (e o 12 depois do 1.2-2).
 
 | Passo | O que fazer | O que deve acontecer |
 | --- | --- | --- |
@@ -470,23 +530,26 @@ Perfis: Implantação (criar e editar), Suporte (ações sem acesso aos dados).
 | 12 | Suporte: "Destravar login" do usuário bloqueado em 1.2-2 | Destravado; responsável avisado; sem bloqueio, a ação não aparece |
 | 13 | Suporte: "Redefinir 2FA" do Pastor A, com motivo, chamado e verificação | 2FA apagado, sessões do Pastor encerradas, alerta a ele e aviso ao responsável |
 | 14 | "Redefinir 2FA" de um não admin (Secretário) | A ação não aparece |
-| 15 | Suporte: "Recuperar administrador" na B, com nome, e-mail e verificação | Convite de admin criado; o link não aparece na tela |
+| 15 | "Recuperar administrador" | Testado na 2.6-7, quando a B fica sem admin |
 | 16 | Auditoria da igreja A (Pastor A) | As ações acima com autor "Suporte iEzer", motivo e chamado |
 
 ### 2.6 Situação
 
-Perfil: Administrador 1. Pastor B logado em outro navegador nos passos 6 e 7 (seção 1.18).
+Perfil: Administrador 1 (Suporte no passo 7). Pastor B2 logado em outro navegador nos passos 9 e 10 (seção 1.19).
 **Antes do passo 5**, faça os passos 9 a 11 da seção 2.8: eles precisam da A Ativa e da B ainda em Implantação.
 
 | Passo | O que fazer | O que deve acontecer |
 | --- | --- | --- |
-| 1 | Suporte e Implantação: card "Situação" | Sem as ações |
+| 1 | Suporte e Implantação: card "Situação" | Implantação vê só "Marcar como ativa" (igreja em Implantação); Suporte, nenhuma ação. Suspender e Reativar são só do Administrador |
 | 2 | Igreja A, com o Pastor A já ativo: "Marcar como ativa" com motivo | A Ativa; e-mails no log |
 | 3 | Igreja B, antes do Pastor B aceitar o convite | "Marcar como ativa" desabilitado (sem admin ativo) |
 | 4 | Pastor B aceita o convite (1.1 com a conta dele) | Botão habilitado |
 | 5 | "Marcar como ativa" a B com motivo | B Ativa |
-| 6 | "Suspender" a B com motivo | B Suspensa; sessões da igreja derrubadas; Pastor B vê a tela de suspensa |
-| 7 | "Reativar" | B Ativa; Pastor B entra de novo (sem admin ativo, voltaria para Implantação) |
+| 6 | Pastor B, no app das igrejas: Pessoas › a própria ficha › "Desligar do rol" (ele é o único admin da B) | Acesso dele suspenso na hora. No log, e-mail à equipe (Suporte e Administradores) de igreja sem admin, sem nome nem situação da pessoa. No Painel (depois do cache), a B em "Sem administrador". Se o app não deixar a pessoa desligar a si mesma, anotar como dúvida (não como achado) e seguir com o passo 7 mesmo assim |
+| 7 | Suporte: aba Usuários da B › "Recuperar administrador" com o Pastor B2 (`hml.pastor.b2@iezer.local`), motivo, chamado e verificação | Convite de admin criado; o link não aparece na tela (pegar no log); responsável avisado |
+| 8 | Pastor B2 aceita o convite (1.1 com a conta dele) | B sai de "Sem administrador" no Painel |
+| 9 | "Suspender" a B com motivo | B Suspensa; sessões da igreja derrubadas; Pastor B2 vê a tela de suspensa |
+| 10 | "Reativar" | B Ativa; Pastor B2 entra de novo (sem admin ativo, voltaria para Implantação) |
 
 ### 2.7 Troca do responsável pela conta
 
@@ -498,28 +561,29 @@ Perfil: Implantação (ou Administrador), na igreja B. [depende: chave do Storag
 | 2 | Documento com data futura | Recusado |
 | 3 | Anexo acima de 10 MB; PDF falso | Recusados (tipo conferido pelo conteúdo) |
 | 4 | Mesmo responsável de hoje | Recusado |
-| 5 | Novo responsável, ata com número, PDF pequeno [celular] | Barra de progresso; troca feita; e-mails ao anterior, ao novo e aos admins (log) |
+| 5 | Novo responsável: o Pastor B2 (`hml.pastor.b2@iezer.local`), ata com número, PDF pequeno [celular] | Barra de progresso; troca feita; e-mails ao anterior (Pastor B), ao novo e aos admins (log) |
 | 6 | "Histórico de responsáveis" › abrir o documento | Abre numa aba nova; abertura registrada na Auditoria |
 | 7 | Copiar o link do documento e abrir depois de 5 minutos | Link vencido |
 | 8 | Suporte: procurar "Trocar" e abrir documento | Não aparecem |
 
 ### 2.8 Pedidos de acesso e modo suporte
 
-Perfis: Suporte, Implantação, Administradores 1 e 2; Pastor A no app das igrejas (seção 1.16).
+Perfis: Suporte, Implantação, Administradores 1 e 2; Pastor A no app das igrejas (seção 1.17).
 
 | Passo | O que fazer | O que deve acontecer |
 | --- | --- | --- |
 | 1 | Suporte, sem pedido: abrir o app das igrejas com a conta dele | Tela de conta da equipe sem acesso, com o link do back-office e Sair |
 | 2 | Suporte: igreja A › Pedidos de acesso › "Pedir acesso" só leitura, escopo Pessoas, com chamado | `PENDENTE`; admins da A avisados (log); aparece para o Pastor A |
-| 3 | Pastor A aprova (1.16-2); Suporte › "Abrir no modo suporte" | Aba nova no app das igrejas (em produção, pede login de novo); faixa fixa com igreja, modo e prazo, "Voltar ao back-office" |
+| 3 | Pastor A aprova (1.17-2); Suporte › "Abrir no modo suporte" | Aba nova no app das igrejas (em produção, pede login de novo); faixa fixa com igreja, modo e prazo, "Voltar ao back-office" |
 | 4 | Modo leitura: navegar em Pessoas [celular] | Sem criar, editar nem excluir; sem coluna Contato; telefone e e-mail como texto, sem "Ligar"/"WhatsApp" |
 | 5 | Modo leitura: Configurações › Perfis e Organização | Sem botões de gestão |
-| 6 | Pastor A revoga (1.16-3) | O atendente cai na tela de conta sem acesso no próximo clique |
+| 6 | Pastor A revoga (1.17-3) | O atendente cai na tela de conta sem acesso no próximo clique |
 | 7 | Suporte: pedido com escrita | `AGUARDANDO_IEZER`; não aparece para a igreja; Administradores avisados (log) |
 | 8 | Suporte tenta aprovar o próprio pedido | Sem "Aprovar"; quem pediu nunca aprova |
 | 9 | Implantação (só): pedido com escrita | Sem o switch de escrita |
 | 10 | Implantação: pedido de leitura na A (já Ativa, 2.6-2) | Recusado: só igreja em Implantação |
-| 11 | Implantação: pedido de leitura na B ainda em Implantação (antes da 2.6-5) | Aceito, `PENDENTE` || 12 | [depende: segundo Administrador] Administrador 1 pede com escrita; Administrador 2 aprova | Vai para a igreja (`PENDENTE`); quem pediu recebe e-mail |
+| 11 | Implantação: pedido de leitura na B ainda em Implantação (antes da 2.6-5) | Aceito, `PENDENTE` |
+| 12 | [depende: segundo Administrador] Administrador 1 pede com escrita; Administrador 2 aprova | Vai para a igreja (`PENDENTE`); quem pediu recebe e-mail |
 | 13 | Pastor A aprova; atendente edita uma pessoa no modo suporte | Grava; na Auditoria da A, autor "Suporte iEzer" |
 | 14 | Modo escrita: criar perfil ou congregação | Recusado (Acesso e Organização nunca recebem escrita do suporte) |
 | 15 | "Encerrar" o pedido ativo pelo admin | Acesso cai na hora |
@@ -533,7 +597,7 @@ Perfis: Suporte, Implantação, Administradores 1 e 2; Pastor A no app das igrej
 
 ### 2.9 Avisos
 
-Perfis: Administrador 1 e Suporte; igreja A no app das igrejas (seção 1.17).
+Perfis: Administrador 1 e Suporte; igreja A no app das igrejas (seção 1.18).
 
 | Passo | O que fazer | O que deve acontecer |
 | --- | --- | --- |
@@ -546,7 +610,7 @@ Perfis: Administrador 1 e Suporte; igreja A no app das igrejas (seção 1.17).
 | 7 | Aviso importante para "só admins" das igrejas Ativas | Só o Pastor A vê |
 | 8 | Fim no passado | Recusado |
 | 9 | "Encerrar" um no ar | Some da igreja; status Encerrado |
-| 10 | Contagens de vistos e dispensados | Batem com o que foi feito na 1.17 |
+| 10 | Contagens de vistos e dispensados | Batem com o que foi feito na 1.18 |
 | 11 | Público "por situação" | Só oferece Implantação e Ativa (igreja suspensa não vê avisos) |
 
 ### 2.10 Fim de contrato
@@ -556,14 +620,14 @@ Perfil: Administrador 1, na igreja B. [depende: chave do Storage no Render]
 | Passo | O que fazer | O que deve acontecer |
 | --- | --- | --- |
 | 1 | Igreja A (Ativa): Visão geral | Sem o card "Fim de contrato" |
-| 2 | "Suspender" a B de novo (como na 2.6-6) | Card "Fim de contrato" aparece |
+| 2 | "Suspender" a B de novo (como na 2.6-9) | Card "Fim de contrato" aparece |
 | 3 | Suporte e Implantação: card | Sem "Exportar dados" nem "Registrar eliminação" |
-| 4 | "Exportar dados" | Andamento "Processando" e depois "Disponível"; o link vai só ao responsável (log, seção 1.19); a tela nunca mostra link nem arquivo |
+| 4 | "Exportar dados" | Andamento "Processando" e depois "Disponível"; o link vai só ao responsável (log, seção 1.20); a tela nunca mostra link nem arquivo |
 | 5 | Pedir outra exportação enquanto uma processa | Recusado |
 | 6 | Pedir outra com uma disponível e não baixada | A anterior vira "Substituída"; o link antigo deixa de valer |
 | 7 | "Registrar eliminação" com anexo inválido (PDF falso) | Recusado pelo tipo do arquivo |
 | 8 | "Registrar eliminação" com PDF certo, ainda com a exportação à espera do download | Recusado: há exportação disponível |
-| 9 | Responsável baixa (1.19-3); pedir outra exportação | "Baixada"; nova exportação recusada |
+| 9 | Responsável baixa (1.20-3); pedir outra exportação | "Baixada"; nova exportação recusada |
 | 10 | "Registrar eliminação" de novo | Recusado, com a lista do que ainda falta apagar no banco |
 | 11 | **Não rodar** o `docs/roteiro-eliminacao.md` na homologação | A B termina Suspensa |
 
