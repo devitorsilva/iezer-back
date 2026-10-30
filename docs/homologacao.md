@@ -77,7 +77,7 @@ Duas igrejas novas, criadas pela tela "Nova igreja" do admin (seção 2.5) com a
 | Igreja | Para quê | Congregação | Primeiro admin (Pastor) | Outros usuários |
 | --- | --- | --- | --- | --- |
 | **A** — "Igreja Homologação Alfa", CNPJ `14.022.026/0001-45` | Jornada da piloto (Parte 1), pedidos de acesso, avisos, painel | "Congregação Alfa Norte" | `hml.pastor.a@iezer.local` (**Pastor A = você**) | Ver a tabela abaixo, todos convidados pelo Pastor A na seção 1.5 |
-| **B** — "Igreja Homologação Beta", CNPJ `14.022.027/0001-90` | Situação, troca do responsável, fim de contrato (termina Suspensa) | nenhuma | `hml.pastor.b@iezer.local` | `hml.pastor.b2@iezer.local` (Pastor B2), admin novo pelo "Recuperar administrador" na 2.6 |
+| **B** — "Igreja Homologação Beta", CNPJ `14.022.027/0001-90` | Situação, troca do responsável, fim de contrato (termina Suspensa) | nenhuma | `hml.pastor.b@iezer.local` | `hml.secretario.b@iezer.local` (Secretário B, Secretário na sede), convidado pelo Pastor B na 2.6; `hml.pastor.b2@iezer.local` (Pastor B2), admin novo pelo "Recuperar administrador" na 2.6 |
 
 Usuários da igreja A:
 
@@ -530,12 +530,12 @@ Os passos 1 a 7 vêm antes da Parte 1. Os passos 8 a 16 dependem dela: faça-os 
 | 12 | Suporte: "Destravar login" do usuário bloqueado em 1.2-2 | Destravado; responsável avisado; sem bloqueio, a ação não aparece |
 | 13 | Suporte: "Redefinir 2FA" do Pastor A, com motivo, chamado e verificação | 2FA apagado, sessões do Pastor encerradas, alerta a ele e aviso ao responsável |
 | 14 | "Redefinir 2FA" de um não admin (Secretário) | A ação não aparece |
-| 15 | "Recuperar administrador" | Testado na 2.6-7, quando a B fica sem admin |
+| 15 | "Recuperar administrador" | Testado na 2.6-9, quando a B fica sem admin |
 | 16 | Auditoria da igreja A (Pastor A) | As ações acima com autor "Suporte iEzer", motivo e chamado |
 
 ### 2.6 Situação
 
-Perfil: Administrador 1 (Suporte no passo 7). Pastor B2 logado em outro navegador nos passos 9 e 10 (seção 1.19).
+Perfil: Administrador 1 (Suporte no passo 9). Pastor B2 logado em outro navegador nos passos 11 e 12 (seção 1.19).
 **Antes do passo 5**, faça os passos 9 a 11 da seção 2.8: eles precisam da A Ativa e da B ainda em Implantação.
 
 | Passo | O que fazer | O que deve acontecer |
@@ -545,11 +545,13 @@ Perfil: Administrador 1 (Suporte no passo 7). Pastor B2 logado em outro navegado
 | 3 | Igreja B, antes do Pastor B aceitar o convite | "Marcar como ativa" desabilitado (sem admin ativo) |
 | 4 | Pastor B aceita o convite (1.1 com a conta dele) | Botão habilitado |
 | 5 | "Marcar como ativa" a B com motivo | B Ativa |
-| 6 | Pastor B, no app das igrejas: Pessoas › a própria ficha › "Desligar do rol" (ele é o único admin da B) | Acesso dele suspenso na hora. No log, e-mail à equipe (Suporte e Administradores) de igreja sem admin, sem nome nem situação da pessoa. No Painel (depois do cache), a B em "Sem administrador". Se o app não deixar a pessoa desligar a si mesma, anotar como dúvida (não como achado) e seguir com o passo 7 mesmo assim |
-| 7 | Suporte: aba Usuários da B › "Recuperar administrador" com o Pastor B2 (`hml.pastor.b2@iezer.local`), motivo, chamado e verificação | Convite de admin criado; o link não aparece na tela (pegar no log); responsável avisado |
-| 8 | Pastor B2 aceita o convite (1.1 com a conta dele) | B sai de "Sem administrador" no Painel |
-| 9 | "Suspender" a B com motivo | B Suspensa; sessões da igreja derrubadas; Pastor B2 vê a tela de suspensa |
-| 10 | "Reativar" | B Ativa; Pastor B2 entra de novo (sem admin ativo, voltaria para Implantação) |
+| 6 | Pastor B, no app das igrejas: Configurações › Usuários › convidar o Secretário B (`hml.secretario.b@iezer.local`, perfil Secretário na sede); ele aceita no seu perfil de navegador | Secretário B ativo |
+| 7 | Secretário B: Pessoas › ficha do Pastor B › "Desligar do rol" (o Pastor B é o único admin da B) | Acesso do Pastor B suspenso na hora. No log, e-mail à equipe (Suporte e Administradores) de igreja sem admin, sem nome nem situação da pessoa. No Painel (depois do cache), a B em "Sem administrador" |
+| 8 | Opcional: Secretário B tenta "Desligar do rol" a própria ficha | Se o app bloquear, anotar como dúvida (não como achado). Se deixar, o acesso dele é suspenso; não atrapalha os passos seguintes |
+| 9 | Suporte: aba Usuários da B › "Recuperar administrador" com o Pastor B2 (`hml.pastor.b2@iezer.local`), motivo, chamado e verificação | Convite de admin criado; o link não aparece na tela (pegar no log); responsável avisado |
+| 10 | Pastor B2 aceita o convite (1.1 com a conta dele) | B sai de "Sem administrador" no Painel |
+| 11 | "Suspender" a B com motivo | B Suspensa; sessões da igreja derrubadas; Pastor B2 vê a tela de suspensa |
+| 12 | "Reativar" | B Ativa; Pastor B2 entra de novo (sem admin ativo, voltaria para Implantação) |
 
 ### 2.7 Troca do responsável pela conta
 
@@ -620,7 +622,7 @@ Perfil: Administrador 1, na igreja B. [depende: chave do Storage no Render]
 | Passo | O que fazer | O que deve acontecer |
 | --- | --- | --- |
 | 1 | Igreja A (Ativa): Visão geral | Sem o card "Fim de contrato" |
-| 2 | "Suspender" a B de novo (como na 2.6-9) | Card "Fim de contrato" aparece |
+| 2 | "Suspender" a B de novo (como na 2.6-11) | Card "Fim de contrato" aparece |
 | 3 | Suporte e Implantação: card | Sem "Exportar dados" nem "Registrar eliminação" |
 | 4 | "Exportar dados" | Andamento "Processando" e depois "Disponível"; o link vai só ao responsável (log, seção 1.20); a tela nunca mostra link nem arquivo |
 | 5 | Pedir outra exportação enquanto uma processa | Recusado |
