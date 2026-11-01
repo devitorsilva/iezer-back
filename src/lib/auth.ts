@@ -392,7 +392,7 @@ export const auth = betterAuth({
           await auditLogin("login_bloqueado", user.id, ctx.headers, { actorUserId: null, after: { lockedUntil } });
           const team = await isTeamUser(user.id);
           const church = team ? null : await findUserChurch(user.id);
-          await trySendMail(loginLockedNotice({ to: email, name: user.name, churchName: church?.name ?? null, team }));
+          await trySendMail(loginLockedNotice({ to: email, name: user.name, churchName: church?.name ?? null, lockedUntil, team }));
 
           // Conta da equipe: aviso também aos Administradores iEzer (Segurança da equipe › Tentativas).
           if (team) {

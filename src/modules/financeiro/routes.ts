@@ -1,6 +1,7 @@
 import { FastifyPluginAsync } from "fastify";
 import { payableRoutes } from "./contas-a-pagar/routes.js";
 import { receivableRoutes } from "./contas-a-receber/routes.js";
+import { financePanelRoutes } from "./painel/routes.js";
 
 const sections = ["contas-a-pagar", "contas-a-receber"];
 
@@ -14,4 +15,5 @@ export const financeiroRoutes: FastifyPluginAsync = async (app) => {
 
   await app.register(payableRoutes);
   await app.register(receivableRoutes);
+  await app.register(financePanelRoutes);
 };

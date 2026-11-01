@@ -275,19 +275,36 @@ export function newDeviceLoginNotice(input: {
   };
 }
 
-// Login bloqueado após erros seguidos (PRD Acesso, A6). A equipe não tem "Esqueci minha senha"
-// no back-office.
-export function loginLockedNotice(input: { to: string; name: string; churchName: string | null; team?: boolean }): MailMessage {
+const dateTime = new Intl.DateTimeFormat("pt-BR", {
+  timeZone: "America/Sao_Paulo",
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+export const formatDateTime = (date: Date) => `${dateTime.format(date)} (horário de Brasília)`;
+
+// Login bloqueado após erros seguidos (PRD Acesso, A6), com o horário real: o bloqueio cresce a
+// cada série. A equipe não tem "Esqueci minha senha" no back-office.
+export function loginLockedNotice(input: {
+  to: string;
+  name: string;
+  churchName: string | null;
+  lockedUntil: Date;
+  team?: boolean;
+}): MailMessage {
   return {
     to: input.to,
     churchName: input.churchName,
     subject: "Login bloqueado temporariamente no iEzer",
     text:
       `Olá, ${firstName(input.name)}!\n\n` +
-      `Houve várias tentativas erradas de entrar no iEzer com o seu e-mail, e o login foi bloqueado por um tempo.\n\n` +
+      `Houve várias tentativas erradas de entrar no iEzer com o seu e-mail, e o login está bloqueado até ${formatDateTime(input.lockedUntil)}.\n\n` +
       (input.team
-        ? `Se foi você, espere 15 minutos ou fale com um Administrador iEzer. Se não foi, avise um Administrador iEzer.`
-        : `Se foi você, espere um pouco ou use "Esqueci minha senha". Se não foi, troque a sua senha assim que puder.`) +
+        ? `Se foi você, espere até esse horário ou fale com um Administrador iEzer. Se não foi, avise um Administrador iEzer.`
+        : `Se foi você, espere até esse horário ou use "Esqueci minha senha". Se não foi, troque a sua senha assim que puder.`) +
       signature(input.team),
   };
 }

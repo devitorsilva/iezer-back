@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { isValidAnyCnpj, normalizeAnyCnpj } from "../../lib/cnpj.js";
-import { normalizePhone } from "../../lib/phone.js";
+import { normalizePhone, refinePhone } from "../../lib/phone.js";
 
 export function blankToNull(value: unknown) {
   if (typeof value !== "string") return value;
@@ -17,7 +17,7 @@ const cnpj = z.preprocess(blankToNull, cnpjValue.nullable().optional());
 
 export const phoneValue = z
   .string({ error: "Informe o telefone." })
-  .refine((value) => normalizePhone(value) !== null, "Telefone inválido. Informe DDD e número.")
+  .superRefine(refinePhone)
   .transform((value) => normalizePhone(value)!);
 
 export const contactPhone = z.preprocess(blankToNull, phoneValue.nullable().optional());

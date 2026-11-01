@@ -1,6 +1,6 @@
 import type { TeamRole } from "@prisma/client";
 import { env } from "../config/env.js";
-import { INVITE_TTL_MS, TEAM_SIGNATURE as SIGNATURE } from "./emails.js";
+import { formatDateTime, INVITE_TTL_MS, TEAM_SIGNATURE as SIGNATURE } from "./emails.js";
 import type { MailMessage } from "./mailer.js";
 import { TEAM_ROLE_LABELS } from "./team.js";
 
@@ -13,16 +13,6 @@ export const teamInviteUrl = (token: string) => `${env.ADMIN_WEB_ORIGIN}/convite
 
 const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? name;
 
-const dateTime = new Intl.DateTimeFormat("pt-BR", {
-  timeZone: "America/Sao_Paulo",
-  day: "2-digit",
-  month: "2-digit",
-  year: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-});
-
-const formatDateTime = (date: Date) => `${dateTime.format(date)} (horário de Brasília)`;
 
 export const teamRolesText = (roles: readonly TeamRole[]) => roles.map((role) => TEAM_ROLE_LABELS[role]).join(", ");
 

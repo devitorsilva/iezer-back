@@ -20,6 +20,7 @@ import {
   TWO_FACTOR_REQUIRED_MESSAGE,
   TWO_FACTOR_SETUP_REQUIRED_CODE,
   TWO_FACTOR_SETUP_REQUIRED_MESSAGE,
+  twoFactorMethods,
 } from "./two-factor.js";
 
 declare module "fastify" {
@@ -68,6 +69,8 @@ export async function requireSession(request: FastifyRequest, reply: FastifyRepl
       statusCode: 403,
       code: TWO_FACTOR_REQUIRED_CODE,
       message: TWO_FACTOR_REQUIRED_MESSAGE,
+      // A tela de verificação mostra só as formas que a conta tem.
+      methods: await twoFactorMethods(response.user.id),
     });
   }
 

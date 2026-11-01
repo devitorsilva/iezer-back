@@ -13,6 +13,14 @@ export const TWO_FACTOR_SETUP_REQUIRED_CODE = "TWO_FACTOR_SETUP_REQUIRED";
 export const TWO_FACTOR_SETUP_REQUIRED_MESSAGE =
   "Você tem permissões protegidas: configure a verificação em duas etapas para continuar.";
 
+// Formas de verificar que a conta tem, pela mesma regra do plugin no /sign-in/email: app só com o
+// TOTP verificado; código por e-mail para todos. Os códigos de recuperação moram na mesma linha do
+// TOTP, então existem exatamente quando há "totp".
+export async function twoFactorMethods(userId: string) {
+  const totp = await prisma.twoFactor.findFirst({ where: { userId, verified: true }, select: { id: true } });
+  return totp ? (["totp", "otp"] as const) : (["otp"] as const);
+}
+
 // 2FA obrigatório para quem tem permissão protegida numa organização ativa (RF-CV07). Desde a
 // Sprint 12, o login pelo Google não dispensa o 2FA do iEzer (A3 revisto). O atendente do
 // suporte sempre usa 2FA (RF-SP06), e toda a equipe iEzer só pelo app autenticador (B2).

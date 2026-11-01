@@ -30,7 +30,7 @@ export const onboardingRoutes: FastifyPluginAsync = async (app) => {
           where: { churchId, status: "PENDENTE", expiresAt: { gt: now }, assignments: { some: { profile } } },
         });
 
-      const [church, activeAdmins, invitedAdmins, secretaries, invitedSecretaries, treasurers, invitedTreasurers] =
+      const [church, activeAdmins, invitedAdmins, secretaries, invitedSecretaries, treasurers, invitedTreasurers, imports] =
         await Promise.all([
           prisma.organization.findUnique({ where: { id: churchId }, select: { congregationsReviewedAt: true } }),
           countUsers(profileWithAdmin),
@@ -39,6 +39,14 @@ export const onboardingRoutes: FastifyPluginAsync = async (app) => {
           countInvites(factoryProfile("SECRETARIO")),
           countUsers(factoryProfile("TESOUREIRO")),
           countInvites(factoryProfile("TESOUREIRO")),
+          // Importação confirmada pela planilha, na sede ou numa congregação (o log é a única marca).
+          prisma.auditLog.count({
+            where: {
+              module: "PESSOAS",
+              action: "importar",
+              organization: { OR: [{ id: churchId }, { parentId: churchId }] },
+            },
+          }),
         ]);
 
       return {
@@ -47,8 +55,7 @@ export const onboardingRoutes: FastifyPluginAsync = async (app) => {
           secondAdminInvited: activeAdmins + invitedAdmins >= 2,
           secretaryInvited: secretaries + invitedSecretaries > 0,
           treasurerInvited: treasurers + invitedTreasurers > 0,
-          // Importação pela planilha chega na Sprint 11.
-          peopleImported: false,
+          peopleImported: imports > 0,
         },
         singleAdmin: activeAdmins <= 1,
       };

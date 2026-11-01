@@ -329,7 +329,7 @@ Log: `criar_convite`, `reenviar_convite`, `gerar_link_convite`, `cancelar_convit
 - `secondAdminInvited`: dois ou mais admins somando usuários ativos e convites válidos com `acesso.perfis.gerenciar`.
 - `secretaryInvited` e `treasurerInvited`: alguém (usuário ativo ou convite válido) com o perfil de fábrica correspondente.
 - `singleAdmin`: só um usuário **ativo** com `acesso.perfis.gerenciar`.
-- `peopleImported` fica `false` até a Sprint 11.
+- `peopleImported`: importação confirmada pela planilha na igreja (desde a Sprint 14, lote 2).
 
 ### `GET /acesso/perfis` (alterado)
 
@@ -1212,3 +1212,31 @@ E-mail de conta da equipe (membro ou convite da equipe válido) não pode ser re
 | `PUT /admin/igrejas/:id/contatos/responsavel`, `PUT /admin/igrejas/:id/contatos/encarregado-lgpd` | `email` |
 | `POST /admin/igrejas/:id/responsavel/troca` | `newOwner.email` (recusa antes do upload) |
 | `PUT /organizacao/encarregado-lgpd` | `email` |
+
+## Sprint 14 — correções, lote 2
+
+### `GET /financeiro/painel` (novo; `financeiro.pagar.ver` ou `financeiro.receber.ver`)
+
+Cartões e faixa de vencidas do Painel do app das igrejas, nas organizações da requisição (inclusive "Todas as congregações"). Query `periodo`: `hoje` | `mes` (padrão) | `ano`, no fuso de São Paulo.
+
+```json
+{
+  "period": { "key": "mes", "start": "2026-11-01", "end": "2026-11-30" },
+  "payables": { "overdue": { "count": 3, "amount": 1673.55 }, "dueSoon": { "count": 0, "amount": 0 }, "settledInPeriod": 0 },
+  "receivables": { "overdue": { "count": 1, "amount": 100 }, "dueSoon": { "count": 0, "amount": 0 }, "settledInPeriod": 0 },
+  "balance": { "amount": -1723.55, "accounts": 1, "withoutAccount": -1600 }
+}
+```
+
+- `payables` só com `financeiro.pagar.ver`, `receivables` só com `financeiro.receber.ver`; sem a permissão, `null`. `balance` exige as duas.
+- Vencida: não paga/recebida, com vencimento antes de hoje. `dueSoon`: de hoje até hoje + 7, inclusive. `settledInPeriod`: soma das baixas (`settledAmount`, ou o valor da conta) com `settledAt` no período.
+- `balance.amount`: saldo inicial de todas as contas bancárias (inclusive inativas) mais recebimentos menos pagamentos baixados. `accounts`: contas bancárias contadas. `withoutAccount`: parte das baixas sem conta bancária informada (recebido menos pago), já incluída no saldo.
+
+### Outras mudanças
+
+- `GET /acesso/onboarding`: `checklist.peopleImported` é verdadeiro com uma importação confirmada (ação `importar` no log) na sede ou numa congregação.
+- 403 `TWO_FACTOR_REQUIRED` do `requireSession` (sessão do Google com o código pendente, inclusive `GET /me`) traz `methods`: `["totp", "otp"]` com o app autenticador verificado, `["otp"]` sem ele (mesma regra do `twoFactorMethods` do `/sign-in/email`). Códigos de recuperação existem só com `totp`.
+- `POST /admin/igrejas`: confere todos os campos antes de gravar e responde 409 `CHURCH_CONFLICTS` (mensagem = a do primeiro) com `issues: [{ path, code, message, churchId? }]`. `path`: `congregations` (`ORGANIZATION_NAME_TAKEN`), `cnpj` (`CHURCH_CNPJ_TAKEN`, com `churchId`), `admin.email` (`TEAM_EMAIL`, `EMAIL_IN_OTHER_CHURCH`, `USER_EXISTS`, `INVITE_PENDING`), `accountOwner.email` e `lgpdOfficer.email` (`TEAM_EMAIL`). Substitui os erros avulsos dessas conferências; `CHURCH_CNPJ_TAKEN` avulso continua na corrida do índice único.
+- `Invite.assignments[]` e `UserListItem.assignments[]` (`/acesso/convites`, `/acesso/usuarios`) ganham `isSede`.
+- Telefone recusado (Pessoas e contatos da Organização): a mensagem diz o motivo: "Celular deve ter 9 dígitos e começar com 9.", "Telefone fixo deve ter 8 dígitos e começar com 2 a 5.", "DDD inválido." ou "Telefone inválido. Informe DDD e número.".
+- E-mail de login bloqueado (igreja e equipe): "bloqueado até dd/mm/aaaa, hh:mm (horário de Brasília)", no lugar de "espere 15 minutos" / "espere um pouco".

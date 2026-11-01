@@ -39,22 +39,51 @@ async function assertCnpjAvailable(db: Db, cnpj: string) {
   if (other) throw cnpjTakenError(other.id);
 }
 
+interface FieldIssue {
+  path: string;
+  code: string;
+  message: string;
+  churchId?: string;
+}
+
+// Conferência de um campo: o erro de negócio vira um item da lista em vez de interromper as outras.
+async function fieldIssue(path: string, check: () => unknown): Promise<FieldIssue | null> {
+  try {
+    await check();
+    return null;
+  } catch (error) {
+    if (!(error instanceof AppError) || error.statusCode >= 500) throw error;
+    const churchId = error.details?.churchId;
+    return { path, code: error.code, message: error.message, ...(typeof churchId === "string" ? { churchId } : {}) };
+  }
+}
+
+// Antes de gravar, todos os campos de uma vez (A19): nomes repetidos, CNPJ, e-mail de outra igreja
+// ou da equipe (RF-BO14, RF-CV08). O front marca cada campo e rola até o primeiro. O convite
+// confere o e-mail de novo.
+async function assertFieldsAvailable(db: Db, input: CreateChurchInput) {
+  const checks = [
+    await fieldIssue("congregations", () => assertDistinctNames(input.name, input.congregations)),
+    await fieldIssue("cnpj", () => assertCnpjAvailable(db, input.cnpj)),
+    await fieldIssue("admin.email", () => assertLoginEmailAvailable(db, input.admin.email, "")),
+    await fieldIssue("accountOwner.email", () => assertNotTeamContactEmail(input.accountOwner.email, "accountOwner.email", db)),
+    input.lgpdOfficer
+      ? await fieldIssue("lgpdOfficer.email", () => assertNotTeamContactEmail(input.lgpdOfficer!.email, "lgpdOfficer.email", db))
+      : null,
+  ];
+  const issues = checks.filter((issue): issue is FieldIssue => issue !== null);
+  if (issues.length > 0) throw new AppError(409, "CHURCH_CONFLICTS", issues[0].message, { issues });
+}
+
 // Criação de igreja (RF-BO12 a RF-BO14, RT-BB05), no lugar do script igreja:criar. Numa transação:
 // sede em Implantação, congregações, contatos, perfis de fábrica, listas, Pessoa do primeiro admin e
 // convite com o perfil Pastor na sede. O e-mail do convite sai depois do commit; o link não volta
 // para a equipe (B8: só o convidado entra).
 export async function createChurch(actor: AuditActor, input: CreateChurchInput) {
-  assertDistinctNames(input.name, input.congregations);
-
   const created = await runAudited(
     actor,
     async (tx, audit) => {
-      await assertCnpjAvailable(tx, input.cnpj);
-      // Antes de gravar, para recusar logo o e-mail de outra igreja ou da equipe (RF-BO14, RF-CV08).
-      // O convite confere de novo.
-      await assertLoginEmailAvailable(tx, input.admin.email, "");
-      await assertNotTeamContactEmail(input.accountOwner.email, "accountOwner.email", tx);
-      if (input.lgpdOfficer) await assertNotTeamContactEmail(input.lgpdOfficer.email, "lgpdOfficer.email", tx);
+      await assertFieldsAvailable(tx, input);
 
       const churchSlug = await uniqueSlug(tx, slugify(input.name));
       const church = await tx.organization.create({

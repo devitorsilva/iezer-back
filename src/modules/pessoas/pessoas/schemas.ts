@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { isCivilDate, parseCivilDate } from "../../../lib/civil-date.js";
 import { isValidCpf, normalizeCpf } from "../../../lib/cpf.js";
-import { normalizePhone } from "../../../lib/phone.js";
+import { normalizePhone, refinePhone } from "../../../lib/phone.js";
 import { JOURNEY_INDICATORS } from "./jornada.js";
 
 export const PERSON_BONDS = ["VISITANTE", "NOVO_CONVERTIDO", "CONGREGADO", "MEMBRO", "MEMBRO_EM_FORMACAO"] as const;
@@ -32,7 +32,7 @@ export const civilDate = nullable(
 const phone = nullable(
   z
     .string()
-    .refine((value) => normalizePhone(value) !== null, "Telefone inválido. Informe DDD e número.")
+    .superRefine(refinePhone)
     .transform((value) => normalizePhone(value)!),
 );
 

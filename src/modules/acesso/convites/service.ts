@@ -57,6 +57,8 @@ function mapInvite(invite: InviteWithRelations) {
     assignments: invite.assignments.map(({ organization, profile }) => ({
       organizationId: organization.id,
       organizationName: organization.name,
+      // A lista mostra "(sede)" ao lado do nome (A29).
+      isSede: organization.type === "SEDE",
       profileId: profile.id,
       profileName: profile.name,
     })),
