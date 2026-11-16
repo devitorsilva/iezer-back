@@ -5,6 +5,7 @@ import { logSupportRead } from "../lib/support-log.js";
 import { acessoCatalogRoutes, acessoRoutes } from "./acesso/routes.js";
 import { adminRoutes, publicTeamInviteRoutes } from "./admin/routes.js";
 import { authRoutes } from "./auth/routes.js";
+import { agendaRoutes } from "./agenda/routes.js";
 import { cadastroRoutes } from "./cadastro/routes.js";
 import { publicInviteRoutes } from "./convites/routes.js";
 import { publicExportRoutes } from "./exportacoes/routes.js";
@@ -16,6 +17,7 @@ import { pessoasRoutes } from "./pessoas/routes.js";
 import { relatoriosRoutes } from "./relatorios/routes.js";
 import { placeholdersRoutes } from "./placeholders/routes.js";
 import { webhookRoutes } from "./webhooks/routes.js";
+import { myAgendaNotificationRoutes } from "./me/notificacoes/routes.js";
 
 export const registerModuleRoutes: FastifyPluginAsync = async (app) => {
   // Público: handler do Better Auth, páginas dos convites (igreja e equipe), confirmação da troca de e-mail,
@@ -54,6 +56,8 @@ export const registerModuleRoutes: FastifyPluginAsync = async (app) => {
       await organizationApp.register(cadastroRoutes, { prefix: "/cadastro" });
       await organizationApp.register(financeiroRoutes, { prefix: "/financeiro" });
       await organizationApp.register(relatoriosRoutes, { prefix: "/relatorios" });
+      await organizationApp.register(agendaRoutes, { prefix: "/agenda" });
+      await organizationApp.register(myAgendaNotificationRoutes, { prefix: "/me/notificacoes" });
     });
   });
 };
