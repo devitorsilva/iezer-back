@@ -1,5 +1,6 @@
 export {
   materializationHorizon,
+  lockAgendaSeries,
   materializeAgendaSeries,
   materializeAgendaSeriesInTransaction,
   missingMaterializationDates,

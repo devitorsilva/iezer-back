@@ -35,6 +35,11 @@ export class EventRepository {
   }
 
   setStatus(id: string, status: AgendaEventStatus, db: AgendaDb) {
-    return db.agendaEventSeries.update({ where: { id }, data: { status, ...(status === "PUBLICADO" ? { publishedAt: new Date() } : {}), ...(status === "CANCELADO" ? { cancelledAt: new Date() } : {}) } });
+    return db.agendaEventSeries.update({ where: { id }, data: {
+      status,
+      ...(status === "PUBLICADO" ? { publishedAt: new Date() } : {}),
+      ...(status === "CANCELADO" ? { cancelledAt: new Date() } : {}),
+      ...(status === "CONCLUIDO" ? { completedAt: new Date() } : {}),
+    } });
   }
 }

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { materializationHorizon, missingMaterializationDates, truncateRecurrenceBefore } from "../../src/modules/agenda/materializacao/service.js";
+import * as materialization from "../../src/modules/agenda/materializacao/service.js";
+
+const { materializationHorizon, missingMaterializationDates, truncateRecurrenceBefore } = materialization;
 
 const monthly = {
   frequency: "MONTHLY" as const,
@@ -59,4 +61,14 @@ test("corte de serie encerra a regra antiga imediatamente antes do pivo", () => 
   ));
   assert.equal(truncated.count, undefined);
   assert.equal(truncated.endsAtLocal, "2026-11-15T09:59:59");
+});
+
+test("worker e mutações compartilham a mesma advisory lock por série", async () => {
+  const calls: unknown[][] = [];
+  const db = { $queryRaw: async (...args: unknown[]) => { calls.push(args); return []; } };
+  const api = materialization as unknown as { lockAgendaSeries: (db: unknown, seriesId: string) => Promise<void> };
+  await api.lockAgendaSeries?.(db, "serie-1");
+  assert.equal(calls.length, 1);
+  assert.match(String(calls[0][0]), /pg_advisory_xact_lock/);
+  assert.deepEqual(calls[0].slice(1), ["serie-1"]);
 });

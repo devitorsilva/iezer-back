@@ -4,12 +4,46 @@ import { runAudited } from "../../../lib/audit.js";
 import { AppError } from "../../../lib/errors.js";
 import { enqueueAgendaNotifications } from "../notificacoes/outbox.js";
 import { agendaRecipientNotification, loadOccurrenceRecipients, uniqueAgendaRecipients } from "../notificacoes/recipients.js";
+import { reservationSpacePlan } from "../eventos/helpers.js";
 import { isReservationConstraintError } from "../reservas/service.js";
+import { lockAgendaSeries } from "../materializacao/service.js";
 import { OccurrenceRepository, type OccurrenceDb, type OccurrenceDetail } from "./repository.js";
 import type { AttendancePayload, OccurrenceUpdate, ResponsePayload, ScalePayload } from "./schemas.js";
 
 function snapshot(occurrence: OccurrenceDetail) {
   return { id: occurrence.id, seriesId: occurrence.seriesId, startsAt: occurrence.startsAt.toISOString(), endsAt: occurrence.endsAt.toISOString(), status: occurrence.status };
+}
+
+export function canSelfRespondToScale(input: {
+  manager: boolean;
+  actorPersonId: string | null;
+  items: Array<{ personId: string; status: string }>;
+  existingPersonIds: string[];
+}) {
+  if (input.manager) return true;
+  const item = input.items[0];
+  return input.items.length === 1
+    && Boolean(input.actorPersonId)
+    && item.personId === input.actorPersonId
+    && item.status !== "PENDENTE"
+    && input.existingPersonIds.includes(item.personId);
+}
+
+export function validateParticipantResponse(
+  type: "CONVIDADO" | "CONVOCADO",
+  response: "VOU" | "NAO_VOU" | "TALVEZ",
+  acknowledged: boolean,
+  justification?: string,
+) {
+  if (type === "CONVOCADO" && response === "TALVEZ") {
+    throw new AppError(400, "INVALID_SUMMON_RESPONSE", "Convocado deve responder VOU ou NÃO VOU.");
+  }
+  if (type === "CONVOCADO" && response === "NAO_VOU" && !justification) {
+    throw new AppError(400, "JUSTIFICATION_REQUIRED", "A recusa de convocação exige justificativa.");
+  }
+  if (type === "CONVOCADO" && !acknowledged) {
+    throw new AppError(400, "ACKNOWLEDGEMENT_REQUIRED", "Confirme a ciência da convocação.");
+  }
 }
 
 export class OccurrenceService {
@@ -18,7 +52,9 @@ export class OccurrenceService {
   async update(context: RequestContext, id: string, payload: OccurrenceUpdate) {
     try {
       return await runAudited(context.actor, async (tx, audit) => {
-      const occurrence = await this.assertOccurrence(context, id, tx);
+      let occurrence = await this.assertOccurrence(context, id, tx);
+      await lockAgendaSeries(tx, occurrence.seriesId);
+      occurrence = await this.assertOccurrence(context, id, tx);
       this.assertManager(context, occurrence, "agenda.editar");
       const startsAt = payload.startsAt ?? occurrence.startsAt;
       const endsAt = payload.endsAt ?? occurrence.endsAt;
@@ -29,9 +65,20 @@ export class OccurrenceService {
         descriptionOverride: payload.description, colorOverride: payload.color,
         locationTypeOverride: payload.locationType, externalLocationName: payload.locationName, externalAddress: payload.address,
       }, include: { ...occurrenceIncludeForUpdate } });
-      if (payload.startsAt || payload.endsAt) {
+      if (payload.startsAt || payload.endsAt || payload.locationType === "EXTERNO") {
         const reservations = await tx.agendaReservation.findMany({ where: { occurrenceId: id, status: "ATIVA" }, include: { space: true } });
-        for (const reservation of reservations) await tx.agendaReservation.update({ where: { id: reservation.id }, data: {
+        const plan = reservationSpacePlan(
+          reservations.map((item) => item.spaceId),
+          undefined,
+          payload.locationType ?? occurrence.series.locationType,
+        );
+        if (plan.release.length) {
+          await tx.agendaReservation.updateMany({
+            where: { occurrenceId: id, spaceId: { in: plan.release }, status: "ATIVA" },
+            data: { status: "LIBERADA", releasedAt: new Date() },
+          });
+        }
+        for (const reservation of reservations.filter((item) => plan.keep.includes(item.spaceId))) await tx.agendaReservation.update({ where: { id: reservation.id }, data: {
           startsAt, endsAt,
           effectiveStartsAt: new Date(startsAt.getTime() - reservation.space.preparationMinutes * 60_000),
           effectiveEndsAt: new Date(endsAt.getTime() + reservation.space.cleanupMinutes * 60_000),
@@ -62,8 +109,12 @@ export class OccurrenceService {
       if (new Date() >= occurrence.startsAt && !manager) throw new AppError(409, "RESPONSE_WINDOW_CLOSED", "Após o início, somente gestores podem alterar respostas.");
       const participant = occurrence.series.participants.find((item) => item.personId === targetPersonId);
       if (!participant) throw new AppError(404, "AGENDA_PARTICIPANT_NOT_FOUND", "Membro não participa deste evento.");
-      if (participant.type === "CONVOCADO" && payload.response === "NAO_VOU" && !payload.justification) throw new AppError(400, "JUSTIFICATION_REQUIRED", "A recusa de convocação exige justificativa.");
-      if (participant.type === "CONVOCADO" && payload.acknowledged !== true && !occurrence.responses.find((item) => item.personId === targetPersonId)?.acknowledgedAt) throw new AppError(400, "ACKNOWLEDGEMENT_REQUIRED", "Confirme a ciência da convocação.");
+      validateParticipantResponse(
+        participant.type,
+        payload.response,
+        payload.acknowledged === true || Boolean(occurrence.responses.find((item) => item.personId === targetPersonId)?.acknowledgedAt),
+        payload.justification,
+      );
       const response = await tx.agendaOccurrenceResponse.upsert({ where: { occurrenceId_personId: { occurrenceId: id, personId: targetPersonId } }, create: {
         occurrenceId: id, personId: targetPersonId, response: payload.response,
         acknowledgedAt: payload.acknowledged ? new Date() : null, justification: payload.justification,
@@ -83,7 +134,9 @@ export class OccurrenceService {
       const occurrence = await this.assertOccurrence(context, id, tx);
       const actorPersonId = await this.actorPersonId(tx, context);
       const manager = this.isManager(context, occurrence, "agenda.escala.gerenciar");
-      if (!manager && (payload.items.length !== 1 || payload.items[0].personId !== actorPersonId || payload.items[0].status === "PENDENTE")) throw new AppError(403, "AGENDA_SCALE_FORBIDDEN", "Você só pode responder à própria escala.");
+      if (!canSelfRespondToScale({ manager, actorPersonId, items: payload.items, existingPersonIds: occurrence.scale.map((item) => item.personId) })) {
+        throw new AppError(403, "AGENDA_SCALE_FORBIDDEN", "Você só pode responder à própria escala existente.");
+      }
       await this.assertActiveMembers(tx, occurrence.series.organizationId, payload.items.map((item) => item.personId));
       const previousPersonIds = occurrence.scale.map((item) => item.personId);
       if (manager) await tx.agendaOccurrenceScale.deleteMany({ where: { occurrenceId: id, personId: { notIn: payload.items.map((item) => item.personId) } } });

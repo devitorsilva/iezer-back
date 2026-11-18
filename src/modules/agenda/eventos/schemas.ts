@@ -53,12 +53,23 @@ export const eventUpdateSchema = eventPayloadBaseSchema.partial().extend({
   occurrenceId: cuid.optional(),
 }).superRefine((value, ctx) => {
   if (value.scope !== "SERIES" && !value.occurrenceId) ctx.addIssue({ code: "custom", path: ["occurrenceId"], message: "Informe a ocorrência." });
+  if (value.startsAt && value.endsAt && value.endsAt <= value.startsAt) {
+    ctx.addIssue({ code: "custom", path: ["endsAt"], message: "O término deve ser posterior ao início." });
+  }
 });
 
 export const eventListQuerySchema = z.object({ from: z.coerce.date(), to: z.coerce.date() }).refine((v) => v.to > v.from, { message: "Intervalo inválido." });
 export const eventDetailQuerySchema = z.object({ occurrenceId: cuid.optional() });
 export const idParamsSchema = z.object({ id: cuid });
-export const cancelSchema = z.object({ scope: z.enum(["THIS", "THIS_AND_FUTURE", "SERIES"]).default("SERIES"), occurrenceId: cuid.optional(), reason: optionalText });
+export const cancelSchema = z.object({
+  scope: z.enum(["THIS", "THIS_AND_FUTURE", "SERIES"]).default("SERIES"),
+  occurrenceId: cuid.optional(),
+  reason: optionalText,
+}).superRefine((value, ctx) => {
+  if (value.scope !== "SERIES" && !value.occurrenceId) {
+    ctx.addIssue({ code: "custom", path: ["occurrenceId"], message: "Informe a ocorrência." });
+  }
+});
 
 export type EventPayload = z.infer<typeof eventPayloadSchema>;
 export type EventUpdate = z.infer<typeof eventUpdateSchema>;

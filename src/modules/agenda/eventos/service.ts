@@ -3,11 +3,21 @@ import { requireWriteOrganization, type RequestContext } from "../../../lib/acce
 import { runAudited } from "../../../lib/audit.js";
 import { AppError } from "../../../lib/errors.js";
 import { enqueueAgendaNotifications } from "../notificacoes/outbox.js";
-import { agendaRecipientNotification, loadOccurrenceRecipients } from "../notificacoes/recipients.js";
-import { materializeAgendaSeries, truncateRecurrenceBefore } from "../materializacao/service.js";
+import { agendaRecipientNotification, loadOccurrenceRecipients, uniqueAgendaRecipients } from "../notificacoes/recipients.js";
+import { lockAgendaSeries, materializeAgendaSeries, truncateRecurrenceBefore } from "../materializacao/service.js";
 import { expandRecurrence } from "../recurrence.js";
 import { isReservationConstraintError } from "../reservas/service.js";
-import { addUtcMonths, isMaterialChange, uniquePeople } from "./helpers.js";
+import {
+  addUtcMonths,
+  agendaVisibility,
+  assertCompletableStatus,
+  isMaterialChange,
+  participantNotificationIds,
+  recurrenceWithStart,
+  reminderPlan,
+  reservationSpacePlan,
+  uniquePeople,
+} from "./helpers.js";
 import { EventRepository, type AgendaDb, type EventDetail } from "./repository.js";
 import type { CancelPayload, EventListQuery, EventPayload, EventUpdate } from "./schemas.js";
 
@@ -56,9 +66,7 @@ function mapDetail(
   selectedOccurrenceId?: string,
   context?: RequestContext,
 ) {
-  const manager = role === "MANAGER" || role === "LEADER";
-  const showNames = manager || event.participantVisibility !== "SOMENTE_LIDERES";
-  const showResponses = manager || event.participantVisibility === "NOMES_E_RESPOSTAS";
+  const { showNames, showResponses, showManagementData: manager } = agendaVisibility(role, event.participantVisibility);
   const selectedOccurrence = event.occurrences.find((item) => item.id === selectedOccurrenceId)
     ?? event.occurrences.find((item) => item.status === "AGENDADA" && item.endsAt >= new Date())
     ?? event.occurrences[0];
@@ -74,8 +82,8 @@ function mapDetail(
     occurrenceId: selectedOccurrence?.id ?? null,
     locationName: selectedOccurrence?.reservations.filter((item) => item.status === "ATIVA").map((item) => item.space.name).join(", ") || event.externalLocationName,
     spaceIds: selectedOccurrence?.reservations.filter((item) => item.status === "ATIVA").map((item) => item.spaceId) ?? [],
-    scale: selectedOccurrence?.scale.map((item) => ({ id: item.personId, name: item.person.preferredName ?? item.person.name, status: item.status, accepted: item.status === "PENDENTE" ? null : item.status === "ACEITO" })) ?? [],
-    attendance: selectedOccurrence?.attendances.map((item) => ({ id: item.personId, name: item.person.preferredName ?? item.person.name, status: item.status })) ?? [],
+    scale: manager ? selectedOccurrence?.scale.map((item) => ({ id: item.personId, name: item.person.preferredName ?? item.person.name, status: item.status, accepted: item.status === "PENDENTE" ? null : item.status === "ACEITO" })) ?? [] : [],
+    attendance: manager ? selectedOccurrence?.attendances.map((item) => ({ id: item.personId, name: item.person.preferredName ?? item.person.name, status: item.status })) ?? [] : [],
     currentUserResponse: currentResponse?.response === "PENDENTE" ? null : currentResponse?.response ?? null,
     currentUserParticipantKind: currentPerson?.type ?? null,
     currentUserPersonId: currentPerson?.personId ?? currentScale?.personId ?? null,
@@ -96,7 +104,14 @@ function mapDetail(
       locationName: occurrence.externalLocationName ?? event.externalLocationName,
       address: occurrence.externalAddress ?? event.externalAddress,
       spaces: occurrence.reservations.filter((item) => item.status === "ATIVA").map((item) => item.space),
-      ...(showResponses ? { responses: occurrence.responses.map((response) => ({ ...response, justification: manager ? response.justification : null })) } : {}),
+      ...(showResponses ? { responses: occurrence.responses.map((response) => ({
+        personId: response.personId,
+        person: response.person,
+        response: response.response,
+        acknowledgedAt: response.acknowledgedAt,
+        respondedAt: response.respondedAt,
+        ...(manager ? { justification: response.justification } : {}),
+      })) } : {}),
       ...(manager ? { scale: occurrence.scale, attendances: occurrence.attendances } : {}),
     })),
   };
@@ -106,7 +121,18 @@ function mapDetail(
     leaders: event.leaders.map(({ person }) => ({ id: person.id, name: person.preferredName ?? person.name, hasAccess: person.user?.status === "ATIVO" })),
     participants: showNames ? event.participants.map(({ person, type }) => {
       const response = selectedOccurrence?.responses.find((item) => item.personId === person.id);
-      return { id: person.id, name: person.preferredName ?? person.name, type, kind: type, hasAccess: person.user?.status === "ATIVO", response: response?.response === "PENDENTE" ? null : response?.response ?? null, acknowledgedAt: response?.acknowledgedAt?.toISOString() ?? null, justification: manager ? response?.justification ?? null : null };
+      return {
+        id: person.id,
+        name: person.preferredName ?? person.name,
+        type,
+        kind: type,
+        hasAccess: person.user?.status === "ATIVO",
+        ...(showResponses ? {
+          response: response?.response === "PENDENTE" ? null : response?.response ?? null,
+          acknowledgedAt: response?.acknowledgedAt?.toISOString() ?? null,
+        } : {}),
+        ...(manager ? { justification: response?.justification ?? null } : {}),
+      };
     }) : [],
   };
 }
@@ -166,7 +192,7 @@ export class EventService {
         organizationId, createdById: context.actor.userId!, title: payload.title, description: payload.description,
         color: payload.color, allDay: payload.allDay, timezone: payload.timezone, startsAt: payload.startsAt,
         endsAt: payload.endsAt, locationType: payload.locationType, externalLocationName: payload.externalLocationName,
-        externalAddress: payload.externalAddress, rrule: rruleValue(payload), recurrenceUntil: payload.recurrence?.endsAtLocal ? dates.at(-1) : null,
+        externalAddress: payload.externalAddress, rrule: rruleValue(payload), recurrenceUntil: payload.recurrence?.endsAtLocal || payload.recurrence?.count ? dates.at(-1) : null,
         occurrenceHorizonAt: horizon, participantVisibility: payload.participantVisibility,
         leaders: { create: leaderIds.map((personId) => ({ personId, addedById: context.actor.userId! })) },
         participants: { create: participants },
@@ -183,9 +209,16 @@ export class EventService {
 
   async update(context: RequestContext, id: string, payload: EventUpdate) {
     return this.withReservationConflict(runAudited(context.actor, async (tx, audit) => {
+      await lockAgendaSeries(tx, id);
       const existing = await this.assertEvent(context, id, tx);
       await this.assertCanManage(context, existing, tx, payload.scope === "SERIES" && (payload.recurrence !== undefined || payload.leaderIds !== undefined));
       const before = eventSnapshot(existing);
+      const newParticipantIds = payload.scope !== "THIS" && payload.participants
+        ? participantNotificationIds(
+            existing.participants.map((item) => ({ personId: item.personId, type: item.type })),
+            payload.participants,
+          )
+        : [];
       if (payload.scope === "THIS") {
         const occurrence = await this.occurrenceOf(tx, existing.id, payload.occurrenceId!);
         const nextStartsAt = payload.startsAt ?? occurrence.startsAt;
@@ -196,18 +229,33 @@ export class EventService {
           descriptionOverride: payload.description, colorOverride: payload.color,
           locationTypeOverride: payload.locationType, externalLocationName: payload.externalLocationName, externalAddress: payload.externalAddress,
         } });
-        if (payload.startsAt || payload.endsAt) await this.moveReservations(tx, occurrence.id, nextStartsAt, nextEndsAt);
+        if (isMaterialChange(payload)) {
+          await this.reconcileOccurrenceReservations(tx, {
+            organizationId: existing.organizationId,
+            occurrenceId: occurrence.id,
+            startsAt: nextStartsAt,
+            endsAt: nextEndsAt,
+            locationType: payload.locationType ?? occurrence.locationTypeOverride ?? existing.locationType,
+            requestedSpaceIds: payload.spaceIds,
+            actorId: context.actor.userId!,
+          });
+        }
         if (isMaterialChange(payload)) await this.resetOccurrence(tx, occurrence.id);
       } else if (payload.scope === "THIS_AND_FUTURE") {
         const pivot = await this.occurrenceOf(tx, existing.id, payload.occurrenceId!);
+        const splitStartsAt = payload.startsAt ?? pivot.startsAt;
+        const splitTimezone = payload.timezone ?? existing.timezone;
+        const splitRrule = payload.recurrence === undefined
+          ? existing.rrule ? recurrenceWithStart(existing.rrule, splitStartsAt, splitTimezone) : null
+          : payload.recurrence ? recurrenceWithStart(JSON.stringify(payload.recurrence), splitStartsAt, splitTimezone) : null;
         const newSeries = await tx.agendaEventSeries.create({ data: {
           organizationId: existing.organizationId, createdById: existing.createdById, title: payload.title ?? existing.title,
           description: payload.description ?? existing.description, color: payload.color ?? existing.color, status: existing.status,
           allDay: payload.allDay ?? existing.allDay, timezone: payload.timezone ?? existing.timezone,
-          startsAt: payload.startsAt ?? pivot.startsAt, endsAt: payload.endsAt ?? pivot.endsAt,
+          startsAt: splitStartsAt, endsAt: payload.endsAt ?? pivot.endsAt,
           locationType: payload.locationType ?? existing.locationType, externalLocationName: payload.externalLocationName ?? existing.externalLocationName,
           externalAddress: payload.externalAddress ?? existing.externalAddress,
-          rrule: payload.recurrence === undefined ? existing.rrule : payload.recurrence ? JSON.stringify(payload.recurrence) : null,
+          rrule: splitRrule,
           participantVisibility: payload.participantVisibility ?? existing.participantVisibility,
         } });
         await tx.agendaOccurrence.updateMany({ where: { seriesId: existing.id, startsAt: { gte: pivot.startsAt } }, data: { seriesId: newSeries.id } });
@@ -232,7 +280,8 @@ export class EventService {
             where: { seriesId: newSeries.id },
             include: { reservations: { where: { status: "ATIVA" }, select: { spaceId: true } } },
           });
-          const spaceIds = [...new Set(moved.flatMap((occurrence) => occurrence.reservations.map((reservation) => reservation.spaceId)))];
+          const inheritedSpaceIds = [...new Set(moved.flatMap((occurrence) => occurrence.reservations.map((reservation) => reservation.spaceId)))];
+          const spaceIds = (payload.locationType ?? existing.locationType) === "EXTERNO" ? [] : payload.spaceIds ?? inheritedSpaceIds;
           const materializationStart = payload.startsAt ?? pivot.startsAt;
           await materializeAgendaSeries(tx, newSeries.id, {
             now: materializationStart,
@@ -259,8 +308,21 @@ export class EventService {
           for (const occurrence of moved) {
             const startsAt = new Date(occurrence.startsAt.getTime() + startDelta);
             const endsAt = new Date(startsAt.getTime() + duration);
-            await tx.agendaOccurrence.update({ where: { id: occurrence.id }, data: { startsAt, endsAt } });
-            await this.moveReservations(tx, occurrence.id, startsAt, endsAt);
+            await tx.agendaOccurrence.update({ where: { id: occurrence.id }, data: { originalStartsAt: startsAt, startsAt, endsAt } });
+          }
+        }
+        if (!payload.recurrence && isMaterialChange(payload)) {
+          const moved = await tx.agendaOccurrence.findMany({ where: { seriesId: newSeries.id } });
+          for (const occurrence of moved) {
+            await this.reconcileOccurrenceReservations(tx, {
+              organizationId: existing.organizationId,
+              occurrenceId: occurrence.id,
+              startsAt: occurrence.startsAt,
+              endsAt: occurrence.endsAt,
+              locationType: payload.locationType ?? occurrence.locationTypeOverride ?? existing.locationType,
+              requestedSpaceIds: payload.spaceIds,
+              actorId: context.actor.userId!,
+            });
           }
         }
         if (isMaterialChange(payload)) {
@@ -269,12 +331,19 @@ export class EventService {
         }
       } else {
         if (payload.leaderIds || payload.participants) await assertPeople(tx, existing.organizationId, payload.leaderIds ?? existing.leaders.map((item) => item.personId), payload.participants ?? existing.participants.map((item) => ({ personId: item.personId, type: item.type })));
+        const nextRrule = payload.recurrence === undefined
+          ? existing.rrule && payload.startsAt ? recurrenceWithStart(existing.rrule, payload.startsAt, payload.timezone ?? existing.timezone) : undefined
+          : payload.recurrence ? recurrenceWithStart(
+              JSON.stringify(payload.recurrence),
+              payload.startsAt ?? existing.startsAt,
+              payload.timezone ?? existing.timezone,
+            ) : null;
         await tx.agendaEventSeries.update({ where: { id }, data: {
           title: payload.title, description: payload.description, color: payload.color, allDay: payload.allDay,
           timezone: payload.timezone, startsAt: payload.startsAt, endsAt: payload.endsAt, locationType: payload.locationType,
           externalLocationName: payload.externalLocationName, externalAddress: payload.externalAddress,
           participantVisibility: payload.participantVisibility,
-          rrule: payload.recurrence === undefined ? undefined : payload.recurrence ? JSON.stringify(payload.recurrence) : null,
+          rrule: nextRrule,
         } });
         await this.syncRelations(tx, existing, payload, context.actor.userId!);
         if (payload.recurrence) {
@@ -296,8 +365,9 @@ export class EventService {
           })) });
           const participants = uniquePeople(payload.participants ?? existing.participants.map((item) => ({ personId: item.personId, type: item.type })));
           if (participants.length) await tx.agendaOccurrenceResponse.createMany({ data: created.flatMap((occurrence) => participants.map((item) => ({ occurrenceId: occurrence.id, personId: item.personId }))) });
-          await reserveSpaces(tx, existing.organizationId, created, payload.spaceIds ?? existingSpaceIds, context.actor.userId!);
-          await tx.agendaEventSeries.update({ where: { id: existing.id }, data: { occurrenceHorizonAt: addUtcMonths(startsAt, 12), recurrenceUntil: payload.recurrence.endsAtLocal ? dates.at(-1) : null } });
+          const targetSpaceIds = (payload.locationType ?? existing.locationType) === "EXTERNO" ? [] : payload.spaceIds ?? existingSpaceIds;
+          await reserveSpaces(tx, existing.organizationId, created, targetSpaceIds, context.actor.userId!);
+          await tx.agendaEventSeries.update({ where: { id: existing.id }, data: { occurrenceHorizonAt: addUtcMonths(startsAt, 12), recurrenceUntil: payload.recurrence.endsAtLocal || payload.recurrence.count ? dates.at(-1) : null } });
         } else if (payload.recurrence === null) {
           const now = new Date();
           const future = existing.occurrences.filter((item) => item.startsAt >= now);
@@ -310,8 +380,7 @@ export class EventService {
           if (keep && (payload.startsAt || payload.endsAt)) {
             const startsAt = payload.startsAt ?? keep.startsAt;
             const endsAt = payload.endsAt ?? new Date(startsAt.getTime() + (existing.endsAt.getTime() - existing.startsAt.getTime()));
-            await tx.agendaOccurrence.update({ where: { id: keep.id }, data: { startsAt, endsAt } });
-            await this.moveReservations(tx, keep.id, startsAt, endsAt);
+            await tx.agendaOccurrence.update({ where: { id: keep.id }, data: { originalStartsAt: startsAt, startsAt, endsAt } });
           }
           await tx.agendaEventSeries.update({ where: { id }, data: { recurrenceUntil: null, occurrenceHorizonAt: null } });
         } else if (payload.startsAt || payload.endsAt) {
@@ -321,8 +390,21 @@ export class EventService {
           for (const occurrence of future) {
             const startsAt = new Date(occurrence.startsAt.getTime() + startDelta);
             const endsAt = new Date(startsAt.getTime() + duration);
-            await tx.agendaOccurrence.update({ where: { id: occurrence.id }, data: { startsAt, endsAt } });
-            await this.moveReservations(tx, occurrence.id, startsAt, endsAt);
+            await tx.agendaOccurrence.update({ where: { id: occurrence.id }, data: { originalStartsAt: startsAt, startsAt, endsAt } });
+          }
+        }
+        if (!payload.recurrence && isMaterialChange(payload)) {
+          const future = await tx.agendaOccurrence.findMany({ where: { seriesId: existing.id, startsAt: { gte: new Date() } } });
+          for (const occurrence of future) {
+            await this.reconcileOccurrenceReservations(tx, {
+              organizationId: existing.organizationId,
+              occurrenceId: occurrence.id,
+              startsAt: occurrence.startsAt,
+              endsAt: occurrence.endsAt,
+              locationType: payload.locationType ?? occurrence.locationTypeOverride ?? existing.locationType,
+              requestedSpaceIds: payload.spaceIds,
+              actorId: context.actor.userId!,
+            });
           }
         }
         if (isMaterialChange(payload)) {
@@ -337,6 +419,9 @@ export class EventService {
           : updated.occurrences.filter((occurrence) => occurrence.startsAt >= new Date() && occurrence.status === "AGENDADA").map((occurrence) => occurrence.id);
         await this.notifyOccurrences(tx, affectedIds, "changed", "A data, o horário ou o local do evento foi alterado. Confirme novamente sua participação.");
       }
+      if (existing.status === "PUBLICADO" && newParticipantIds.length) {
+        await this.notifyNewParticipants(tx, updated, newParticipantIds);
+      }
       await audit({ organizationId: existing.organizationId, module: "AGENDA", action: "editar_evento", targetType: "AgendaEventSeries", targetId: updated.id, before, after: eventSnapshot(updated) });
       return mapDetail(updated, "MANAGER", context.actor.userId, undefined, context);
     }));
@@ -345,6 +430,7 @@ export class EventService {
   async publish(context: RequestContext, id: string) {
     if (!context.permissions.has("agenda.publicar")) throw new AppError(403, "PERMISSION_DENIED", "Você não pode publicar eventos.");
     return runAudited(context.actor, async (tx, audit) => {
+      await lockAgendaSeries(tx, id);
       const event = await this.assertEvent(context, id, tx);
       if (event.status !== "RASCUNHO") throw new AppError(409, "EVENT_ALREADY_PUBLISHED", "Somente rascunhos podem ser publicados.");
       const updated = await this.repository.setStatus(id, "PUBLICADO", tx);
@@ -371,6 +457,7 @@ export class EventService {
 
   async cancel(context: RequestContext, id: string, payload: CancelPayload) {
     return runAudited(context.actor, async (tx, audit) => {
+      await lockAgendaSeries(tx, id);
       const event = await this.assertEvent(context, id, tx);
       await this.assertCanManage(context, event, tx, payload.scope === "SERIES", "agenda.cancelar");
       const now = new Date();
@@ -386,6 +473,19 @@ export class EventService {
         affectedOccurrenceIds = (await tx.agendaOccurrence.findMany({ where: { ...where, status: "AGENDADA" }, select: { id: true } })).map((item) => item.id);
         await tx.agendaOccurrence.updateMany({ where, data: { status: "CANCELADA", cancelledAt: now } });
         await tx.agendaReservation.updateMany({ where: { occurrence: where, status: "ATIVA" }, data: { status: "LIBERADA", releasedAt: now } });
+        if (payload.scope === "THIS_AND_FUTURE" && event.rrule) {
+          const lastPrevious = event.occurrences
+            .filter((item) => item.startsAt < occurrence.startsAt)
+            .sort((left, right) => right.startsAt.getTime() - left.startsAt.getTime())[0];
+          await tx.agendaEventSeries.update({
+            where: { id },
+            data: {
+              rrule: truncateRecurrenceBefore(event.rrule, occurrence.startsAt, event.timezone),
+              recurrenceUntil: lastPrevious?.startsAt ?? null,
+              occurrenceHorizonAt: occurrence.startsAt,
+            },
+          });
+        }
       }
       if (event.status === "PUBLICADO") {
         const reason = payload.reason ? ` Motivo: ${payload.reason}` : "";
@@ -398,12 +498,46 @@ export class EventService {
 
   async removeDraft(context: RequestContext, id: string) {
     return runAudited(context.actor, async (tx, audit) => {
+      await lockAgendaSeries(tx, id);
       const event = await this.assertEvent(context, id, tx);
       await this.assertCanManage(context, event, tx, true);
       if (event.status !== "RASCUNHO") throw new AppError(409, "PUBLISHED_EVENT_CANNOT_BE_DELETED", "Evento publicado deve ser cancelado.");
       await tx.agendaReservation.deleteMany({ where: { occurrence: { seriesId: id } } });
       await tx.agendaEventSeries.delete({ where: { id } });
       await audit({ organizationId: event.organizationId, module: "AGENDA", action: "excluir", targetType: "AgendaEventSeries", targetId: id, before: eventSnapshot(event) });
+    });
+  }
+
+  async complete(context: RequestContext, id: string) {
+    return runAudited(context.actor, async (tx, audit) => {
+      await lockAgendaSeries(tx, id);
+      const event = await this.assertEvent(context, id, tx);
+      await this.assertCanManage(context, event, tx);
+      assertCompletableStatus(event.status);
+      const now = new Date();
+      await tx.agendaOccurrence.updateMany({
+        where: { seriesId: id, status: "AGENDADA", endsAt: { lte: now } },
+        data: { status: "CONCLUIDA", completedAt: now },
+      });
+      await tx.agendaOccurrence.updateMany({
+        where: { seriesId: id, status: "AGENDADA", endsAt: { gt: now } },
+        data: { status: "CANCELADA", cancelledAt: now },
+      });
+      await tx.agendaReservation.updateMany({
+        where: { occurrence: { seriesId: id, endsAt: { gt: now } }, status: "ATIVA" },
+        data: { status: "LIBERADA", releasedAt: now },
+      });
+      const updated = await this.repository.setStatus(id, "CONCLUIDO", tx);
+      await audit({
+        organizationId: event.organizationId,
+        module: "AGENDA",
+        action: "concluir_evento",
+        targetType: "AgendaEventSeries",
+        targetId: id,
+        before: eventSnapshot(event),
+        after: eventSnapshot(updated),
+      });
+      return updated;
     });
   }
 
@@ -451,23 +585,89 @@ export class EventService {
       await db.agendaOccurrenceResponse.deleteMany({ where: { occurrenceId: { in: future.map((item) => item.id) } } });
       await db.agendaOccurrenceResponse.createMany({ data: future.flatMap((occurrence) => participants.map((item) => ({ occurrenceId: occurrence.id, personId: item.personId }))) });
     }
+    if (payload.reminderMinutes) {
+      const plan = reminderPlan(existing.reminders.map((item) => item.minutesBefore), payload.reminderMinutes);
+      if (plan.remove.length) {
+        await db.agendaReminder.deleteMany({ where: { seriesId: existing.id, minutesBefore: { in: plan.remove } } });
+      }
+      if (plan.add.length) {
+        await db.agendaReminder.createMany({ data: plan.add.map((minutesBefore) => ({ seriesId: existing.id, minutesBefore })) });
+      }
+    }
   }
 
   private async copySeriesRelations(db: AgendaDb, existing: EventDetail, newSeriesId: string, payload: EventUpdate) {
     const leaders = payload.leaderIds ?? existing.leaders.map((item) => item.personId);
     const participants = payload.participants ?? existing.participants.map((item) => ({ personId: item.personId, type: item.type }));
     await db.agendaEventLeader.createMany({ data: leaders.map((personId) => ({ seriesId: newSeriesId, personId, addedById: existing.createdById })) });
-    await db.agendaSeriesParticipant.createMany({ data: uniquePeople(participants).map((item) => ({ seriesId: newSeriesId, ...item })) });
+    const selectedParticipants = uniquePeople(participants);
+    await db.agendaSeriesParticipant.createMany({ data: selectedParticipants.map((item) => ({ seriesId: newSeriesId, ...item })) });
+    const occurrenceIds = (await db.agendaOccurrence.findMany({ where: { seriesId: newSeriesId }, select: { id: true } })).map((item) => item.id);
+    if (occurrenceIds.length) {
+      const selectedPersonIds = selectedParticipants.map((item) => item.personId);
+      await db.agendaOccurrenceResponse.deleteMany({ where: {
+        occurrenceId: { in: occurrenceIds },
+        ...(selectedPersonIds.length ? { personId: { notIn: selectedPersonIds } } : {}),
+      } });
+      if (selectedParticipants.length) {
+        await db.agendaOccurrenceResponse.createMany({
+          data: occurrenceIds.flatMap((occurrenceId) => selectedParticipants.map((item) => ({ occurrenceId, personId: item.personId }))),
+          skipDuplicates: true,
+        });
+      }
+    }
+    const reminders = payload.reminderMinutes ?? existing.reminders.map((item) => item.minutesBefore);
+    if (reminders.length) {
+      await db.agendaReminder.createMany({ data: [...new Set(reminders)].map((minutesBefore) => ({ seriesId: newSeriesId, minutesBefore })) });
+    }
   }
 
-  private async moveReservations(db: AgendaDb, occurrenceId: string, startsAt: Date, endsAt: Date) {
-    const reservations = await db.agendaReservation.findMany({ where: { occurrenceId, status: "ATIVA" }, include: { space: true } });
-    for (const reservation of reservations) {
-      await db.agendaReservation.update({ where: { id: reservation.id }, data: {
-        startsAt, endsAt,
-        effectiveStartsAt: new Date(startsAt.getTime() - reservation.space.preparationMinutes * 60_000),
-        effectiveEndsAt: new Date(endsAt.getTime() + reservation.space.cleanupMinutes * 60_000),
-      } });
+  private async reconcileOccurrenceReservations(db: AgendaDb, input: {
+    organizationId: string;
+    occurrenceId: string;
+    startsAt: Date;
+    endsAt: Date;
+    locationType: "INTERNO" | "EXTERNO";
+    requestedSpaceIds?: string[];
+    actorId: string;
+  }) {
+    const reservations = await db.agendaReservation.findMany({
+      where: { occurrenceId: input.occurrenceId, status: "ATIVA" },
+      include: { space: true },
+    });
+    const plan = reservationSpacePlan(
+      reservations.map((item) => item.spaceId),
+      input.requestedSpaceIds,
+      input.locationType,
+    );
+    const targetSpaceIds = [...plan.keep, ...plan.add];
+    if (targetSpaceIds.length) {
+      const validSpaces = await db.agendaSpace.count({
+        where: { id: { in: targetSpaceIds }, organizationId: input.organizationId, isActive: true },
+      });
+      if (validSpaces !== targetSpaceIds.length) {
+        throw new AppError(400, "INVALID_AGENDA_SPACE", "Um ou mais espaços não pertencem à organização ou estão inativos.");
+      }
+    }
+    if (plan.release.length) {
+      await db.agendaReservation.updateMany({
+        where: { occurrenceId: input.occurrenceId, spaceId: { in: plan.release }, status: "ATIVA" },
+        data: { status: "LIBERADA", releasedAt: new Date() },
+      });
+    }
+    for (const reservation of reservations.filter((item) => plan.keep.includes(item.spaceId))) {
+      await db.agendaReservation.update({
+        where: { id: reservation.id },
+        data: {
+          startsAt: input.startsAt,
+          endsAt: input.endsAt,
+          effectiveStartsAt: new Date(input.startsAt.getTime() - reservation.space.preparationMinutes * 60_000),
+          effectiveEndsAt: new Date(input.endsAt.getTime() + reservation.space.cleanupMinutes * 60_000),
+        },
+      });
+    }
+    if (plan.add.length) {
+      await reserveSpaces(db, input.organizationId, [{ id: input.occurrenceId, startsAt: input.startsAt, endsAt: input.endsAt }], plan.add, input.actorId);
     }
   }
 
@@ -490,6 +690,28 @@ export class EventService {
       });
       await enqueueAgendaNotifications(db, notifications);
     }
+  }
+
+  private async notifyNewParticipants(db: AgendaDb, event: EventDetail, personIds: string[]) {
+    const people = await db.person.findMany({
+      where: { id: { in: personIds }, organizationId: event.organizationId, status: "ATIVO", bond: "MEMBRO" },
+      include: { user: { select: { id: true, status: true } } },
+    });
+    const occurrence = event.occurrences.find((item) => item.status === "AGENDADA" && item.startsAt >= new Date())
+      ?? event.occurrences.find((item) => item.status === "AGENDADA");
+    await enqueueAgendaNotifications(db, uniqueAgendaRecipients(people).flatMap((person) => {
+      const notification = agendaRecipientNotification({
+        recipient: person,
+        organizationId: event.organizationId,
+        churchName: event.organization.name,
+        seriesId: event.id,
+        occurrenceId: occurrence?.id,
+        eventTitle: event.title,
+        kind: `participant-added:${event.updatedAt.toISOString()}`,
+        body: "Você foi incluído neste evento.",
+      });
+      return notification ? [notification] : [];
+    }));
   }
 
   private async withReservationConflict<T>(promise: Promise<T>) {

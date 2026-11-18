@@ -16,6 +16,7 @@ export class EventController {
   update = async (request: FastifyRequest) => this.service.update(getRequestContext(request), idParamsSchema.parse(request.params).id, eventUpdateSchema.parse(request.body));
   publish = async (request: FastifyRequest) => this.service.publish(getRequestContext(request), idParamsSchema.parse(request.params).id);
   cancel = async (request: FastifyRequest) => this.service.cancel(getRequestContext(request), idParamsSchema.parse(request.params).id, cancelSchema.parse(request.body ?? {}));
+  complete = async (request: FastifyRequest) => this.service.complete(getRequestContext(request), idParamsSchema.parse(request.params).id);
   remove = async (request: FastifyRequest, reply: FastifyReply) => {
     await this.service.removeDraft(getRequestContext(request), idParamsSchema.parse(request.params).id);
     return reply.code(204).send();

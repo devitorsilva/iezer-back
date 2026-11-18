@@ -58,6 +58,10 @@ export function truncateRecurrenceBefore(rrule: string, pivot: Date, timezone: s
   return JSON.stringify({ ...recurrence, count: undefined, endsAtLocal: localEnd });
 }
 
+export async function lockAgendaSeries(db: Pick<AgendaMaterializationDb, "$queryRaw">, seriesId: string) {
+  await db.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${seriesId}))`;
+}
+
 function parseRecurrence(series: AgendaEventSeries) {
   if (!series.rrule) return null;
   return { ...(JSON.parse(series.rrule) as Omit<AgendaRecurrenceInput, "timezone">), timezone: series.timezone };
@@ -100,7 +104,7 @@ export async function materializeAgendaSeries(
   seriesId: string,
   options: MaterializationOptions = {},
 ) {
-  await db.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${seriesId}))`;
+  await lockAgendaSeries(db, seriesId);
   let series = await loadSeries(db, seriesId);
   if (!series?.rrule || series.status === "CANCELADO" || series.status === "CONCLUIDO") {
     return { created: 0, horizon: series?.occurrenceHorizonAt ?? null };
