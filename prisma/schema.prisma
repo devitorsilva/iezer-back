@@ -22,6 +22,7 @@ enum ModuleKey {
   CONTEUDO
   ACESSO
   PESSOAS
+  AGENDA
   // Ações da equipe iEzer sem igreja (equipe, termo): só na auditoria interna (RT-BB12).
   BACKOFFICE
 }
@@ -111,6 +112,72 @@ enum RecurrenceFrequency {
   QUINZENAL
   MENSAL
   ANUAL
+}
+
+enum AgendaEventStatus {
+  RASCUNHO
+  PUBLICADO
+  CANCELADO
+  CONCLUIDO
+}
+
+enum AgendaOccurrenceStatus {
+  AGENDADA
+  CANCELADA
+  CONCLUIDA
+}
+
+enum AgendaLocationType {
+  INTERNO
+  EXTERNO
+}
+
+enum AgendaParticipantType {
+  CONVIDADO
+  CONVOCADO
+}
+
+enum AgendaParticipantVisibility {
+  SOMENTE_LIDERES
+  NOMES
+  NOMES_E_RESPOSTAS
+}
+
+enum AgendaResponseStatus {
+  PENDENTE
+  VOU
+  NAO_VOU
+  TALVEZ
+}
+
+enum AgendaScaleStatus {
+  PENDENTE
+  ACEITO
+  RECUSADO
+}
+
+enum AgendaAttendanceStatus {
+  PRESENTE
+  AUSENTE
+  JUSTIFICADO
+}
+
+enum AgendaReservationKind {
+  EVENTO
+  AVULSA
+}
+
+enum AgendaReservationStatus {
+  ATIVA
+  LIBERADA
+  CANCELADA
+}
+
+enum AgendaOutboxStatus {
+  PENDENTE
+  PROCESSANDO
+  PROCESSADO
+  FALHOU
 }
 
 // Pessoas (PRD Pessoas › Conceitos do domínio). Vínculo e situação são independentes (D2).
@@ -265,22 +332,22 @@ enum ChurchExportStatus {
 // User, Session, Account, Verification e TwoFactor seguem o schema do Better Auth
 // (core + plugin twoFactor). A senha fica em Account.password (providerId "credential").
 model User {
-  id                        String               @id @default(cuid())
+  id                        String                     @id @default(cuid())
   name                      String
-  email                     String               @unique
-  emailVerified             Boolean              @default(false)
+  email                     String                     @unique
+  emailVerified             Boolean                    @default(false)
   image                     String?
-  twoFactorEnabled          Boolean              @default(false)
-  status                    UserStatus           @default(ATIVO)
+  twoFactorEnabled          Boolean                    @default(false)
+  status                    UserStatus                 @default(ATIVO)
   lastLoginAt               DateTime?
   // Versão dos termos de uso e de confidencialidade aceita (RF-CV06, RF-LP07).
   termsVersion              String?
   termsAcceptedAt           DateTime?
   // Nulo só para conta da equipe iEzer (RT-BB02); conta de igreja nasce do convite, com pessoa.
-  personId                  String?              @unique
-  person                    Person?              @relation(fields: [personId], references: [id], onDelete: Restrict)
-  createdAt                 DateTime             @default(now())
-  updatedAt                 DateTime             @updatedAt
+  personId                  String?                    @unique
+  person                    Person?                    @relation(fields: [personId], references: [id], onDelete: Restrict)
+  createdAt                 DateTime                   @default(now())
+  updatedAt                 DateTime                   @updatedAt
   sessions                  Session[]
   accounts                  Account[]
   twoFactors                TwoFactor[]
@@ -289,23 +356,30 @@ model User {
   followUps                 FollowUp[]
   personEvents              PersonEvent[]
   consentsRecorded          PersonConsent[]
-  invitesSent               Invite[]             @relation("InviteInvitedBy")
-  invitesAccepted           Invite[]             @relation("InviteAcceptedUser")
-  supportRequested          SupportGrant[]       @relation("SupportGrantRequestedBy")
-  supportApproved           SupportGrant[]       @relation("SupportGrantApprovedBy")
-  supportInternallyApproved SupportGrant[]       @relation("SupportGrantInternalApprovedBy")
-  supportClosed             SupportGrant[]       @relation("SupportGrantClosedBy")
-  teamMember                TeamMember?          @relation("TeamMemberUser")
-  teamInvited               TeamMember[]         @relation("TeamMemberInvitedBy")
-  teamInvitesSent           TeamInvite[]         @relation("TeamInviteInvitedBy")
-  teamInvitesAccepted       TeamInvite[]         @relation("TeamInviteAcceptedUser")
+  invitesSent               Invite[]                   @relation("InviteInvitedBy")
+  invitesAccepted           Invite[]                   @relation("InviteAcceptedUser")
+  supportRequested          SupportGrant[]             @relation("SupportGrantRequestedBy")
+  supportApproved           SupportGrant[]             @relation("SupportGrantApprovedBy")
+  supportInternallyApproved SupportGrant[]             @relation("SupportGrantInternalApprovedBy")
+  supportClosed             SupportGrant[]             @relation("SupportGrantClosedBy")
+  teamMember                TeamMember?                @relation("TeamMemberUser")
+  teamInvited               TeamMember[]               @relation("TeamMemberInvitedBy")
+  teamInvitesSent           TeamInvite[]               @relation("TeamInviteInvitedBy")
+  teamInvitesAccepted       TeamInvite[]               @relation("TeamInviteAcceptedUser")
   accountDocuments          AccountDocument[]
   accountOwnerChanges       AccountOwnerChange[]
-  announcementsCreated      Announcement[]       @relation("AnnouncementCreatedBy")
-  announcementsPublished    Announcement[]       @relation("AnnouncementPublishedBy")
+  announcementsCreated      Announcement[]             @relation("AnnouncementCreatedBy")
+  announcementsPublished    Announcement[]             @relation("AnnouncementPublishedBy")
   announcementViews         AnnouncementView[]
   churchExportsRequested    ChurchExport[]
   churchErasuresRecorded    ChurchErasure[]
+  agendaSeriesCreated       AgendaEventSeries[]        @relation("AgendaSeriesCreator")
+  agendaLeadersAdded        AgendaEventLeader[]        @relation("AgendaLeaderAddedBy")
+  agendaResponsesRecorded   AgendaOccurrenceResponse[] @relation("AgendaResponseRecordedBy")
+  agendaScalesRecorded      AgendaOccurrenceScale[]    @relation("AgendaScaleRecordedBy")
+  agendaAttendancesRecorded AgendaAttendance[]         @relation("AgendaAttendanceRecordedBy")
+  agendaReservationsCreated AgendaReservation[]        @relation("AgendaReservationCreatedBy")
+  agendaNotifications       AgendaNotification[]
 }
 
 model Session {
@@ -401,6 +475,7 @@ model Organization {
   congregationsReviewedAt DateTime?
   // Prazos dos indicadores da jornada (RT-B13). Só na sede; sem valor, os padrões do código.
   peopleSettings          Json?
+  timezone                String                @default("America/Sao_Paulo")
   createdAt               DateTime              @default(now())
   updatedAt               DateTime              @updatedAt
   contacts                OrganizationContact[]
@@ -429,6 +504,11 @@ model Organization {
   announcements           AnnouncementChurch[]
   exports                 ChurchExport[]
   erasure                 ChurchErasure?
+  agendaSeries            AgendaEventSeries[]
+  agendaSpaces            AgendaSpace[]
+  agendaReservations      AgendaReservation[]
+  agendaNotifications     AgendaNotification[]
+  agendaOutbox            AgendaOutbox[]
 
   @@index([parentId])
 }
@@ -766,22 +846,22 @@ model CostCenter {
 // Pessoa (D1): o cadastro único de gente da igreja. Datas civis em @db.Date (RT-B05);
 // telefones só com dígitos e DDI (RT-B06); CPF só com dígitos, único por organização (RT-B07).
 model Person {
-  id                    String             @id @default(cuid())
+  id                    String                     @id @default(cuid())
   organizationId        String
-  organization          Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  organization          Organization               @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   // Nome completo civil; visitante pode ter só o primeiro nome.
   name                  String
   preferredName         String?
   // name + preferredName em minúsculas e sem acento, para a busca.
   searchName            String
   sex                   Sex?
-  birthDate             DateTime?          @db.Date
+  birthDate             DateTime?                  @db.Date
   maritalStatus         MaritalStatus?
   cpf                   String?
   otherDocumentType     OtherDocumentType?
   otherDocumentNumber   String?
   mobilePhone           String?
-  mobileIsWhatsapp      Boolean            @default(false)
+  mobileIsWhatsapp      Boolean                    @default(false)
   secondaryPhone        String?
   email                 String?
   postalCode            String?
@@ -791,45 +871,287 @@ model Person {
   district              String?
   city                  String?
   state                 String?
-  bond                  PersonBond         @default(VISITANTE)
+  bond                  PersonBond                 @default(VISITANTE)
   // Desde quando está no vínculo atual (indicadores do Painel).
-  bondSince             DateTime?          @db.Date
-  status                PersonStatus       @default(ATIVO)
-  firstVisitDate        DateTime?          @db.Date
-  conversionDate        DateTime?          @db.Date
-  presentationDate      DateTime?          @db.Date
-  isBaptized            Boolean            @default(false)
-  baptismDate           DateTime?          @db.Date
+  bondSince             DateTime?                  @db.Date
+  status                PersonStatus               @default(ATIVO)
+  firstVisitDate        DateTime?                  @db.Date
+  conversionDate        DateTime?                  @db.Date
+  presentationDate      DateTime?                  @db.Date
+  isBaptized            Boolean                    @default(false)
+  baptismDate           DateTime?                  @db.Date
   baptismChurch         String?
-  infantBaptism         Boolean            @default(false)
-  professionOfFaithDate DateTime?          @db.Date
+  infantBaptism         Boolean                    @default(false)
+  professionOfFaithDate DateTime?                  @db.Date
   admissionMethodId     String?
-  admissionMethod       ChurchListItem?    @relation(fields: [admissionMethodId], references: [id], onDelete: Restrict)
-  admissionDate         DateTime?          @db.Date
+  admissionMethod       ChurchListItem?            @relation(fields: [admissionMethodId], references: [id], onDelete: Restrict)
+  admissionDate         DateTime?                  @db.Date
   originChurch          String?
   // Legado do cadastro de membros: só leitura até existir a entidade Célula.
   cellName              String?
   notes                 String?
   // Última mudança de celular, telefone, email ou endereço (indicador de contato desatualizado).
-  contactUpdatedAt      DateTime           @default(now())
-  createdAt             DateTime           @default(now())
-  updatedAt             DateTime           @updatedAt
+  contactUpdatedAt      DateTime                   @default(now())
+  createdAt             DateTime                   @default(now())
+  updatedAt             DateTime                   @updatedAt
   receivables           Receivable[]
   user                  User?
   familyMember          FamilyMember?
-  primaryContactOf      Family[]           @relation("FamilyPrimaryContact")
-  relationsAsPerson     PersonRelation[]   @relation("RelationPerson")
-  relationsAsRelative   PersonRelation[]   @relation("RelationRelative")
+  primaryContactOf      Family[]                   @relation("FamilyPrimaryContact")
+  relationsAsPerson     PersonRelation[]           @relation("RelationPerson")
+  relationsAsRelative   PersonRelation[]           @relation("RelationRelative")
   followUps             FollowUp[]
   events                PersonEvent[]
-  consents              PersonConsent[]    @relation("ConsentSubject")
-  consentsGiven         PersonConsent[]    @relation("ConsentGiver")
+  consents              PersonConsent[]            @relation("ConsentSubject")
+  consentsGiven         PersonConsent[]            @relation("ConsentGiver")
   invites               Invite[]
+  agendaLeaderships     AgendaEventLeader[]
+  agendaParticipations  AgendaSeriesParticipant[]
+  agendaResponses       AgendaOccurrenceResponse[]
+  agendaScales          AgendaOccurrenceScale[]
+  agendaAttendances     AgendaAttendance[]
 
   @@unique([organizationId, cpf])
   @@index([organizationId, name])
   @@index([organizationId, status])
   @@index([birthDate])
+}
+
+model AgendaEventSeries {
+  id                    String                      @id @default(cuid())
+  organizationId        String
+  organization          Organization                @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdById           String
+  createdBy             User                        @relation("AgendaSeriesCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  title                 String
+  description           String?
+  color                 String
+  status                AgendaEventStatus           @default(RASCUNHO)
+  allDay                Boolean                     @default(false)
+  timezone              String
+  startsAt              DateTime
+  endsAt                DateTime
+  locationType          AgendaLocationType
+  externalLocationName  String?
+  externalAddress       String?
+  rrule                 String?
+  recurrenceUntil       DateTime?
+  occurrenceHorizonAt   DateTime?
+  participantVisibility AgendaParticipantVisibility @default(SOMENTE_LIDERES)
+  publishedAt           DateTime?
+  cancelledAt           DateTime?
+  completedAt           DateTime?
+  createdAt             DateTime                    @default(now())
+  updatedAt             DateTime                    @updatedAt
+  occurrences           AgendaOccurrence[]
+  leaders               AgendaEventLeader[]
+  participants          AgendaSeriesParticipant[]
+  reminders             AgendaReminder[]
+
+  @@index([organizationId, status])
+  @@index([organizationId, startsAt])
+}
+
+model AgendaOccurrence {
+  id                   String                     @id @default(cuid())
+  seriesId             String
+  series               AgendaEventSeries          @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+  sequence             Int
+  originalStartsAt     DateTime
+  startsAt             DateTime
+  endsAt               DateTime
+  status               AgendaOccurrenceStatus     @default(AGENDADA)
+  titleOverride        String?
+  descriptionOverride  String?
+  colorOverride        String?
+  locationTypeOverride AgendaLocationType?
+  externalLocationName String?
+  externalAddress      String?
+  cancelledAt          DateTime?
+  completedAt          DateTime?
+  createdAt            DateTime                   @default(now())
+  updatedAt            DateTime                   @updatedAt
+  responses            AgendaOccurrenceResponse[]
+  scale                AgendaOccurrenceScale[]
+  attendances          AgendaAttendance[]
+  reservations         AgendaReservation[]
+  notifications        AgendaNotification[]
+
+  @@unique([seriesId, originalStartsAt])
+  @@unique([seriesId, sequence])
+  @@index([startsAt, status])
+}
+
+model AgendaEventLeader {
+  seriesId  String
+  series    AgendaEventSeries @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+  personId  String
+  person    Person            @relation(fields: [personId], references: [id], onDelete: Restrict)
+  addedById String
+  addedBy   User              @relation("AgendaLeaderAddedBy", fields: [addedById], references: [id], onDelete: Restrict)
+  createdAt DateTime          @default(now())
+
+  @@id([seriesId, personId])
+  @@index([personId])
+}
+
+model AgendaSeriesParticipant {
+  seriesId  String
+  series    AgendaEventSeries     @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+  personId  String
+  person    Person                @relation(fields: [personId], references: [id], onDelete: Restrict)
+  type      AgendaParticipantType
+  createdAt DateTime              @default(now())
+
+  @@id([seriesId, personId])
+  @@index([personId])
+}
+
+model AgendaOccurrenceResponse {
+  occurrenceId   String
+  occurrence     AgendaOccurrence     @relation(fields: [occurrenceId], references: [id], onDelete: Cascade)
+  personId       String
+  person         Person               @relation(fields: [personId], references: [id], onDelete: Restrict)
+  response       AgendaResponseStatus @default(PENDENTE)
+  acknowledgedAt DateTime?
+  justification  String?
+  respondedAt    DateTime?
+  recordedById   String?
+  recordedBy     User?                @relation("AgendaResponseRecordedBy", fields: [recordedById], references: [id], onDelete: SetNull)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  @@id([occurrenceId, personId])
+  @@index([personId])
+}
+
+model AgendaOccurrenceScale {
+  occurrenceId String
+  occurrence   AgendaOccurrence  @relation(fields: [occurrenceId], references: [id], onDelete: Cascade)
+  personId     String
+  person       Person            @relation(fields: [personId], references: [id], onDelete: Restrict)
+  status       AgendaScaleStatus @default(PENDENTE)
+  respondedAt  DateTime?
+  recordedById String?
+  recordedBy   User?             @relation("AgendaScaleRecordedBy", fields: [recordedById], references: [id], onDelete: SetNull)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  @@id([occurrenceId, personId])
+  @@index([personId])
+}
+
+model AgendaAttendance {
+  occurrenceId  String
+  occurrence    AgendaOccurrence       @relation(fields: [occurrenceId], references: [id], onDelete: Cascade)
+  personId      String
+  person        Person                 @relation(fields: [personId], references: [id], onDelete: Restrict)
+  status        AgendaAttendanceStatus
+  justification String?
+  recordedById  String
+  recordedBy    User                   @relation("AgendaAttendanceRecordedBy", fields: [recordedById], references: [id], onDelete: Restrict)
+  recordedAt    DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+
+  @@id([occurrenceId, personId])
+  @@index([personId])
+}
+
+model AgendaSpace {
+  id                 String              @id @default(cuid())
+  organizationId     String
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  name               String
+  description        String?
+  capacity           Int?
+  preparationMinutes Int                 @default(0)
+  cleanupMinutes     Int                 @default(0)
+  isActive           Boolean             @default(true)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  reservations       AgendaReservation[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId, isActive])
+}
+
+model AgendaReservation {
+  id                String                  @id @default(cuid())
+  groupId           String?
+  organizationId    String
+  organization      Organization            @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  spaceId           String
+  space             AgendaSpace             @relation(fields: [spaceId], references: [id], onDelete: Restrict)
+  occurrenceId      String?
+  occurrence        AgendaOccurrence?       @relation(fields: [occurrenceId], references: [id], onDelete: Restrict)
+  kind              AgendaReservationKind
+  title             String?
+  startsAt          DateTime
+  endsAt            DateTime
+  effectiveStartsAt DateTime
+  effectiveEndsAt   DateTime
+  status            AgendaReservationStatus @default(ATIVA)
+  releasedAt        DateTime?
+  createdById       String
+  createdBy         User                    @relation("AgendaReservationCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+
+  @@index([organizationId, startsAt])
+  @@index([groupId])
+  @@index([spaceId, effectiveStartsAt, effectiveEndsAt])
+  @@index([occurrenceId])
+}
+
+model AgendaReminder {
+  id            String            @id @default(cuid())
+  seriesId      String
+  series        AgendaEventSeries @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+  minutesBefore Int               @default(1440)
+  inApp         Boolean           @default(true)
+  email         Boolean           @default(true)
+  createdAt     DateTime          @default(now())
+
+  @@unique([seriesId, minutesBefore])
+}
+
+model AgendaNotification {
+  id             String            @id @default(cuid())
+  organizationId String
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  userId         String
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  occurrenceId   String?
+  occurrence     AgendaOccurrence? @relation(fields: [occurrenceId], references: [id], onDelete: SetNull)
+  title          String
+  body           String
+  linkUrl        String
+  readAt         DateTime?
+  createdAt      DateTime          @default(now())
+
+  @@index([userId, readAt, createdAt])
+  @@index([organizationId, createdAt])
+}
+
+model AgendaOutbox {
+  id             String             @id @default(cuid())
+  organizationId String
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  topic          String
+  aggregateType  String
+  aggregateId    String
+  payload        Json
+  idempotencyKey String             @unique
+  status         AgendaOutboxStatus @default(PENDENTE)
+  attempts       Int                @default(0)
+  availableAt    DateTime           @default(now())
+  processedAt    DateTime?
+  lastError      String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@index([status, availableAt])
+  @@index([organizationId, createdAt])
 }
 
 // Família = domicílio (RF-F01). Uma família por pessoa (FamilyMember.personId único).

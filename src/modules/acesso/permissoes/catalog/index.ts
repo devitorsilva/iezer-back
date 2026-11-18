@@ -1,5 +1,6 @@
 import type { AccessProfileFactoryKey } from "@prisma/client";
 import { acessoPermissions } from "./acesso.js";
+import { agendaPermissions } from "./agenda.js";
 import { financeiroPermissions } from "./financeiro.js";
 import { pessoasPermissions } from "./pessoas.js";
 import type { PermissionDefinition } from "./types.js";
@@ -14,6 +15,7 @@ export const permissionCatalog = [
   ...acessoPermissions,
   ...pessoasPermissions,
   ...financeiroPermissions,
+  ...agendaPermissions,
 ] as const;
 
 export type PermissionKey = (typeof permissionCatalog)[number]["key"];

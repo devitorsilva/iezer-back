@@ -48,6 +48,7 @@ function mapChurch(church: ChurchWithRelations) {
     id: church.id,
     name: church.name,
     cnpj: church.cnpj,
+    timezone: church.timezone,
     congregationsReviewedAt: church.congregationsReviewedAt?.toISOString() ?? null,
     congregations: church.children.map(mapCongregation),
     // Somente leitura: para trocar, fale com o iEzer (RF-OR03).
@@ -83,7 +84,11 @@ export class OrganizationService {
         if (other) throw cnpjTakenError(other.id);
       }
 
-      await this.repository.updateOrganization(church.id, { name: input.name, cnpj: input.cnpj }, tx);
+      await this.repository.updateOrganization(
+        church.id,
+        { name: input.name, cnpj: input.cnpj, timezone: input.timezone },
+        tx,
+      );
 
       await audit({
         organizationId: church.id,
@@ -91,8 +96,12 @@ export class OrganizationService {
         action: "editar_sede",
         targetType: "Organization",
         targetId: church.id,
-        before: { name: church.name, cnpj: church.cnpj },
-        after: { name: input.name ?? church.name, cnpj: input.cnpj === undefined ? church.cnpj : input.cnpj },
+        before: { name: church.name, cnpj: church.cnpj, timezone: church.timezone },
+        after: {
+          name: input.name ?? church.name,
+          cnpj: input.cnpj === undefined ? church.cnpj : input.cnpj,
+          timezone: input.timezone ?? church.timezone,
+        },
       });
 
       return mapChurch((await this.repository.findChurch(church.id, tx))!);

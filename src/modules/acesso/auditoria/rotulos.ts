@@ -17,6 +17,7 @@ export const MODULE_LABELS: Record<ModuleKey, string> = {
   CONTEUDO: "Conteúdo",
   ACESSO: "Acesso",
   PESSOAS: "Pessoas",
+  AGENDA: "Agenda",
   BACKOFFICE: "Back-office",
 };
 
@@ -148,6 +149,21 @@ export const ACTION_LABELS: Record<string, string> = {
   baixar_exportacao: "Exportação baixada",
   apagar_exportacao: "Exportação vencida apagada",
   registrar_eliminacao: "Eliminação definitiva registrada",
+  // Agenda
+  criar_evento: "Evento criado",
+  editar_evento: "Evento editado",
+  publicar_evento: "Evento publicado",
+  cancelar_evento: "Evento cancelado",
+  concluir_evento: "Evento concluído",
+  excluir_rascunho_evento: "Rascunho de evento excluído",
+  responder_evento: "Resposta ao evento registrada",
+  gerenciar_escala: "Escala atualizada",
+  registrar_presenca: "Presença registrada",
+  criar_espaco: "Espaço criado",
+  editar_espaco: "Espaço editado",
+  desativar_espaco: "Espaço desativado",
+  criar_reserva: "Reserva criada",
+  liberar_reserva: "Reserva liberada",
 };
 
 export const TARGET_TYPE_LABELS: Record<string, string> = {
@@ -179,6 +195,13 @@ export const TARGET_TYPE_LABELS: Record<string, string> = {
   ChurchExport: "Exportação de dados",
   ChurchErasure: "Eliminação definitiva",
   Rota: "Tela ou registro",
+  AgendaEventSeries: "Série de evento",
+  AgendaOccurrence: "Ocorrência de evento",
+  AgendaSpace: "Espaço",
+  AgendaReservation: "Reserva",
+  AgendaOccurrenceResponse: "Resposta ao evento",
+  AgendaOccurrenceScale: "Escala",
+  AgendaAttendance: "Presença",
 };
 
 const FIELD_LABELS: Record<string, string> = {
@@ -304,6 +327,19 @@ const FIELD_LABELS: Record<string, string> = {
   accountType: "Tipo de conta",
   agency: "Agência",
   accountNumber: "Número da conta",
+  title: "Título",
+  color: "Cor",
+  timezone: "Fuso horário",
+  startsAt: "Início",
+  endsAt: "Fim",
+  allDay: "Dia inteiro",
+  locationType: "Tipo de local",
+  externalLocationName: "Nome do local",
+  externalAddress: "Endereço",
+  participantVisibility: "Visibilidade dos participantes",
+  capacity: "Capacidade",
+  preparationMinutes: "Preparação (minutos)",
+  cleanupMinutes: "Limpeza (minutos)",
   pixKey: "Chave PIX",
   openingBalance: "Saldo inicial",
   code: "Código",

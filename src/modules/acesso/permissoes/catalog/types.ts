@@ -1,11 +1,12 @@
 import type { AccessProfileFactoryKey } from "@prisma/client";
 
-export type PermissionModule = "acesso" | "pessoas" | "financeiro" | "configuracoes";
+export type PermissionModule = "acesso" | "pessoas" | "financeiro" | "agenda" | "configuracoes";
 
 export const PERMISSION_MODULE_NAMES: Record<PermissionModule, string> = {
   acesso: "Acesso",
   pessoas: "Pessoas",
   financeiro: "Financeiro",
+  agenda: "Agenda",
   configuracoes: "Configurações",
 };
 

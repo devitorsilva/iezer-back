@@ -13,6 +13,7 @@
     "start": "node dist/server.js",
     "lint": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json",
+    "test": "tsx --test tests/**/*.test.ts",
     "format": "echo back: no formatter configured",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
@@ -36,6 +37,7 @@
     "fastify-plugin": "^5.0.1",
     "jszip": "^3.10.1",
     "prisma": "^6.14.0",
+    "rrule": "^2.8.1",
     "typescript": "^5.9.2",
     "zod": "^4.1.5"
   },

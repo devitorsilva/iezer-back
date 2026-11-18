@@ -24,7 +24,15 @@ export const contactPhone = z.preprocess(blankToNull, phoneValue.nullable().opti
 
 export const congregationParamsSchema = z.object({ id: z.string().cuid() });
 
-export const updateChurchSchema = z.object({ name: organizationName.optional(), cnpj });
+const timezone = z.string().trim().superRefine((value, ctx) => {
+  try {
+    new Intl.DateTimeFormat("pt-BR", { timeZone: value }).format();
+  } catch {
+    ctx.addIssue({ code: "custom", message: "Informe um fuso horário IANA válido." });
+  }
+});
+
+export const updateChurchSchema = z.object({ name: organizationName.optional(), cnpj, timezone: timezone.optional() });
 
 export const createCongregationSchema = z.object({ name: organizationName });
 
